@@ -2357,6 +2357,14 @@ git commit -m "test(pipeline): golden JSON contract fixtures + legacy output gua
 
 ---
 
+## Review-round decisions (covers this plan AND `2026-08-12-printworks-app.md`)
+
+Codex xhigh full review of both plans: 4 Critical, 14 Major, 1 Minor — all 19 applied (plans rev 2). Scoped verify of the fix diff: 10 PASS, 9 FAIL; all 9 closed in rev 3 (post-render input-equality check + valid RAW test fixtures; `gather_material` snapshots preview hashes so approve/status make zero re-reads; `remove_section_if_empty` on reset; validate-always + save-before-replace preview ordering; `basis: String?` in Swift + flagged spellings everywhere; `verify --json` typed body instead of `SystemExit`; runnable staged-source test; `adjust_stream.ndjson` consumed by a Plan 2 contract test; full `LineCollector` + pre-run terminationHandler; contract/smoke test harness skeletons).
+
+Two findings were deliberately applied in **lighter form** than prescribed — judged for soundness, with accepted residuals:
+- **#2 (immutable staged profile copies for preview renders):** applied as a pre/post input-hash equality gate instead — a preview is recorded only if its inputs hashed identically before AND after the render. Residual: an edit made and fully reverted *within one render* is undetectable; accepted for a single-user machine where every mutating command is lock-serialized (same risk class as the spec's §10 deferrals).
+- **#18 (every contract/smoke test written out in full):** applied as complete harness code (fixtures, normalizer, stub layout) plus one fully-written scenario as the binding pattern, with the remaining scenarios exactly enumerated in the Interfaces tables. Residual: implementers transcribe the enumerated scenarios into the harness; each task's own reviewer gates the result.
+
 ## Self-Review (run after writing, before offering execution)
 
 1. **Spec coverage:** §4.2 command table → Tasks 5–12; §4.3 contract → Tasks 1, 6, 13; atomic writes/status purity → Task 2; pp3/ownership → Tasks 3, 7; provenance/revision → Task 4; `group_bbox_detail` → Task 8; locking model → Tasks 7, 8 + Global Constraints. Spec §5–§7 (UI) and §8's Swift/XCTest halves are **Plan 2**.

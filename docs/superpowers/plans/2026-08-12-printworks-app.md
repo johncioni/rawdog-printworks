@@ -1389,10 +1389,11 @@ final class SmokeTests: XCTestCase {
     func testFullReviewFlowAgainstStubPipeline() async throws {
         let repo = try makeFixtureRepo()          // conftest dir list + 2 recipes + tiny preview JPGs
         let stub = try makeStubPython(at: repo)   // case "$2" in status) … adjust) … approve) … run) …
+        // PipelineClient conforms to PipelineRunning via the Task 5
+        // extension — passed directly, no adapter type exists.
         let client = PipelineClient(
-            config: PipelineConfig(repo: repo,
-                                   python: stub), executableOverride: stub)
-        let model = AppModel(client: PipelineClientAdapter(client),
+            config: PipelineConfig(repo: repo, python: stub))
+        let model = AppModel(client: client,
                              repo: repo, sliderDebounce: .zero)
         await model.refresh()
         XCTAssertEqual(model.snapshot?.photos.count, 2)
