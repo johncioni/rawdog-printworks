@@ -55,7 +55,7 @@
   - `emit(event: dict) -> None`: one compact JSON line to the saved real stdout, flush; **no-op when not active**.
   - `finish_ok(result: dict) -> int`: writes `{"ok": true, "result": ...}` envelope line, returns 0.
   - `finish_error(code, message, result=None) -> int`: writes `{"ok": false, "error": {...}}` (plus `"result"` when given), returns 1.
-  - `run_json(fn: Callable[[], dict]) -> int`: activates, calls `fn`, `finish_ok` on return; `CommandError` → `finish_error(e.code, e.message, e.result)`; `publish.LockError` → `LOCK_HELD`; any other `Exception` → `INTERNAL` with `str(e)`.
+  - `run_json(fn: Callable[[], dict], adapters: dict[type, str] | None = None) -> int`: activates, calls `fn`, `finish_ok` on return; `CommandError` → `finish_error(e.code, e.message, e.result)`; `publish.LockError` → `LOCK_HELD`; an exception matching an `adapters` entry (isinstance, first match in insertion order) → that code with `str(e)`; any other `Exception` → `INTERNAL` with `f"{type(e).__name__}: {e}"`. Task 8's dispatch passes the standard adapter set per command: `{render.RenderError: "RENDER_FAILED", ingest.IngestError: "BAD_INPUT", FileNotFoundError: "NOT_FOUND"}`, and commands that surface toolchain drift (`run`) additionally map the `"toolchain drift"` `RuntimeError` from `process_all` to `TOOLCHAIN_FAILED` by raising `CommandError` at the command boundary (a message-match adapter is too fragile; catch and re-raise typed).
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -144,6 +144,18 @@ def test_run_json_maps_unknown_exception_to_internal(monkeypatch):
     env = json.loads(buf.getvalue().strip().splitlines()[-1])
     assert env["error"]["code"] == "INTERNAL"
     assert "division" in env["error"]["message"]
+
+
+def test_run_json_adapters_map_typed_exceptions(monkeypatch):
+    buf = _capture(monkeypatch)
+
+    class Boom(Exception):
+        pass
+
+    assert jsonio.run_json(lambda: (_ for _ in ()).throw(Boom("rt died")),
+                           adapters={Boom: "RENDER_FAILED"}) == 1
+    env = json.loads(buf.getvalue().strip().splitlines()[-1])
+    assert env["error"] == {"code": "RENDER_FAILED", "message": "rt died"}
 ```
 
 - [ ] **Step 2: Run to verify failure**
@@ -220,7 +232,7 @@ def finish_error(code, message, result=None):
     return 1
 
 
-def run_json(fn):
+def run_json(fn, adapters=None):
     activate()
     try:
         return finish_ok(fn())
@@ -229,6 +241,9 @@ def run_json(fn):
     except publish.LockError as error:
         return finish_error("LOCK_HELD", str(error))
     except Exception as error:  # noqa: BLE001 — contract: never a bare traceback
+        for exc_type, code in (adapters or {}).items():
+            if isinstance(error, exc_type):
+                return finish_error(code, str(error))
         return finish_error("INTERNAL", f"{type(error).__name__}: {error}")
 ```
 
@@ -560,11 +575,12 @@ git commit -m "feat(pipeline): line-preserving pp3 editor"
 **Interfaces:**
 - Consumes: `recipe.load/fingerprint`, `render.style_hashes/seed_hash`, `toolchain.entries_for/RENDER_TOOLS`, `driver._lock`/`driver._lab` equivalents (re-implement locally to avoid importing driver: read `config/toolchain.lock` and `labprofile.load("generic-v1")`).
 - Produces:
-  - `style_input_hash(stem, style, rec) -> str` — sha256 of the canonical JSON of `{"raw": rec["raw_sha256"], "style": render.style_hashes(stem)[style], "seed": render.seed_hash(), "render_tools": toolchain.entries_for(lock, toolchain.RENDER_TOOLS), "overrides": rec["overrides"]}` (compact, sorted keys). This is exactly the material that determines preview pixels.
-  - `content_hash(path) -> str|None` — sha256 of file bytes, `None` if missing; module-level cache keyed `(str(path), st_size, st_mtime_ns)` (cache key may use mtime; correctness comes from re-hashing when either changes).
-  - `record_preview(rec, stem, style, preview_path) -> None` — sets `rec.setdefault("previews", {})[style] = {"inputs": style_input_hash(...), "content": content_hash(preview_path)}` (caller saves the recipe).
-  - `stale_styles(stem, rec) -> list[str]` — styles where recorded `inputs` ≠ current `style_input_hash` OR recorded `content` ≠ current preview file hash OR no provenance recorded. Sorted.
-  - `review_revision(stem, rec) -> str` — `"sha256:" + sha256(json({"fp": recipe.fingerprint(stem, rec, style_hashes, seed_hash, lock, lab), "previews": {style: content_hash(previews_dir()/f"{stem}_{style}_preview.jpg") for style in paths.STYLES}}))` — reuses the fingerprint's canonical blob so `status` and `approve` cannot drift.
+  - `style_input_hash(stem, style, rec, material=None) -> str` — sha256 of the canonical JSON of `{"raw": rec["raw_sha256"], "style": material["style_hashes"][style], "seed": material["seed_hash"], "render_tools": toolchain.entries_for(material["lock"], toolchain.RENDER_TOOLS), "overrides": rec["overrides"]}` (compact, sorted keys; `material=None` → `gather_material(stem)`). This is exactly the material that determines preview pixels — which requires (Task 5) that targeted previews actually render with the denoise extra profile when `overrides["denoise"]` is set, and verify the RAW hash, or the hash certifies inputs that weren't used.
+  - `content_hash(path) -> str|None` — sha256 of file bytes, `None` if missing. **No caching**: a mtime/size cache would let a same-size, restored-mtime replacement return a stale hash, defeating the spec's same-mtime guarantee (§4.2). Preview hashing is ~24 MB per status call (~25 ms) — cheap at human refresh rates.
+  - `gather_material(stem) -> dict` — reads `render.style_hashes(stem)`, `render.seed_hash()`, the toolchain lock, and the lab profile **once** and returns them as `{"style_hashes", "seed_hash", "lock", "lab"}`; every function below accepts an optional `material=` so `approve_review` and `status` derive revision, staleness, and fingerprint from one read (the single-snapshot rule).
+  - `record_preview(rec, stem, style, preview_path, inputs_hash) -> None` — sets `rec.setdefault("previews", {})[style] = {"inputs": inputs_hash, "content": content_hash(preview_path)}` (caller saves the recipe). **`inputs_hash` is computed by the caller BEFORE rendering starts** (Task 5) — recording a post-render hash would certify inputs edited during the render.
+  - `stale_styles(stem, rec, material=None) -> list[str]` — styles where recorded `inputs` ≠ current `style_input_hash` OR recorded `content` ≠ current preview file hash OR no provenance recorded. Sorted.
+  - `review_revision(stem, rec, material=None) -> str` — `"sha256:" + sha256(json({"fp": recipe.fingerprint(stem, rec, material["style_hashes"], material["seed_hash"], material["lock"], material["lab"]), "previews": {style: content_hash(previews_dir()/f"{stem}_{style}_preview.jpg") for style in paths.STYLES}}))` — reuses the fingerprint's canonical blob so `status` and `approve` cannot drift.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -600,13 +616,31 @@ def _fake_preview(tmp_repo, style, data=b"jpgbytes"):
     return p
 
 
+def _record(rec, style, p):
+    provenance.record_preview(
+        rec, "P1", style, p, provenance.style_input_hash("P1", style, rec))
+
+
 def test_record_and_no_stale(seeded, tmp_repo):
     rec = recipe.load("P1")
     for style in paths.STYLES:
-        p = _fake_preview(tmp_repo, style)
-        provenance.record_preview(rec, "P1", style, p)
+        _record(rec, style, _fake_preview(tmp_repo, style))
     recipe.save("P1", rec)
     assert provenance.stale_styles("P1", recipe.load("P1")) == []
+
+
+def test_same_size_restored_mtime_swap_is_stale(seeded, tmp_repo):
+    import os
+    rec = recipe.load("P1")
+    p = _fake_preview(tmp_repo, "natural", b"AAAAAAAA")
+    for style in paths.STYLES:
+        _record(rec, style, _fake_preview(tmp_repo, style)
+                if style != "natural" else p)
+    recipe.save("P1", rec)
+    st = p.stat()
+    p.write_bytes(b"BBBBBBBB")                       # same size
+    os.utime(p, ns=(st.st_atime_ns, st.st_mtime_ns))  # restored mtime
+    assert "natural" in provenance.stale_styles("P1", recipe.load("P1"))
 
 
 def test_missing_provenance_is_stale(seeded):
@@ -616,11 +650,10 @@ def test_missing_provenance_is_stale(seeded):
 def test_swapped_preview_content_is_stale(seeded, tmp_repo):
     rec = recipe.load("P1")
     p = _fake_preview(tmp_repo, "natural")
-    provenance.record_preview(rec, "P1", "natural", p)
+    _record(rec, "natural", p)
     for style in paths.STYLES:
         if style != "natural":
-            provenance.record_preview(
-                rec, "P1", style, _fake_preview(tmp_repo, style))
+            _record(rec, style, _fake_preview(tmp_repo, style))
     recipe.save("P1", rec)
     p.write_bytes(b"different pixels")            # swap the JPG, inputs unchanged
     assert "natural" in provenance.stale_styles("P1", recipe.load("P1"))
@@ -629,8 +662,7 @@ def test_swapped_preview_content_is_stale(seeded, tmp_repo):
 def test_input_change_is_stale(seeded, tmp_repo):
     rec = recipe.load("P1")
     for style in paths.STYLES:
-        provenance.record_preview(
-            rec, "P1", style, _fake_preview(tmp_repo, style))
+        _record(rec, style, _fake_preview(tmp_repo, style))
     recipe.save("P1", rec)
     (tmp_repo / "sidecars" / "P1_natural.pp3").write_text(
         "[Exposure]\nCompensation=0.3\n")        # moves style_hashes → inputs
@@ -661,11 +693,15 @@ from pathlib import Path
 from . import labprofile, paths, recipe, render, toolchain
 
 _LAB_PROFILE = "generic-v1"
-_hash_cache = {}
 
 
-def _lock():
-    return json.loads((paths.config_dir() / "toolchain.lock").read_text())
+def gather_material(stem):
+    return {
+        "style_hashes": render.style_hashes(stem),
+        "seed_hash": render.seed_hash(),
+        "lock": json.loads((paths.config_dir() / "toolchain.lock").read_text()),
+        "lab": labprofile.load(_LAB_PROFILE),
+    }
 
 
 def _canonical_sha(obj):
@@ -674,55 +710,58 @@ def _canonical_sha(obj):
     return hashlib.sha256(blob.encode()).hexdigest()
 
 
-def style_input_hash(stem, style, rec):
+def style_input_hash(stem, style, rec, material=None):
+    material = material or gather_material(stem)
     return _canonical_sha({
         "raw": rec["raw_sha256"],
-        "style": render.style_hashes(stem)[style],
-        "seed": render.seed_hash(),
-        "render_tools": toolchain.entries_for(_lock(), toolchain.RENDER_TOOLS),
+        "style": material["style_hashes"][style],
+        "seed": material["seed_hash"],
+        "render_tools": toolchain.entries_for(material["lock"],
+                                              toolchain.RENDER_TOOLS),
         "overrides": rec["overrides"],
     })
 
 
 def content_hash(path):
+    # Deliberately uncached: a size+mtime cache would let a same-size,
+    # restored-mtime swap return a stale hash (spec §4.2 forbids exactly that).
     path = Path(path)
     try:
-        st = path.stat()
+        return hashlib.sha256(path.read_bytes()).hexdigest()
     except FileNotFoundError:
         return None
-    key = (str(path), st.st_size, st.st_mtime_ns)
-    if key not in _hash_cache:
-        _hash_cache[key] = hashlib.sha256(path.read_bytes()).hexdigest()
-    return _hash_cache[key]
 
 
 def _preview_path(stem, style):
     return paths.previews_dir() / f"{stem}_{style}_preview.jpg"
 
 
-def record_preview(rec, stem, style, preview_path):
+def record_preview(rec, stem, style, preview_path, inputs_hash):
     rec.setdefault("previews", {})[style] = {
-        "inputs": style_input_hash(stem, style, rec),
+        "inputs": inputs_hash,
         "content": content_hash(preview_path),
     }
 
 
-def stale_styles(stem, rec):
+def stale_styles(stem, rec, material=None):
+    material = material or gather_material(stem)
     stored = rec.get("previews") or {}
     stale = []
     for style in paths.STYLES:
         entry = stored.get(style)
         if (entry is None
-                or entry.get("inputs") != style_input_hash(stem, style, rec)
+                or entry.get("inputs") != style_input_hash(stem, style, rec,
+                                                           material)
                 or entry.get("content") != content_hash(_preview_path(stem, style))):
             stale.append(style)
     return sorted(stale)
 
 
-def review_revision(stem, rec):
-    fp = recipe.fingerprint(stem, rec, render.style_hashes(stem),
-                            render.seed_hash(), _lock(),
-                            labprofile.load(_LAB_PROFILE))
+def review_revision(stem, rec, material=None):
+    material = material or gather_material(stem)
+    fp = recipe.fingerprint(stem, rec, material["style_hashes"],
+                            material["seed_hash"], material["lock"],
+                            material["lab"])
     previews = {style: content_hash(_preview_path(stem, style))
                 for style in paths.STYLES}
     return "sha256:" + _canonical_sha({"fp": fp, "previews": previews})
@@ -750,13 +789,14 @@ git commit -m "feat(pipeline): preview provenance + review_revision"
 
 **Interfaces:**
 - Consumes: `render.rt_render`, `render.resolve_raw`, `provenance.record_preview`, `_dims`, `_record_render_dims`.
-- Produces: `driver.preview_photo(stem, style) -> Path` —
-  1. renders the preview JPG to `paths.run_dir()/f"preview-{stem}-{style}.tmp.jpg"` via `render.rt_render(raw, style, tmp, "jpg", 92)`;
-  2. on success only: `os.replace(tmp, previews_dir()/f"{stem}_{style}_preview.jpg")` (failure leaves any existing preview untouched — rt_render raises before replace);
-  3. reads dims via `_dims(final_path)` and calls `_record_render_dims(stem, rec, w, h)` **only if** `rec` has no recorded dims yet (preview JPGs and TIFs decode to identical dimensions per the GH7 5784×4344 behavior; a mismatch beyond the existing ±16 guard raises as today);
-  4. `provenance.record_preview(rec, stem, style, final_path)`; `recipe.save(stem, rec)`.
+- Produces: `driver.preview_photo(stem, style) -> Path`, in this exact order (each step's failure leaves the previous preview AND recipe untouched):
+  1. load `rec`; **verify the RAW**: `_sha256(render.resolve_raw(stem)) == rec["raw_sha256"]` else `RuntimeError` (same message pattern as `render_photo`, driver.py:207-211);
+  2. **capture the pre-render input snapshot**: `material = provenance.gather_material(stem)`; `inputs_hash = provenance.style_input_hash(stem, style, rec, material)` — computed BEFORE rendering so an edit landing mid-render produces a mismatch on the next staleness check instead of being certified;
+  3. render to `paths.run_dir()/f"preview-{stem}-{style}.tmp.jpg"` via `render.rt_render(raw, style, tmp, "jpg", 92, extra_profiles=(render.denoise_profile(),) if rec["overrides"].get("denoise") else ())` — same denoise handling as `render_photo`, or the inputs hash (which covers `overrides`) would describe profiles that weren't applied;
+  4. **validate the temp before touching anything**: `_dims(tmp)` (±16 guard via `_record_render_dims` semantics), then compose ONE recipe update in memory: render dims (if not yet recorded) + `provenance.record_preview(rec, stem, style, tmp, inputs_hash)`;
+  5. `os.replace(tmp, final)` then one `recipe.save(stem, rec)` — the recipe's recorded content hash is of the temp bytes, which are byte-identical to `final` after the rename.
 - `process_all` ingested branch: replace `render.preview(stem, style)` with `preview_photo(stem, style)` (declared exception (b): batch previews now record provenance/dims keys).
-- CLI `preview` keeps positional `stem style`; behavior now routes through `preview_photo` (exception (b)); still prints the output path. **Contract note:** the canonical CLI spelling for the targeted preview is the positional form `preview <stem> <style> [--json]`; the spec's `--stem/--style` phrasing maps to it and Plan 2's `PipelineClient` uses the positional form — do not add duplicate flag arguments.
+- CLI `preview` keeps positional `stem style` (legacy, unchanged spelling) AND accepts the spec's flagged form: parser uses `p.add_argument("stem", nargs="?")`, `p.add_argument("style", nargs="?")`, `p.add_argument("--stem", dest="stem_flag")`, `p.add_argument("--style", dest="style_flag")`; handler resolves `stem = ns.stem_flag or ns.stem` (error `BAD_INPUT` if neither or both). **The flagged form is the JSON-mode canonical spelling** (`preview --stem S --style Y --json`) and is what Plan 2's `PipelineClient` sends; the positional form remains for humans and legacy scripts. Both route through `preview_photo`; still prints the output path in non-JSON mode.
 
 - [ ] **Step 1: Write the failing tests** (append to `tests/test_driver.py`)
 
@@ -823,23 +863,43 @@ def preview_photo(stem, style):
         raise ValueError(f"unknown style: {style}")
     rec = recipe.load(stem)
     raw = render.resolve_raw(stem)
+    actual_hash = _sha256(raw)
+    if actual_hash != rec["raw_sha256"]:
+        raise RuntimeError(
+            f"archived RAW hash mismatch for {stem}: "
+            f"expected {rec['raw_sha256']}, got {actual_hash}")
+    material = provenance.gather_material(stem)
+    inputs_hash = provenance.style_input_hash(stem, style, rec, material)
+
     final = paths.previews_dir() / f"{stem}_{style}_preview.jpg"
     tmp = paths.run_dir() / f"preview-{stem}-{style}.tmp.jpg"
     tmp.parent.mkdir(parents=True, exist_ok=True)
     tmp.unlink(missing_ok=True)
-    render.rt_render(raw, style, tmp, "jpg", 92)
-    final.parent.mkdir(parents=True, exist_ok=True)
-    os.replace(tmp, final)
+    extra = ((render.denoise_profile(),)
+             if rec["overrides"].get("denoise") else ())
+    render.rt_render(raw, style, tmp, "jpg", 92, extra_profiles=extra)
+
+    # Validate + compose the full recipe update BEFORE the swap: a failure
+    # here must leave both the old preview and the recipe untouched.
     try:
         width, height = _render_dims(rec)
     except ValueError:
-        width, height = _dims(final)
-        _record_render_dims(stem, rec, width, height)
-        rec = recipe.load(stem)  # _record_render_dims saved; reload before mutating
-    provenance.record_preview(rec, stem, style, final)
+        width, height = _dims(tmp)
+        if (abs(width - int(rec["width"])) > 16
+                or abs(height - int(rec["height"])) > 16):
+            raise RuntimeError(
+                f"render dimensions {width}x{height} differ from declared "
+                f"{rec['width']}x{rec['height']} by more than 16 pixels")
+        rec["render_width"], rec["render_height"] = width, height
+    provenance.record_preview(rec, stem, style, tmp, inputs_hash)
+
+    final.parent.mkdir(parents=True, exist_ok=True)
+    os.replace(tmp, final)
     recipe.save(stem, rec)
     return final
 ```
+
+(Recorded content hash is of the temp bytes — byte-identical to `final` after `os.replace`. Add a test: `overrides["denoise"] = True` → the fake `rt_render` receives one extra profile; and a test that a `_dims` failure on the temp leaves the previous preview file and recipe bytes unchanged.)
 
 In `process_all` (driver.py:475-476), replace `render.preview(stem, style)` with `preview_photo(stem, style)`. In `__main__.py:20`, replace the `preview` handler body with `print(driver.preview_photo(ns.stem, ns.style))` (import stays lazy via the existing `from . import driver`).
 
@@ -1007,8 +1067,12 @@ def _control(stem, style, section, key, cast):
 
 def _photo(stem, m):
     rec = recipe.load(stem)
-    from . import driver   # lazy: top-level import would be circular
-    fingerprint = driver._current_fingerprint(stem)
+    # One recipe load + one material gather per photo; the fingerprint is
+    # computed from THIS rec, never a re-read (coherence with review_revision).
+    material = provenance.gather_material(stem)
+    fingerprint = recipe.fingerprint(
+        stem, rec, material["style_hashes"], material["seed_hash"],
+        material["lock"], material["lab"])
     previews, hashes = {}, {}
     for style in paths.STYLES:
         p = paths.previews_dir() / f"{stem}_{style}_preview.jpg"
@@ -1030,10 +1094,10 @@ def _photo(stem, m):
         "state": manifest.effective_state(m, stem, fingerprint),
         "delivery_id": rec.get("delivery_id"),
         "ingested_at": rec.get("ingested_at"),
-        "review_revision": provenance.review_revision(stem, rec),
+        "review_revision": provenance.review_revision(stem, rec, material),
         "previews": previews,
         "preview_hashes": hashes,
-        "stale_previews": provenance.stale_styles(stem, rec),
+        "stale_previews": provenance.stale_styles(stem, rec, material),
         "adjustments": {
             style: {
                 "temperature": _control(stem, style, "White Balance",
@@ -1049,14 +1113,17 @@ def _photo(stem, m):
     }
 
 
-def _recipe_stamps():
-    return {p: p.stat().st_mtime_ns
-            for p in paths.recipes_dir().glob("*.yaml")}
+def _state_stamps():
+    stamps = {p: p.stat().st_mtime_ns
+              for p in paths.recipes_dir().glob("*.yaml")}
+    m = paths.manifest_path()
+    stamps[m] = m.stat().st_mtime_ns if m.exists() else None
+    return stamps
 
 
 def snapshot():
     for attempt in (0, 1):
-        stamps = _recipe_stamps()
+        stamps = _state_stamps()
         m = manifest.load_readonly()
         problems = toolchain.verify(paths.config_dir() / "toolchain.lock")
         result = {
@@ -1066,7 +1133,7 @@ def snapshot():
             "styles": list(paths.STYLES),
             "photos": [_photo(stem, m) for stem in sorted(m["photos"])],
         }
-        if _recipe_stamps() == stamps or attempt == 1:
+        if _state_stamps() == stamps or attempt == 1:
             return result
         time.sleep(0.1)
 ```
@@ -1177,7 +1244,22 @@ def test_reset_restores_previous_and_skips_diverged(repo):
     doc.write_atomic(p)
     adjust.apply("P1", "vibrant", reset=True)
     assert pp3.Pp3.load(p).get("White Balance", "Temperature") == "4800"
+    # Ownership drop is PERSISTED even though the reset touched no sidecar
     assert "wb" not in recipe.load("P1")["app_adjustments"].get("vibrant", {})
+
+
+def test_adjust_after_divergence_recaptures_previous(repo):
+    # App writes, hand edits, app writes again: the new `previous` must be
+    # the HAND-EDITED value, so a later reset restores the hand edit.
+    adjust.apply("P1", "filmic", temperature=5600)
+    p = paths.sidecars_dir() / "P1_filmic.pp3"
+    doc = pp3.Pp3.load(p); doc.set("White Balance", "Temperature", "4800")
+    doc.write_atomic(p)
+    adjust.apply("P1", "filmic", temperature=5200)   # reconcile → re-own
+    own = recipe.load("P1")["app_adjustments"]["filmic"]["wb"]
+    assert own["previous"]["Temperature"] == "4800"
+    adjust.apply("P1", "filmic", reset=True)
+    assert pp3.Pp3.load(p).get("White Balance", "Temperature") == "4800"
 
 
 def test_adjust_validation(repo):
@@ -1244,6 +1326,24 @@ def _own(rec, style):
     return rec.setdefault("app_adjustments", {}).setdefault(style, {})
 
 
+def _reconcile(rec, style, doc):
+    """Drop ownership of any bundle whose current pp3 values diverged from
+    last_written (a hand edit — or a crash between sidecar and recipe writes
+    — happened since the app wrote). Runs before EVERY operation, so a later
+    app write re-captures `previous` from the hand-edited state instead of
+    silently overwriting it, and reset can never touch a diverged bundle.
+    Returns True if any ownership entry was dropped (recipe needs saving)."""
+    dropped = False
+    ownership = (rec.get("app_adjustments") or {}).get(style) or {}
+    for control in list(ownership):
+        section, keys = _CONTROLS[control]
+        current = _capture_previous(doc, section, keys)
+        if current != ownership[control].get("last_written"):
+            del rec["app_adjustments"][style][control]
+            dropped = True
+    return dropped
+
+
 def _write_control(rec, style, doc, control, values):
     section, keys = _CONTROLS[control]
     ownership = _own(rec, style)
@@ -1255,13 +1355,11 @@ def _write_control(rec, style, doc, control, values):
 
 
 def _reset_control(rec, style, doc, control):
+    # _reconcile already removed diverged bundles; anything still owned is
+    # exactly as the app last wrote it and is safe to restore.
     section, keys = _CONTROLS[control]
     entry = _own(rec, style).get(control)
     if entry is None:
-        return False
-    current = _capture_previous(doc, section, keys)
-    if current != entry.get("last_written"):
-        del rec["app_adjustments"][style][control]     # diverged: hands off
         return False
     for key in keys:
         prior = entry["previous"].get(key)
@@ -1273,16 +1371,25 @@ def _reset_control(rec, style, doc, control):
     return True
 
 
+def _semantically_empty(doc):
+    # Only a TRULY empty document qualifies — a comment-only sidecar (e.g.
+    # from render.ensure_sidecar) is "something else remaining": deleting it
+    # would change style_hashes (sidecar existence feeds the fingerprint).
+    return doc.dump().strip() == ""
+
+
 def apply(stem, style, temperature=None, exposure=None, reset=False):
     _validate(style, temperature, exposure, reset)
     rec = _load_recipe(stem)
     revision_before = provenance.review_revision(stem, rec)
     side_path = paths.sidecars_dir() / f"{stem}_{style}.pp3"
     doc = pp3.Pp3.load(side_path)
-    changed = False
+    recipe_dirty = _reconcile(rec, style, doc)     # spec §4.2 crash reconcile
+    sidecar_dirty = False
     if reset:
         for control in _CONTROLS:
-            changed |= _reset_control(rec, style, doc, control)
+            if _reset_control(rec, style, doc, control):
+                sidecar_dirty = recipe_dirty = True
     else:
         if temperature is not None:
             _write_control(rec, style, doc, "wb", {
@@ -1290,14 +1397,19 @@ def apply(stem, style, temperature=None, exposure=None, reset=False):
                 "Temperature": str(int(temperature)),
                 "Green": "1.0",
             })
-            changed = True
+            sidecar_dirty = recipe_dirty = True
         if exposure is not None:
             _write_control(rec, style, doc, "exposure",
                            {"Compensation": f"{float(exposure):g}"})
-            changed = True
-    if changed:
-        doc.write_atomic(side_path)      # sidecar first…
+            sidecar_dirty = recipe_dirty = True
+    if sidecar_dirty:
+        if side_path.exists() and _semantically_empty(doc):
+            side_path.unlink()           # spec: "and the file if nothing else remains"
+        else:
+            doc.write_atomic(side_path)  # sidecar first…
+    if recipe_dirty:
         recipe.save(stem, rec)           # …recipe second (spec §4.2 crash rule)
+    if sidecar_dirty:
         from . import driver
         try:
             driver.preview_photo(stem, style)
@@ -1439,7 +1551,7 @@ Rewrite `pipeline/__main__.py` dispatch so each subcommand declares `mutating=Tr
 
 ```python
 def _dispatch(ns, fn, mutating):
-    from . import jsonio, publish
+    from . import ingest, jsonio, publish, render
 
     def body():
         if mutating:
@@ -1448,9 +1560,15 @@ def _dispatch(ns, fn, mutating):
         return fn(ns)
 
     if getattr(ns, "json", False):
-        return jsonio.run_json(lambda: body() or {})
+        return jsonio.run_json(
+            lambda: body() or {},
+            adapters={render.RenderError: "RENDER_FAILED",
+                      ingest.IngestError: "BAD_INPUT",
+                      FileNotFoundError: "NOT_FOUND"})
     return _wrap(lambda _ns: body())(ns)
 ```
+
+The `run --json` handler (Task 12) additionally catches the toolchain-drift `RuntimeError` raised by `process_all` (message starts `"toolchain drift"`) and re-raises `jsonio.CommandError("TOOLCHAIN_FAILED", str(e))`; verify failures inside a collected run surface per-stem as `VERIFY_FAILED` entries in `result.failed`, not as exceptions.
 
 Mutating set: ingest, preview, croppreview, approve, render, verify, adjust. Non-mutating: status, crops. `run`: dispatched WITHOUT the lock wrapper (its `fn` calls `process_all`, which locks). Keep every legacy handler body identical so no-flag output is unchanged.
 
@@ -1477,7 +1595,7 @@ git commit -m "feat(pipeline): dispatch-level locking + --json plumbing + group_
 **Interfaces:**
 - Consumes: `subject.group_bbox_detail`, `geometry.centered_crop_norm/subject_crop_norm`, `_render_dims`.
 - Produces: `driver.crop_windows(stem) -> dict` — spec §4.3 `crops` result:
-  - Persisted windows (recipe `crops` values non-None) → `source: "persisted"`, basis `"persisted"` → actually: result `basis` describes the *suggestion* path; when **all** windows are persisted, `basis: "persisted"`.
+  - Persisted windows (recipe `crops` values non-None) → `source: "persisted"`. `basis` describes only the *suggestion* path and stays within the spec's approved set (`faces | center | detector_error`); when **all** windows are persisted no suggestion runs and `basis` is `null` — persistence is communicated per-window by `source`, never by inventing a basis value.
   - Otherwise compute for the missing windows exactly as `approve` does (driver.py:350-384): needs `_render_dims` (else `CommandError("BAD_INPUT", "render dims not recorded; generate previews first")`); `group_bbox_detail` on the natural preview → basis `"faces"`, `"no_faces"` → centered windows + basis `"center"`, `"detector_error"` → centered + basis `"detector_error"`, missing natural preview → centered + basis `"center"`.
   - Never persists anything.
 
@@ -1536,7 +1654,7 @@ def crop_windows(stem):
     rec = recipe.load(stem)
     persisted = {c: w for c, w in rec["crops"].items() if w is not None}
     if len(persisted) == len(paths.CROPS):
-        return {"stem": stem, "basis": "persisted",
+        return {"stem": stem, "basis": None,
                 "windows": {c: dict(w, source="persisted")
                             for c, w in persisted.items()}}
     try:
@@ -1689,15 +1807,20 @@ def approve_review(stem, review):
         raise jsonio.CommandError(
             "BAD_INPUT", f"crops missing windows: {missing}")
 
-    rec = recipe.load(stem)                       # the single snapshot
+    # THE single snapshot: one recipe load + one material gather; revision,
+    # staleness, and the final fingerprint all derive from these same reads,
+    # so an edit between "check" and "persist" cannot enter the fingerprint
+    # without having entered the checked revision.
+    rec = recipe.load(stem)
+    material = provenance.gather_material(stem)
     expected = review.get("expected_review_revision")
     if expected is not None:
-        current = provenance.review_revision(stem, rec)
+        current = provenance.review_revision(stem, rec, material)
         if expected != current:
             raise jsonio.CommandError(
                 "STALE_REVIEW",
                 "review inputs changed since the reviewed snapshot")
-        stale = provenance.stale_styles(stem, rec)
+        stale = provenance.stale_styles(stem, rec, material)
         if stale:
             raise jsonio.CommandError(
                 "STALE_REVIEW", f"previews stale for styles: {stale}")
@@ -1707,7 +1830,7 @@ def approve_review(stem, review):
     except ValueError as error:
         raise jsonio.CommandError("BAD_INPUT", str(error)) from error
     landscape = width >= height
-    lab = _lab()
+    lab = material["lab"]
     for crop, window in windows.items():
         try:
             geometry.validate_crop(window, width, height, crop, landscape,
@@ -1718,8 +1841,9 @@ def approve_review(stem, review):
 
     rec["crops"] = {c: dict(windows[c]) for c in paths.CROPS}
     rec["expression_audit"] = list(audit)
-    fingerprint = recipe.fingerprint(stem, rec, render.style_hashes(stem),
-                                     render.seed_hash(), _lock(), lab)
+    fingerprint = recipe.fingerprint(stem, rec, material["style_hashes"],
+                                     material["seed_hash"], material["lock"],
+                                     material["lab"])
     rec["approval"] = {
         "fingerprint": fingerprint,
         "approved_at": datetime.datetime.now().astimezone().isoformat(
@@ -1733,7 +1857,7 @@ def approve_review(stem, review):
     return {"stem": stem, "state": "approved", "fingerprint": fingerprint}
 ```
 
-Strip the `source` key from submitted windows if present before validation (`window = {k: v for k, v in window.items() if k in ("x", "y", "w", "h")}`) — the app echoes `crops`-command windows back. `__main__.py`: `approve` gains `--review-file` (path) and `--json`; with `--review-file`, handler reads the JSON file and calls `approve_review`; without it, legacy `driver.approve(ns.stem)` untouched.
+Strip the `source` key from submitted windows if present before validation (`window = {k: v for k, v in window.items() if k in ("x", "y", "w", "h")}`) — the app echoes `crops`-command windows back. `__main__.py`: `approve` keeps positional `stem` and additionally accepts `--stem` (same nargs-`?` + flag resolution as `preview`, Task 5); gains `--review-file` (path) and `--json`. The JSON-mode canonical spelling is `approve --stem S --review-file P --json` (what Plan 2 sends). With `--review-file`, handler reads the JSON file and calls `approve_review`; without it, legacy `driver.approve(stem)` untouched.
 
 - [ ] **Step 4: Run to verify pass**, **Step 5: Full gate + commit**
 
@@ -1785,12 +1909,35 @@ def test_stage_sources_conflict_and_duplicate(tmp_repo):
     from pipeline import ingest, paths
     (paths.input_dir() / "P9.RW2").write_bytes(b"original")
     src = tmp_repo / "elsewhere"; src.mkdir()
-    dup = src / "P8.RW2"; dup.write_bytes(b"original")      # same content, new stem → placed
+    # Same CONTENT under a new stem is still a content duplicate → skipped
+    # (spec §4.2/§5.4: content-hash dedup), never placed.
+    dup = src / "P8.RW2"; dup.write_bytes(b"original")
     clash = src / "P9.RW2"; clash.write_bytes(b"DIFFERENT") # same stem, new content → conflict
     result = ingest.stage_sources([dup, clash])
-    assert result["placed"] == ["P8.RW2"]
+    assert result["placed"] == []
+    assert result["skipped"][0]["file"] == "P8.RW2"
     assert result["conflicts"][0]["file"] == "P9.RW2"
     assert (paths.input_dir() / "P9.RW2").read_bytes() == b"original"
+    assert not (paths.input_dir() / "P8.RW2").exists()
+
+
+def test_stage_sources_hashes_the_staged_temp_not_the_live_source(
+        tmp_repo, monkeypatch):
+    import shutil as real_shutil
+    from pipeline import ingest, paths
+    src = tmp_repo / "elsewhere"; src.mkdir()
+    f = src / "P9.RW2"; f.write_bytes(b"first-bytes")
+
+    def mutating_copy(source, dest):
+        real_shutil.copy2(source, dest)
+        Path(source).write_bytes(b"MUTATED-AFTER-COPY")   # source changes mid-flight
+    monkeypatch.setattr(ingest.shutil, "copy2", mutating_copy)
+
+    result = ingest.stage_sources([f])
+    # Decision and placement reflect the STAGED bytes; the mutated live
+    # source never influences the outcome or lands in Input/.
+    assert result["placed"] == ["P9.RW2"]
+    assert (paths.input_dir() / "P9.RW2").read_bytes() == b"first-bytes"
 
 
 def test_run_records_delivery_metadata_only_when_given(tmp_repo, monkeypatch):
@@ -1948,23 +2095,57 @@ def test_process_all_collect_shapes(tmp_repo, monkeypatch):
 
 
 def test_render_photo_emits_progress_in_json_mode(tmp_repo, monkeypatch):
-    import io, json as _json
-    from pipeline import jsonio
-    events = []
-    monkeypatch.setattr(jsonio, "_out", io.StringIO())
-    monkeypatch.setattr(jsonio, "emit",
-                        lambda e: events.append(e))
-    # render_photo internals are exercised via the existing
-    # test_render_photo_records_dims_and_strips_before_pdfs fixture pattern;
-    # reuse its monkeypatching and assert at least one progress event with
-    # stage == "render" and 1-based index arrived in `events`.
-```
+    import json as _json
+    from pipeline import crops, driver, jsonio, metadata, paths, pdfs, recipe, render
+    for s in paths.STYLES:
+        (tmp_repo / "config/styles" / f"{s}.pp3").write_text(f"# {s}\n")
+    (tmp_repo / "config/toolchain.lock").write_text(_json.dumps({}))
+    import pathlib, shutil as _sh
+    _REPO = pathlib.Path(__file__).resolve().parent.parent
+    _sh.copy2(_REPO / "config/lab-profiles/generic-v1.yaml",
+              tmp_repo / "config/lab-profiles/generic-v1.yaml")
+    raw = tmp_repo / "Input/P1.RW2"
+    raw.write_bytes(b"rawbytes")
+    import hashlib as _hl
+    rec = recipe.new("P1", _hl.sha256(b"rawbytes").hexdigest(), 5776, 4336)
+    recipe.save("P1", rec)
 
-(Complete the last test by copying the monkeypatch scaffolding from the existing `test_render_photo_records_dims_and_strips_before_pdfs` in this file — fake `render.rt_render`, `crops.jpg_from_tif`, `pdfs.wrap`, `pdfs.comparison_sheet`, `metadata.strip`, `_dims` — then assert on `events`.)
+    def fake_rt(raw_path, style, out, fmt, quality, extra_profiles=()):
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(b"TIF")
+    monkeypatch.setattr(render, "rt_render", fake_rt)
+    monkeypatch.setattr(driver, "_dims", lambda p: (5784, 4344))
+    monkeypatch.setattr(crops, "jpg_from_tif",
+                        lambda tif, out, win, tgt, sh, q, ppi:
+                        out.write_bytes(b"JPG"))
+    monkeypatch.setattr(pdfs, "wrap",
+                        lambda jpg, out, inches: out.write_bytes(b"PDF"))
+    monkeypatch.setattr(pdfs, "comparison_sheet",
+                        lambda stem, jpgs, staging:
+                        (staging / f"{stem}_comparison.pdf").write_bytes(b"PDF"))
+    monkeypatch.setattr(metadata, "strip",
+                        lambda p, keep, ppi=None: None)
+
+    events = []
+    monkeypatch.setattr(jsonio, "emit", lambda e: events.append(e))
+    driver.render_photo("P1")
+
+    render_events = [e for e in events
+                     if e.get("event") == "progress" and e["stage"] == "render"]
+    assert render_events, "no render progress events emitted"
+    assert render_events[0]["index"] == 1                 # 1-based
+    assert all(e["stem"] == "P1" for e in render_events)
+    assert all(e["total"] == render_events[0]["total"] for e in render_events)
+    assert len(render_events) == render_events[0]["total"]
+```
 
 - [ ] **Step 2: Run to verify failure** — `-k "stem_scoping or force_rerenders or collect_shapes"` → FAIL (unexpected kwargs).
 
-- [ ] **Step 3: Implement** — mechanical per the Interfaces block: add the three keyword params with legacy-identical defaults; add the loop filter; add the force reset; thread `collect` appends and `jsonio.emit` calls at the named points. `_finish_verified(data, stem, collect=None)` gains the optional param. `__main__.py` `run`: `--stem`, `--force`, `--json`; JSON path builds `collect={}`, calls `process_all(stems={ns.stem} if ns.stem else None, force=ns.force, collect=collect)`, raises `PARTIAL_FAILURE` when `collect["failed"]`; legacy path calls `process_all()` bare.
+- [ ] **Step 3: Implement** — add the three keyword params with legacy-identical defaults; add the loop filter; thread `collect` appends and `jsonio.emit` calls at the named points. `_finish_verified(data, stem, collect=None)` gains the optional param. Two behaviors need explicit control flow, not threading:
+  - **Per-stem failure isolation (collect mode only):** the existing loop body's `except RuntimeError` (driver.py:506-509) re-raises everything except manual-assets. When `collect is not None`, broaden it: `except (RuntimeError, render.RenderError) as error:` → manual-assets keeps its legacy skip-print; a verify failure already lands via `_finish_verified` (append `{"stem", "code": "VERIFY_FAILED", "message"}` there); anything else appends `{"stem", "code": "RENDER_FAILED", "message": str(error)}` and **continues to the next stem**. When `collect is None`, behavior is byte-for-byte legacy (re-raise) — the regression test from Step 4 pins this.
+  - **Force preserves prior state on failure:** `force=True` resets `artifacts`/state **in the in-memory `data` only**, remembering each stem's prior `(state, artifacts)`; `manifest.save` for the forced downgrade happens only *after* that stem's successful `_finish_verified`. On failure, restore the remembered pair into `data` before continuing so the published tree and manifest still describe the last verified version.
+
+  `__main__.py` `run`: `--stem`, `--force`, `--json`; JSON path builds `collect={}`, calls `process_all(stems={ns.stem} if ns.stem else None, force=ns.force, collect=collect)`, raises `CommandError("PARTIAL_FAILURE", f"{len(collect['failed'])} of {n} photos failed", result=collect)` when `collect["failed"]`; catches the toolchain-drift `RuntimeError` → `CommandError("TOOLCHAIN_FAILED", …)`; legacy path calls `process_all()` bare. Add a mixed-batch test: two approved stems, first renders and publishes, second's `verify_photo` returns problems → `collect["published"]` has one entry, `collect["failed"]` one `VERIFY_FAILED` entry, and the loop reached both stems. Add a force-failure test: forced verified stem whose render raises → manifest state and `artifacts` for that stem are unchanged from before the call.
 
 - [ ] **Step 4: Legacy regression guard** — add and run:
 
@@ -2005,11 +2186,21 @@ git commit -m "feat(pipeline): run --stem/--force, collect results, progress eve
 
 **Interfaces:**
 - Consumes: everything above, via `pipeline.__main__.main([...])` in-process with `jsonio._real_stdout` monkeypatched to a buffer.
-- Produces: committed fixtures `status_empty.json`, `status_ingested.json`, `adjust_ok.json`, `crops_suggested.json`, `approve_stale_review.json`, `ingest_result.json`, `run_partial_failure.json`, `envelope_lock_held.json` — each the **normalized** final envelope (plus, for `adjust_ok`, the full NDJSON line list). Plan 2's XCTest decodes these files verbatim.
+- Produces: committed fixtures — each file is the **normalized final envelope only** (one JSON object): `status_empty.json`, `status_ingested.json`, `adjust_ok.json`, `crops_suggested.json`, `approve_stale_review.json`, `ingest_result.json`, `run_partial_failure.json`, `envelope_lock_held.json`; plus `adjust_stream.ndjson` — the full normalized NDJSON line list (events + envelope) from the adjust scenario, for Plan 2's streaming-parser tests. Plan 2's XCTest decodes the `.json` files as envelopes and the `.ndjson` file line-by-line.
+- JSON-mode state hygiene: `jsonio` keeps module state (`_out`, redirected `sys.stdout`); the test module uses an autouse fixture that saves/restores `sys.stdout` and resets `jsonio._out = None` around every scenario, or back-to-back in-process `main()` calls bleed into each other.
+- Scenario definitions (exact; each seeds a fresh `tmp_repo` with the styles/lock/lab-profile pattern from `tests/test_status.py`, monkeypatched `toolchain.verify → []`, `toolchain.entries_for → {}`, and a fake `driver.preview_photo` writing deterministic bytes):
+  1. `status_empty` — no photos; `main(["status", "--json"])`.
+  2. `status_ingested` — one recipe (fixed bytes `b"raw-bytes"`, delivery fields set), manifest state `ingested`, previews recorded via the fake; `main(["status", "--json"])`.
+  3. `adjust_ok` + `adjust_stream` — same repo; `main(["adjust", "--stem", "P1", "--style", "natural", "--temperature", "5600", "--json"])`; envelope → `adjust_ok.json`, full captured line list → `adjust_stream.ndjson`.
+  4. `crops_suggested` — recipe with recorded dims, no persisted crops, `subject.group_bbox_detail` monkeypatched to a fixed bbox; `main(["crops", "--stem", "P1", "--json"])`.
+  5. `approve_stale_review` — review-file with `expected_review_revision: "sha256:wrong"`; `main(["approve", "--stem", "P1", "--review-file", path, "--json"])`.
+  6. `ingest_result` — one placeable source + one stem conflict via `--from`; `main(["ingest", "--from", src1, src2, "--delivery-id", "fixture-uuid", "--json"])`.
+  7. `run_partial_failure` — two approved stems, `verify_photo` monkeypatched to fail for one; `main(["run", "--json"])`.
+  8. `envelope_lock_held` — lock file held by a live PID (`os.getpid()`); `main(["ingest", "--json"])`.
 - Normalization (deterministic fixtures): replace the tmp repo path with `<REPO>`, every 64-hex sha with `<SHA256>`, every `sha256:…` revision with `<REVISION>`, RFC 3339 timestamps with `<TIMESTAMP>`. The normalizer lives in the test module and is applied before compare/write.
 - Regen mode: `REGEN_CONTRACT_FIXTURES=1 .venv/bin/python -m pytest tests/test_json_contract.py` rewrites the fixtures; default mode compares and fails on drift.
 
-- [ ] **Step 1: Write the test module** — scenario builders reuse the seeding helpers from `tests/test_status.py`/`tests/test_adjust.py` patterns (minimal styles, lock file, lab profile, monkeypatched `toolchain.verify`/`entries_for`, fake `driver.preview_photo`). Each scenario: run `main([cmd, ..., "--json"])`, capture the buffer, normalize, then `assert normalized == fixture_path.read_text()` (or write when regen env var set, then still assert). Include one scenario asserting **byte-identical legacy output**: `main(["status"])` with stdout captured equals `"photos: none ingested\n"`, and `main(["ingest"])` output equals today's format for an empty `Input/`.
+- [ ] **Step 1: Write the test module** — one test per scenario from the Interfaces list, each: seed per the scenario definition → run `main([...])` in-process with `jsonio._real_stdout` monkeypatched to a buffer → normalize → `assert normalized == fixture_path.read_text()` (or write when `REGEN_CONTRACT_FIXTURES=1`, then still assert). The autouse stdout/`jsonio._out` reset fixture from Interfaces wraps every test. Include two legacy-output guards: `main(["status"])` stdout equals `"photos: none ingested\n"` exactly, and `main(["ingest"])` on an empty `Input/` equals today's output exactly (capture today's format before implementing by running the command).
 
 - [ ] **Step 2: Generate fixtures** — `REGEN_CONTRACT_FIXTURES=1 .venv/bin/python -m pytest tests/test_json_contract.py -q` then inspect each file by eye against spec §4.3.
 
