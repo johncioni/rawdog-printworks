@@ -244,6 +244,27 @@ def test_process_all_passes_only_stale_artifacts(tmp_repo, monkeypatch):
     assert photo["artifacts"] == current
 
 
+def test_process_all_renders_approved_photo_without_stored_artifacts(
+        tmp_repo, monkeypatch):
+    m = manifest.load()
+    manifest.set_state(m, "P1", "approved")
+    m["photos"]["P1"]["fingerprint"] = "fp"
+    manifest.save(m)
+    monkeypatch.setattr(driver, "_current_fingerprint", lambda stem: "fp")
+    calls = []
+    monkeypatch.setattr(
+        driver,
+        "render_photo",
+        lambda stem: calls.append(stem),
+    )
+    monkeypatch.setattr(driver, "verify_photo", lambda stem: [])
+    monkeypatch.setattr(driver, "_publish_photo", lambda stem: {})
+
+    driver.process_all()
+
+    assert calls == ["P1"]
+
+
 def test_publish_uses_exact_allowlist_and_provenance(tmp_repo, monkeypatch):
     recipe.save("P1", recipe.new("P1", "raw-hash", 5776, 4336))
     deps = {name: {"dep": name} for name in manifest.artifact_names("P1")}

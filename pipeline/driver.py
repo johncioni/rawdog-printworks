@@ -437,19 +437,17 @@ def process_all():
                 print(f"{stem}: awaiting visual review + approve")
             elif state == "approved":
                 stored = data["photos"][stem].get("artifacts", {})
-                if stored:
-                    current = current_artifact_deps(stem)
-                else:
-                    current = {
-                        name: None for name in manifest.artifact_names(stem)
-                    }
-                stale = set(manifest.stale_artifacts(
-                    data, stem, current
-                ))
-                if stale == set(current):
+                if not stored:
                     render_photo(stem)
-                elif stale:
-                    render_photo(stem, only=stale)
+                else:
+                    current = current_artifact_deps(stem)
+                    stale = set(manifest.stale_artifacts(
+                        data, stem, current
+                    ))
+                    if stale == set(current):
+                        render_photo(stem)
+                    elif stale:
+                        render_photo(stem, only=stale)
                 _finish_verified(data, stem)
             elif state == "rendered":
                 _finish_verified(data, stem)
