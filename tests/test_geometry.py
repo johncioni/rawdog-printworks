@@ -35,6 +35,23 @@ def test_validate_respects_ppi():
         geometry.validate_crop(n, 5776, 4336, "8x10", True, 600)
 
 
+def test_validate_rejects_degenerate_window():
+    # 0.0001 * 4336 rounds to 0 pixels tall; must be a ValueError, never a
+    # ZeroDivisionError from the aspect check dividing by px["h"].
+    with pytest.raises(ValueError):
+        geometry.validate_crop({"x": 0.0, "y": 0.0, "w": 0.8, "h": 0.0001},
+                               5776, 4336, "8x10", True, 300)
+
+
+def test_validate_rejects_window_that_rounds_past_the_edge():
+    # x + w = 1.00008 in normalized space, but rounds to 1156 + 4621 = 5777
+    # pixels on a 5776-wide source: one pixel past the right edge. Height is
+    # aspect-correct so this reaches the bounds check on its own merits.
+    with pytest.raises(ValueError):
+        geometry.validate_crop({"x": 0.20008, "y": 0.0, "w": 0.8, "h": 3697/4336},
+                               5776, 4336, "8x10", True, 300)
+
+
 def test_pdf_page_inches():
     assert geometry.pdf_page_inches("8x10", 2400, 3000, 300, False) == (8.0, 10.0)
     assert geometry.pdf_page_inches(None, 5776, 4336, 300, True) == (5776/300, 4336/300)

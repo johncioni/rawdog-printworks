@@ -22,10 +22,12 @@ def to_pixels(n, w, h):
 
 
 def validate_crop(n, w, h, crop, landscape, ppi):
-    if not (0 <= n["x"] and 0 <= n["y"] and n["x"] + n["w"] <= 1.0001
-            and n["y"] + n["h"] <= 1.0001):
-        raise ValueError(f"crop window out of bounds: {n}")
     px = to_pixels(n, w, h)
+    if px["w"] < 1 or px["h"] < 1:
+        raise ValueError(f"crop window is degenerate (smaller than one pixel): {px}")
+    if (px["x"] < 0 or px["y"] < 0
+            or px["x"] + px["w"] > w or px["y"] + px["h"] > h):
+        raise ValueError(f"crop window out of bounds: {px}")
     tw, th = target_pixels(crop, landscape, ppi)
     if abs((px["w"] / px["h"]) - (tw / th)) / (tw / th) > 0.005:
         raise ValueError(f"crop window aspect mismatch: {px}")
