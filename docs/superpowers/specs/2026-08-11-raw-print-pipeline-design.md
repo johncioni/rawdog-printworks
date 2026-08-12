@@ -38,7 +38,9 @@ removal).
 
 Deliberately excluded: AI upscaling (25 MP exceeds all print needs), denoising
 (ISO 200 base is clean), skin smoothing / heavy retouching, HDR or tone-mapped
-effects.
+effects, and generative AI expression editing (opening closed eyes,
+synthesizing smiles) — synthetic facial texture shows at print resolution and
+recreates the over-edited look this project exists to undo.
 
 ## Directory layout
 
@@ -72,7 +74,24 @@ photo-edits/
    JPG into its PDF with zero re-encoding; style-comparison sheet generated.
 7. **QA** — exiftool verifies sRGB profile, dimensions, and DPI on every file;
    100 %-zoom inspection for sensor dust, critical eye sharpness, and clipped
-   highlights in faces; final visual pass over all JPGs.
+   highlights in faces; per-person expression audit (below); final visual
+   pass over all JPGs.
+
+## Expression audit & best-frame culling
+
+During the 100 %-zoom QA pass, every face in every photo is audited per
+person: closed or mid-blink eyes, squints, grimaces, awkward smiles, subjects
+looking away. Findings are recorded as per-photo notes surfaced alongside the
+style-comparison sheet (e.g. "subject second from left, eyes half-closed").
+
+When future deliveries include multiple frames of the same grouping, the audit
+doubles as culling guidance: frames are compared and the one with the best
+expressions across all subjects is recommended for printing.
+
+Corrections are by selection, not synthesis. Head/eye compositing between
+near-identical frames (real pixels, same light) is available as a documented
+case-by-case manual option for a specific keeper photo — never scripted,
+never generative.
 
 ## Tooling
 
@@ -111,5 +130,6 @@ gamut-check each image. Additive; requires no rework.
 ## Success criteria
 
 - Every Input RW2 yields the full 22-file curated set, all passing exiftool QA.
+- Every face in every photo has been expression-audited, with findings noted.
 - Skin tones read as natural to a human reviewer; no over-saturation.
 - New RW2 drops process with a single script run, untouched files skipped.
