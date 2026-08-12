@@ -15,6 +15,8 @@ def load(name):
     if not f.exists():
         raise ValueError(f"no lab profile {name}")
     p = yaml.safe_load(f.read_text())
+    if not isinstance(p, dict):
+        raise ValueError(f"lab profile {name} is not a mapping: {type(p).__name__}")
     missing = _ALL_FIELDS - set(p)
     if missing:
         raise ValueError(f"lab profile {name} missing fields: {sorted(missing)}")

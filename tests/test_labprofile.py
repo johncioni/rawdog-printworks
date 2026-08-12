@@ -1,4 +1,5 @@
 import pytest
+import yaml
 
 from pipeline import labprofile
 
@@ -26,6 +27,32 @@ def test_missing_field_raises(tmp_repo):
     (tmp_repo / "config/lab-profiles/broken.yaml").write_text("jpeg_quality: 92\n")
     with pytest.raises(ValueError):
         labprofile.load("broken")
+
+
+def test_missing_profile_raises(tmp_repo):
+    with pytest.raises(ValueError):
+        labprofile.load("no-such-lab")
+
+
+def test_unknown_field_raises(tmp_repo):
+    p = {k: "placeholder" for k in
+         labprofile.REVIEW_FIELDS | labprofile.RENDER_FIELDS | labprofile.ORDER_FIELDS}
+    p["surprise_field"] = 1
+    (tmp_repo / "config/lab-profiles/extra.yaml").write_text(yaml.safe_dump(p))
+    with pytest.raises(ValueError):
+        labprofile.load("extra")
+
+
+def test_empty_profile_raises(tmp_repo):
+    (tmp_repo / "config/lab-profiles/empty.yaml").write_text("")
+    with pytest.raises(ValueError):
+        labprofile.load("empty")
+
+
+def test_non_mapping_profile_raises(tmp_repo):
+    (tmp_repo / "config/lab-profiles/scalar.yaml").write_text("hello\n")
+    with pytest.raises(ValueError):
+        labprofile.load("scalar")
 
 
 def test_check_filename():
