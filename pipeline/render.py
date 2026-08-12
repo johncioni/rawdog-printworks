@@ -82,10 +82,22 @@ def ensure_sidecar_all(stem):
     return tuple(ensure_sidecar(stem, style) for style in paths.STYLES)
 
 
+def resolve_raw(stem):
+    directories = (paths.archive_dir(), paths.input_dir())
+    for directory in directories:
+        if not directory.exists():
+            continue
+        for candidate in sorted(directory.iterdir()):
+            if (candidate.is_file() and candidate.stem == stem
+                    and candidate.suffix.lower() == ".rw2"):
+                return candidate
+    raise RenderError(
+        f"RAW not found for stem {stem!r}; searched {directories[0]} and "
+        f"{directories[1]}")
+
+
 def preview(stem, style):
-    raw = paths.archive_dir() / f"{stem}.rw2"
-    if not raw.exists():
-        raw = paths.input_dir() / f"{stem}.rw2"
+    raw = resolve_raw(stem)
     out = paths.previews_dir() / f"{stem}_{style}_preview.jpg"
     rt_render(raw, style, out, "jpg", 92)
     return out

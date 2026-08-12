@@ -122,6 +122,25 @@ def test_preview_prefers_archive_and_falls_back_to_input(tmp_repo, monkeypatch):
     assert calls[-1][0] == input_raw
 
 
+def test_resolve_raw_accepts_uppercase_suffix_and_preview_uses_it(
+        tmp_repo, monkeypatch):
+    archived = tmp_repo / "archive/UPPER.RW2"
+    archived.write_bytes(b"archived")
+    calls = []
+
+    def fake_render(raw, style, out_path, fmt, quality, extra_profiles=()):
+        calls.append((raw, style, out_path, fmt, quality, extra_profiles))
+
+    monkeypatch.setattr(render, "rt_render", fake_render)
+
+    assert render.resolve_raw("UPPER") == archived
+    assert render.preview("UPPER", "natural") == (
+        tmp_repo / "previews/UPPER_natural_preview.jpg")
+    assert calls == [(archived, "natural",
+                      tmp_repo / "previews/UPPER_natural_preview.jpg",
+                      "jpg", 92, ())]
+
+
 def test_denoise_profile_is_written_once(tmp_repo):
     profile = render.denoise_profile()
     assert profile.parent == tmp_repo / "run"
