@@ -159,8 +159,44 @@ def test_style_hashes_include_only_matching_sidecars(tmp_repo):
     (tmp_repo / "sidecars/P1_natural.pp3").write_text("override")
     after = render.style_hashes("P1")
     assert before["natural"] != after["natural"]
-    assert before["filmic"] == after["filmic"]
-    assert before["bw"] == after["bw"]
+    assert all(
+        before[style] == after[style]
+        for style in paths.STYLES
+        if style != "natural"
+    )
+
+
+def test_vibrant_profile_exists_and_participates_in_style_hashes(tmp_repo):
+    source_dir = Path(__file__).resolve().parents[1] / "config/styles"
+    natural = (source_dir / "natural.pp3").read_text()
+    vibrant_path = source_dir / "vibrant.pp3"
+    vibrant = vibrant_path.read_text()
+    expected = natural.replace(
+        "HistogramMatching=true\n",
+        "HistogramMatching=true\n"
+        "CurveMode=Standard\n"
+        "Curve=1;0;0;0.25;0.22;0.75;0.78;1;1;\n",
+    ).replace("Pastels=12\nSaturated=6\n", "Pastels=35\nSaturated=18\n")
+    assert vibrant == expected
+
+    for style in ("natural", "filmic", "bw", "vibrant"):
+        source = source_dir / f"{style}.pp3"
+        (tmp_repo / f"config/styles/{style}.pp3").write_bytes(
+            source.read_bytes()
+        )
+
+    before = render.style_hashes("P1")
+    local_vibrant = tmp_repo / "config/styles/vibrant.pp3"
+    local_vibrant.write_text(local_vibrant.read_text() + "# changed\n")
+    after = render.style_hashes("P1")
+
+    assert set(before) == {"natural", "filmic", "bw", "vibrant"}
+    assert before["vibrant"] != after["vibrant"]
+    assert all(
+        before[style] == after[style]
+        for style in before
+        if style != "vibrant"
+    )
 
 
 def test_seed_hash(tmp_repo):

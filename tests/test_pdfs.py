@@ -79,7 +79,7 @@ def test_wrap_clears_pdf_info_and_remains_qpdf_valid(tmp_path):
 def test_comparison_sheet_canvas_and_page(tmp_path):
     jpgs = {
         style: _jpg(tmp_path, f"{style}.jpg")
-        for style in ("natural", "filmic", "bw")
+        for style in ("natural", "filmic", "bw", "vibrant")
     }
     pdf, src = pdfs.comparison_sheet("P1", jpgs, tmp_path)
     dims = subprocess.run(
@@ -92,3 +92,42 @@ def test_comparison_sheet_canvas_and_page(tmp_path):
         ["pdfinfo", str(pdf)], capture_output=True, text=True
     ).stdout
     assert "792 x 612" in info
+
+
+def test_comparison_sheet_uses_four_labeled_panels_in_order(
+        tmp_path, monkeypatch):
+    jpgs = {
+        style: tmp_path / f"{style}.jpg"
+        for style in ("natural", "filmic", "bw", "vibrant")
+    }
+    calls = []
+
+    def fake_run(cmd):
+        calls.append(cmd)
+        if cmd[0] == "magick":
+            (tmp_path / cmd[-1]).write_bytes(b"image")
+
+    wrapped = []
+
+    def fake_wrap(source, output, page_inches):
+        wrapped.append((source, output, page_inches))
+        output.write_bytes(b"pdf")
+
+    monkeypatch.setattr(pdfs, "_run", fake_run)
+    monkeypatch.setattr(pdfs, "wrap", fake_wrap)
+
+    pdf, src = pdfs.comparison_sheet("P1", jpgs, tmp_path)
+
+    montage = calls[0]
+    labeled = [
+        (montage[index + 1], montage[index + 2])
+        for index, argument in enumerate(montage)
+        if argument == "-label"
+    ]
+    assert labeled == [
+        (style, str(jpgs[style]))
+        for style in ("natural", "filmic", "bw", "vibrant")
+    ]
+    assert montage[montage.index("-tile") + 1] == "4x1"
+    assert montage[montage.index("-resize") + 1] == "750x"
+    assert wrapped == [(src, pdf, (11.0, 8.5))]

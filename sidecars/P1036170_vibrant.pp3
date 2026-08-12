@@ -1,0 +1,13 @@
+# per-image override for P1036170 [vibrant] — layered over config/styles/vibrant.pp3
+# Dusk frame: same warm-up as the natural sidecar so vibrance builds on
+# honest skin tones instead of amplifying the cool cast.
+
+[White Balance]
+Setting=Custom
+Temperature=5700
+Green=1.0
+
+[Exposure]
+Compensation=0.12
+CurveMode=Standard
+Curve=1;0;0;0.25;0.22;0.75;0.78;1;1;
