@@ -102,11 +102,14 @@ def _pixel_signature(path):
         capture_output=True,
         text=True,
     )
-    if result.returncode != 0:
+    signature = result.stdout.strip()
+    if result.returncode != 0 or not signature:
+        # An empty signature would compare equal to itself and wave the strip
+        # through, so treat it as a read failure rather than a match.
         raise RuntimeError(
             f"{path}: could not read pixels: {result.stderr.strip()[-300:]}"
         )
-    return result.stdout.strip()
+    return signature
 
 
 def strip(path, keep_capture_date, ppi=None):
