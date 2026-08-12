@@ -17,6 +17,51 @@ def test_centered_norm_roundtrip():
     geometry.validate_crop(n, 5776, 4336, "8x10", True, 300)  # no raise
 
 
+def test_subject_crop_shifts_window_toward_off_left_bbox_center():
+    centered = geometry.centered_crop_norm(5776, 4336, "8x10", True)
+    bbox = {"x": 0.05, "y": 0.35, "w": 0.2, "h": 0.2}
+
+    subject = geometry.subject_crop_norm(
+        5776, 4336, "8x10", True, bbox
+    )
+
+    assert subject["x"] < centered["x"]
+    assert subject["y"] == centered["y"]
+
+
+def test_subject_crop_clamps_window_flush_to_frame_edges():
+    left = geometry.subject_crop_norm(
+        5776, 4336, "8x10", True,
+        {"x": 0.0, "y": 0.0, "w": 0.02, "h": 0.02},
+    )
+    right = geometry.subject_crop_norm(
+        5776, 4336, "8x10", True,
+        {"x": 0.98, "y": 0.98, "w": 0.02, "h": 0.02},
+    )
+
+    assert left["x"] == 0.0
+    assert left["y"] == 0.0
+    assert right["x"] + right["w"] == pytest.approx(1.0)
+    assert right["y"] + right["h"] == pytest.approx(1.0)
+
+
+@pytest.mark.parametrize(
+    "bbox",
+    [
+        {"x": 0.4, "y": 0.4, "w": 0.0, "h": 0.0},
+        {"x": -0.5, "y": -0.5, "w": 2.0, "h": 2.0},
+    ],
+)
+def test_subject_crop_degenerate_or_huge_bbox_still_validates(bbox):
+    subject = geometry.subject_crop_norm(
+        5776, 4336, "8x10", True, bbox
+    )
+
+    geometry.validate_crop(
+        subject, 5776, 4336, "8x10", True, 300
+    )
+
+
 def test_validate_rejects_out_of_bounds():
     with pytest.raises(ValueError):
         geometry.validate_crop({"x": 0.9, "y": 0.0, "w": 0.5, "h": 1.0},

@@ -16,6 +16,20 @@ def centered_crop_norm(w, h, crop, landscape):
     return {"x": (w - cw) / 2 / w, "y": (h - ch) / 2 / h, "w": cw / w, "h": ch / h}
 
 
+def subject_crop_norm(w, h, crop, landscape, bbox):
+    window = centered_crop_norm(w, h, crop, landscape)
+    center_x = bbox["x"] + bbox["w"] / 2
+    center_y = bbox["y"] + bbox["h"] / 2
+    max_x = 1.0 - window["w"]
+    max_y = 1.0 - window["h"]
+    return {
+        "x": min(max(center_x - window["w"] / 2, 0.0), max_x),
+        "y": min(max(center_y - window["h"] / 2, 0.0), max_y),
+        "w": window["w"],
+        "h": window["h"],
+    }
+
+
 def to_pixels(n, w, h):
     return {"x": round(n["x"] * w), "y": round(n["y"] * h),
             "w": round(n["w"] * w), "h": round(n["h"] * h)}
