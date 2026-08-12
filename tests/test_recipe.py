@@ -1,3 +1,5 @@
+import pytest
+
 from pipeline import geometry, recipe
 
 LOCK = {"rawtherapee": {"path": "/x", "version": "5.12", "sha256": "aa"},
@@ -62,11 +64,63 @@ def test_new_records_source_dimensions_and_defaults():
     assert fresh["manual_assets"] == []
 
 
+def test_fingerprint_rejects_non_string_keys():
+    # yaml.safe_load("1: x") yields {1: "x"}, and JSON stringifies that key, so
+    # a hand-edited recipe could hash identically to its string-key twin and
+    # silently keep an approval that no longer describes the same state.
+    rec = recipe.new("P1", "rawhash", 5776, 4336)
+    rec["overrides"] = {1: "x"}
+    with pytest.raises(ValueError):
+        _fp(rec)
+
+
+def test_fingerprint_rejects_nested_non_string_keys():
+    rec = recipe.new("P1", "rawhash", 5776, 4336)
+    rec["manual_assets"].append({"file": "P1_retouch.tif", 2: "mm"})
+    with pytest.raises(ValueError):
+        _fp(rec)
+
+
+def test_fingerprint_rejects_non_finite_crop_numbers():
+    for bad in (float("nan"), float("inf")):
+        rec = recipe.new("P1", "rawhash", 5776, 4336)
+        rec["crops"]["8x10"] = {"x": bad, "y": 0.0, "w": 1.0, "h": 1.0}
+        with pytest.raises(ValueError):
+            _fp(rec)
+
+
+def test_fingerprint_rejects_non_numeric_crop_values():
+    rec = recipe.new("P1", "rawhash", 5776, 4336)
+    rec["crops"]["8x10"] = {"x": "0", "y": 0.0, "w": 1.0, "h": 1.0}
+    with pytest.raises(ValueError):
+        _fp(rec)
+
+
 def test_file_hashes(tmp_path):
     p = tmp_path / "a.txt"
     p.write_bytes(b"hello")
     assert recipe.file_hashes([p]) == {
         "a.txt": "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"}
+
+
+def test_file_hashes_rejects_duplicate_basenames(tmp_path):
+    # Keying by basename would let [a/style.pp3, b/style.pp3] hash the same as
+    # [b/style.pp3], dropping an input from the fingerprint without a trace.
+    a, b = tmp_path / "a", tmp_path / "b"
+    a.mkdir()
+    b.mkdir()
+    (a / "style.pp3").write_bytes(b"one")
+    (b / "style.pp3").write_bytes(b"two")
+    with pytest.raises(ValueError):
+        recipe.file_hashes([a / "style.pp3", b / "style.pp3"])
+
+
+def test_save_creates_recipes_dir(tmp_path, monkeypatch):
+    # Deliberately not the tmp_repo fixture: a fresh checkout has no recipes/.
+    monkeypatch.setenv("PIPELINE_ROOT", str(tmp_path))
+    rec = recipe.new("P1036163", "rawhash", 5776, 4336)
+    recipe.save("P1036163", rec)
+    assert recipe.load("P1036163") == rec
 
 
 def test_save_load_roundtrip(tmp_repo):
