@@ -83,6 +83,15 @@ def test_run_isolates_failures(tmp_repo, monkeypatch):
     assert "width: 5776" in saved and "height: 4336" in saved
 
 
+def test_run_ingests_uppercase_rw2_extension(tmp_repo, monkeypatch):
+    (tmp_repo / "Input/UPPER.RW2").write_bytes(b"raw")
+    monkeypatch.setattr(ingest, "exif_summary", lambda path: dict(GOOD))
+
+    results = ingest.run()
+
+    assert results["UPPER"] == "ok"
+
+
 def test_run_isolates_oserrors(tmp_repo, monkeypatch):
     (tmp_repo / "Input/BAD.rw2").write_bytes(b"a")
     (tmp_repo / "Input/GOOD.rw2").write_bytes(b"b")

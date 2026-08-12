@@ -133,7 +133,15 @@ def run():
     manifest_data = manifest.load()
     results = {}
     existing_hashes = _archived_hashes()
-    for raw in sorted(paths.input_dir().glob("*.rw2")):
+    raw_files = sorted(
+        {
+            path
+            for path in paths.input_dir().iterdir()
+            if path.is_file() and path.suffix.lower() == ".rw2"
+        },
+        key=lambda path: path.name,
+    )
+    for raw in raw_files:
         stem = raw.stem
         try:
             if stem in manifest_data["photos"]:
