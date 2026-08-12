@@ -1,6 +1,7 @@
 # RAW → Print-Ready Pipeline — Design Spec
 
-**Date:** 2026-08-11 (rev 4 — resolves Codex third-review findings)
+**Date:** 2026-08-11 (rev 5 — final: fingerprint completeness, single-machine
+scope, explicit descopes)
 **Status:** Approved pending user review
 **Camera:** Panasonic Lumix DC-GH7 (25 MP Micro Four Thirds, native 4:3, RW2 files)
 
@@ -31,11 +32,14 @@ ingested → preview_ready → review_required → approved → rendered → ver
 - `preview_ready` — neutral preview exported for the visual review loop.
 - `review_required → approved` — Claude iterates sidecar edits and places
   crop windows by eye. Approval is recorded in the committed recipe as an
-  **approval fingerprint**: a hash over every review-relevant input (style
-  sidecars, crop geometry, denoise/retouch settings, and the lab profile's
-  review-invalidating fields). If any fingerprinted input later changes, the
-  photo transitions **backward** to `review_required` — nothing is ever
-  published that wasn't visually approved in its exact current form.
+  **approval fingerprint**: a hash over every input that can change rendered
+  pixels — the RAW SHA-256, style sidecars, crop geometry, denoise/retouch
+  settings, the output-sharpening recipe, the darktable-seed hash, the
+  rendering entries of `toolchain.lock` (darktable, lensfun, ICC profile),
+  and the lab profile's review-invalidating fields. If any fingerprinted
+  input later changes, the photo transitions **backward** to
+  `review_required` — nothing is ever published that wasn't visually
+  approved in its exact current form.
 - `rendered` — all 22 outputs generated into staging.
 - `verified` — all QA checks passed; outputs atomically published.
 
@@ -124,15 +128,18 @@ implementation ships `generic-v1` with every field explicit:
 #   [order]   change touches no pixels; affects ordering guidance only
 submission_format: jpeg        # [render] labs receive JPGs only
 jpeg_quality: 92               # [render]
-color_space: srgb              # [render]
+color_space: srgb              # [review] changes rendered color
 embed_icc: true                # [render]
-ppi: 300                       # [render]
+ppi: 300                       # [review] changes resampling + sharpening
 lab_color_correction: "off"    # [order] surfaced as ordering instruction
                                # ("Do Not Color Correct")
 safe_edge_percent: 2           # [review] nothing critical within 2% of
                                # edges (labs oversize/trim ~2%)
 checkout_crop_review: required # [order] human confirms lab crop preview
-max_file_bytes: 26214400       # [render] 25 MB, under common upload caps
+max_file_bytes: 26214400       # [render] 25 MB, under common upload caps.
+                               # An output exceeding this FAILS verification
+                               # for manual resolution — quality is never
+                               # silently lowered
 filename_rules: "ASCII, <= 64 chars"   # [render]
 bleed: none                    # [review]
 strip_metadata_beyond_allowlist: true  # [render]
@@ -219,10 +226,15 @@ explicitly outside the atomicity guarantee and self-heal.
   against the lock before running, and each publish writes the lock snapshot
   into that version's `provenance.json`.
 - **Artifact-level dependency tracking:** every one of the 22 artifacts has
-  its own dependency record: e.g. `natural.tif` ← {RAW, natural sidecar,
-  darktable seed, toolchain.lock}; `natural_8x10.jpg` adds {crop geometry,
-  sharpening recipe, lab profile render fields}; the comparison sheet ← the
-  three native JPGs. Invalidation scope and review scope are independent: a
+  its own dependency record keyed on individual `toolchain.lock` entries,
+  not the lock as a whole: darktable/lensfun/ICC changes invalidate rendered
+  pixels; ImageMagick/font changes invalidate crops and the comparison
+  sheet; img2pdf changes invalidate PDFs only; qpdf/poppler/exiftool changes
+  trigger re-verification only (`verified → rendered`), never a re-render.
+  E.g. `natural.tif` ← {RAW, natural sidecar, darktable seed, darktable +
+  lensfun + ICC lock entries}; `natural_8x10.jpg` adds {crop geometry,
+  sharpening recipe, lab profile render fields, ImageMagick lock entry};
+  the comparison sheet ← the three native JPGs. Invalidation scope and review scope are independent: a
   crop-geometry change (review-invalidating) forces re-approval but then
   re-renders only the crop artifacts; a natural-sidecar change
   (review-invalidating) re-renders only natural outputs + the sheet; a
@@ -310,13 +322,29 @@ first file.
 - Re-running the driver is idempotent; artifact-level dependency hashes
   re-render exactly the affected outputs on any recipe/profile change, and
   review-invalidating changes force re-approval before anything publishes.
-- **Reproduction criterion (two tiers):** given this repo + the verified
-  RAW archive + a toolchain matching `toolchain.lock`:
-  - *Strict* — same OS/architecture and identical binary hashes, OpenCL
-    disabled, custom presets off: decoded pixel hashes match exactly after
-    metadata/timestamp normalization, with identical ICC profiles, geometry,
-    and PDF page boxes.
-  - *Portable* — differing OS/architecture or library builds: decoded
-    pixels match within a stated tolerance (max per-channel delta ≤ 1
-    8-bit LSB; mean ΔE00 < 0.5), with identical geometry, profiles, and
-    page boxes. Container-byte equality is never claimed.
+- **Reproduction criterion (single-machine):** on this machine, with a
+  toolchain matching `toolchain.lock` (OpenCL disabled, custom presets
+  off), re-rendering from the RAW archive + committed recipes reproduces
+  decoded pixel hashes exactly, with identical ICC profiles, geometry, and
+  PDF page boxes. Cross-machine reproduction is explicitly out of scope
+  (see Scope boundaries) — the recovery path for any machine is the RAW
+  archive plus committed recipes, which regenerate equivalent outputs even
+  if not bit-identical ones.
+
+## Scope boundaries (explicit descopes)
+
+This is a single-operator, single-machine personal pipeline. The following
+are deliberately out of scope, not oversights:
+
+- **Cross-machine bit-exact reproduction** — one machine exists; recipes +
+  RAW archive are the portability story.
+- **Concurrent driver runs** — one operator (Claude) runs the driver. As
+  cheap insurance, the driver takes an exclusive lockfile at startup and
+  refuses to start if one is held; no further concurrency machinery.
+- **Manual/Topaz edits in the reproducibility model** — if a manual
+  composite or Topaz rescue is ever used for a specific photo, the
+  resulting raster is archived alongside the RAWs with its SHA-256 recorded
+  in the recipe, and that photo is explicitly marked as outside automated
+  re-render (its published outputs are the record). No further modeling.
+- **Multi-lab profile automation** — one generic profile now; real lab
+  profiles are added by hand when a lab is chosen.
