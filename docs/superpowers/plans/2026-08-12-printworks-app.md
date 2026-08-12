@@ -14,7 +14,8 @@
 - No pipeline logic in Swift, no repo writes from Swift. The only Swift-written file is the temp review-file, created **outside** the repo (`FileManager.default.temporaryDirectory`).
 - Subprocess environment (spec §4.1): `currentDirectoryURL` = repo; python by absolute path from Settings; `PATH` = `/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin` exactly; argv only, never a shell.
 - Every mutating action follows spawn → stream events → envelope → `status --json` refresh; the UI is never updated speculatively.
-- Canonical CLI spellings (Plan 1): `status --json` · `ingest --from <paths…> --delivery-id <uuid> --json` · `preview <stem> <style> --json` · `adjust --stem S --style Y [--temperature K] [--exposure EV] [--reset] --json` · `crops --stem S --json` · `approve <stem> --review-file <path> --json` · `run [--stem S] [--force] --json`.
+- Canonical CLI spellings (Plan 1, JSON-mode flagged forms — the app always uses these): `status --json` · `ingest --from <paths…> --delivery-id <uuid> --json` · `preview --stem S --style Y --json` · `adjust --stem S --style Y [--temperature K] [--exposure EV] [--reset] --json` · `crops --stem S --json` · `approve --stem S --review-file <path> --json` · `run [--stem S] [--force] --json`.
+- On any `ok: false` envelope that carries a `result` (aggregate commands), the model processes the `result` first (publications/ingests really happened), then surfaces the error; every action ends with a `status` refresh on success AND failure paths.
 - Visual language: window base `#0A0A0B`, review canvas pure black, panels `#141416`, hairlines `#232326`, accent amber `#E8A849`; `.ultraThinMaterial` sidebar; dark-only via `.preferredColorScheme(.dark)`.
 - Canvas image cache is keyed by preview **content hash** from status, never mtime/URL cache.
 - Quality gate before reporting any task complete: `swift test --package-path app/PrintworksCore` AND (from Task 1 on) `xcodebuild -project app/RAWdogPrintworks/RAWdogPrintworks.xcodeproj -scheme RAWdogPrintworks build` succeed.
@@ -328,11 +329,30 @@ git commit -m "feat(app): contract models decoding the pipeline golden fixtures"
 - Produces:
   - `struct PipelineConfig: Sendable { repo: URL; python: URL }`
   - `enum PipelineFailure: Error, Equatable { case internalError(String) }` (process-level failures only; envelope errors are data, not thrown).
+  - `struct CommandResult<R: Codable & Sendable & Equatable>: Sendable { envelope: Envelope<R>; stderrTail: String }` — `stderrTail` is the last 50 stderr lines, retained on success and failure alike (the "Show Details" disclosure needs it even when a valid error envelope arrived).
   - `actor PipelineClient`:
     - `init(config: PipelineConfig, executableOverride: URL? = nil)` — override lets tests substitute a stub script for `python`.
-    - `func run<R>(_ resultType: R.Type, args: [String], onEvent: (@Sendable (ProgressEvent) -> Void)? = nil) async -> Envelope<R>` — spawns `python -m pipeline <args>` (or the override with `<args>`), `currentDirectoryURL = config.repo`, environment `["PATH": "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin"]` merged over a minimal base (`HOME` preserved); reads stdout line-by-line; every line that decodes as `ProgressEvent` (has `"event"`) → `onEvent`; the **last** line must decode as `Envelope<R>` — if the process exits with no decodable final envelope, returns a synthetic `Envelope(ok: false, result: nil, error: .init(code: "INTERNAL", message: <last 50 stderr lines>))`. Non-zero exit with a valid envelope trusts the envelope.
-    - `func runMutating<R>(…same signature…) async -> Envelope<R>` — identical but serialized: an actor-held FIFO ensures one mutating subprocess at a time (later calls await earlier completions); `run` (read-only: status/crops) never queues.
-- Concurrency note: the actor holds `private var mutatingTail: Task<Void, Never>?`; `runMutating` chains on it. Stdout/stderr are drained on background threads via `FileHandle.readabilityHandler` into buffers; the actor awaits process termination via a continuation on `Process.terminationHandler`.
+    - `func run<R>(_ resultType: R.Type, args: [String], onEvent: (@Sendable (ProgressEvent) -> Void)? = nil) async -> CommandResult<R>` — spawns `python -m pipeline <args>` (or the override with `<args>`), `currentDirectoryURL = config.repo`, environment `["PATH": "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin"]` merged over a minimal base (`HOME` preserved). **Stdout is parsed line-by-line as it arrives** (readabilityHandler feeding a line splitter) — a render emits progress for minutes, so events must reach `onEvent` live, not after exit. Every complete line decoding as `ProgressEvent` (has `"event"`) → `onEvent` immediately. After exit, the **last non-empty stdout line** must decode as `Envelope<R>` — anything else (no envelope, or trailing garbage after one) yields a synthetic `Envelope(ok: false, error: INTERNAL, message: stderrTail)`. Non-zero exit with a valid final-line envelope trusts the envelope.
+    - `func runMutating<R>(…same signature…) async -> CommandResult<R>` — identical but strictly serialized: one mutating subprocess at a time, FIFO order; `run` (read-only: status/crops) never queues.
+- Concurrency design (binding — the naïve "store a tail task that only awaits the previous tail" version does NOT serialize, because actor reentrancy lets the next `execute` start while the first subprocess runs): `runMutating` wraps the **entire execution** in a `Task`, chains it on the stored previous task, stores the new task as the tail, then awaits it:
+
+```swift
+private var tail: Task<Void, Never> = Task {}
+
+public func runMutating<R: Codable & Sendable & Equatable>(
+    _ resultType: R.Type, args: [String],
+    onEvent: (@Sendable (ProgressEvent) -> Void)? = nil
+) async -> CommandResult<R> {
+    let prior = tail
+    let work = Task { () -> CommandResult<R> in
+        await prior.value                       // FIFO: wait out the whole
+        return await self.execute(resultType,   // previous execution
+                                  args: args, onEvent: onEvent)
+    }
+    tail = Task { _ = await work.value }        // tail spans the FULL execution
+    return await work.value
+}
+```
 
 - [ ] **Step 1: Write the failing tests** (stub scripts stand in for python)
 
@@ -362,64 +382,101 @@ final class PipelineClientTests: XCTestCase {
         echo '{"ok":true,"result":{"stem":"P1","state":"approved","fingerprint":"f"}}'
         """)
         nonisolated(unsafe) var events: [ProgressEvent] = []
-        let env = await client.run(ApproveResult.self, args: ["approve"]) {
+        let result = await client.run(ApproveResult.self, args: ["approve"]) {
             events.append($0)
         }
-        XCTAssertTrue(env.ok)
-        XCTAssertEqual(env.result?.stem, "P1")
+        XCTAssertTrue(result.envelope.ok)
+        XCTAssertEqual(result.envelope.result?.stem, "P1")
         XCTAssertEqual(events.count, 2)
         XCTAssertEqual(events.last?.index, 1)
     }
 
-    func testGarbageOutputSynthesizesInternal() async throws {
+    func testEventsArriveLiveNotAtExit() async throws {
+        let (client, _) = try makeStub("""
+        echo '{"event":"stage","stem":"P1","stage":"render"}'
+        sleep 0.5
+        echo '{"ok":true,"result":{"stem":"P1","state":"approved","fingerprint":"f"}}'
+        """)
+        nonisolated(unsafe) var eventAt: Date?
+        let result = await client.run(ApproveResult.self, args: ["x"]) { _ in
+            if eventAt == nil { eventAt = Date() }
+        }
+        let doneAt = Date()
+        XCTAssertTrue(result.envelope.ok)
+        let leadTime = doneAt.timeIntervalSince(try XCTUnwrap(eventAt))
+        XCTAssertGreaterThan(leadTime, 0.3,
+            "event should arrive while the process still runs, not at exit")
+    }
+
+    func testGarbageOutputSynthesizesInternalWithStderrTail() async throws {
         let (client, _) = try makeStub("""
         echo 'Traceback (most recent call last):'
         echo '  boom' 1>&2
         exit 2
         """)
-        let env = await client.run(StatusSnapshot.self, args: ["status"])
-        XCTAssertFalse(env.ok)
-        XCTAssertEqual(env.error?.code, "INTERNAL")
-        XCTAssertTrue(env.error!.message.contains("boom"))
+        let result = await client.run(StatusSnapshot.self, args: ["status"])
+        XCTAssertFalse(result.envelope.ok)
+        XCTAssertEqual(result.envelope.error?.code, "INTERNAL")
+        XCTAssertTrue(result.stderrTail.contains("boom"))
     }
 
-    func testNonZeroExitWithValidEnvelopeTrustsEnvelope() async throws {
+    func testGarbageAfterEnvelopeIsInternal() async throws {
+        // Contract: the envelope is ALWAYS the last line; trailing garbage
+        // means the stream is corrupt and must not be trusted.
         let (client, _) = try makeStub("""
+        echo '{"ok":true,"result":{"stem":"P1","state":"approved","fingerprint":"f"}}'
+        echo 'stray trailing output'
+        """)
+        let result = await client.run(ApproveResult.self, args: ["x"])
+        XCTAssertEqual(result.envelope.error?.code, "INTERNAL")
+    }
+
+    func testNonZeroExitWithValidEnvelopeTrustsEnvelopeAndKeepsStderr() async throws {
+        let (client, _) = try makeStub("""
+        echo 'detail line' 1>&2
         echo '{"ok":false,"error":{"code":"LOCK_HELD","message":"busy"}}'
         exit 1
         """)
-        let env = await client.run(StatusSnapshot.self, args: ["status"])
-        XCTAssertEqual(env.error?.code, "LOCK_HELD")   // not INTERNAL
+        let result = await client.run(StatusSnapshot.self, args: ["status"])
+        XCTAssertEqual(result.envelope.error?.code, "LOCK_HELD")  // not INTERNAL
+        XCTAssertTrue(result.stderrTail.contains("detail line"))
     }
 
     func testEnvironmentAndCwdPinned() async throws {
         let (client, dir) = try makeStub("""
         echo "{\\"ok\\":true,\\"result\\":{\\"repo\\":\\"$PWD|$PATH\\",\\"toolchain\\":{\\"ok\\":true,\\"failures\\":[]},\\"lock\\":{\\"held\\":false,\\"stale\\":false,\\"pid\\":null},\\"styles\\":[],\\"photos\\":[]}}"
         """)
-        let env = await client.run(StatusSnapshot.self, args: ["status"])
-        let repoField = try XCTUnwrap(env.result?.repo)
+        let result = await client.run(StatusSnapshot.self, args: ["status"])
+        let repoField = try XCTUnwrap(result.envelope.result?.repo)
         XCTAssertTrue(repoField.hasPrefix(dir.resolvingSymlinksInPath().path)
                       || repoField.hasPrefix(dir.path))
         XCTAssertTrue(repoField.hasSuffix(
             "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin"))
     }
 
-    func testMutatingCommandsAreSerialized() async throws {
+    func testMutatingCommandsAreSerializedInOrder() async throws {
+        // Each invocation appends start/end markers; overlap or reordering
+        // across THREE concurrent calls fails the assertion.
         let (client, dir) = try makeStub("""
-        LOCKDIR="$PWD/lockdir"
-        if ! mkdir "$LOCKDIR" 2>/dev/null; then
-          echo '{"ok":false,"error":{"code":"INTERNAL","message":"overlap"}}'
-          exit 1
-        fi
-        sleep 0.2
-        rmdir "$LOCKDIR"
+        LOG="$PWD/order.log"
+        echo "start-$1" >> "$LOG"
+        sleep 0.15
+        echo "end-$1" >> "$LOG"
         echo '{"ok":true,"result":{"stem":"P1","state":"approved","fingerprint":"f"}}'
         """)
-        async let a = client.runMutating(ApproveResult.self, args: ["x"])
-        async let b = client.runMutating(ApproveResult.self, args: ["y"])
-        let (ra, rb) = await (a, b)
-        XCTAssertTrue(ra.ok && rb.ok, "overlap means FIFO serialization failed")
-        _ = dir
+        async let a = client.runMutating(ApproveResult.self, args: ["a"])
+        async let b = client.runMutating(ApproveResult.self, args: ["b"])
+        async let c = client.runMutating(ApproveResult.self, args: ["c"])
+        _ = await (a, b, c)
+        let log = try String(contentsOf: dir.appendingPathComponent("order.log"),
+                             encoding: .utf8)
+            .split(separator: "\n").map(String.init)
+        XCTAssertEqual(log.count, 6)
+        for pair in stride(from: 0, to: 6, by: 2) {
+            XCTAssertTrue(log[pair].hasPrefix("start-"))
+            XCTAssertEqual("end-" + log[pair].dropFirst(6), log[pair + 1],
+                           "executions overlapped: \(log)")
+        }
     }
 }
 ```
@@ -437,10 +494,15 @@ public struct PipelineConfig: Sendable {
     public init(repo: URL, python: URL) { self.repo = repo; self.python = python }
 }
 
+public struct CommandResult<R: Codable & Sendable & Equatable>: Sendable {
+    public let envelope: Envelope<R>
+    public let stderrTail: String
+}
+
 public actor PipelineClient {
     private let config: PipelineConfig
     private let executableOverride: URL?
-    private var mutatingTail: Task<Void, Never>?
+    private var tail: Task<Void, Never> = Task {}
 
     public init(config: PipelineConfig, executableOverride: URL? = nil) {
         self.config = config
@@ -450,29 +512,29 @@ public actor PipelineClient {
     public func run<R: Codable & Sendable & Equatable>(
         _ resultType: R.Type, args: [String],
         onEvent: (@Sendable (ProgressEvent) -> Void)? = nil
-    ) async -> Envelope<R> {
+    ) async -> CommandResult<R> {
         await execute(resultType, args: args, onEvent: onEvent)
     }
 
     public func runMutating<R: Codable & Sendable & Equatable>(
         _ resultType: R.Type, args: [String],
         onEvent: (@Sendable (ProgressEvent) -> Void)? = nil
-    ) async -> Envelope<R> {
-        let previous = mutatingTail
-        let task = Task { [weak self] in
-            _ = await previous?.value
-            _ = self  // keep alive across the await
+    ) async -> CommandResult<R> {
+        // FIFO over the WHOLE execution — see the Interfaces block for why
+        // a tail that only awaits the previous tail does not serialize.
+        let prior = tail
+        let work = Task { () -> CommandResult<R> in
+            await prior.value
+            return await self.execute(resultType, args: args, onEvent: onEvent)
         }
-        mutatingTail = task
-        _ = await previous?.value
-        defer { if mutatingTail == task { mutatingTail = nil } }
-        return await execute(resultType, args: args, onEvent: onEvent)
+        tail = Task { _ = await work.value }
+        return await work.value
     }
 
     private func execute<R: Codable & Sendable & Equatable>(
         _ resultType: R.Type, args: [String],
         onEvent: (@Sendable (ProgressEvent) -> Void)?
-    ) async -> Envelope<R> {
+    ) async -> CommandResult<R> {
         let process = Process()
         if let override = executableOverride {
             process.executableURL = override
@@ -493,34 +555,54 @@ public actor PipelineClient {
         process.standardOutput = out
         process.standardError = err
 
-        do { try process.run() } catch {
-            return synthetic("could not launch: \(error.localizedDescription)")
+        // Live line-parsing: events reach onEvent while the process runs
+        // (renders take minutes; progress buffered until exit is useless).
+        let decoder = ContractDecoder.make()
+        let collector = LineCollector()   // @unchecked Sendable, lock-guarded
+        out.fileHandleForReading.readabilityHandler = { handle in
+            let chunk = handle.availableData
+            for line in collector.completeLines(appending: chunk) {
+                if line.contains("\"event\""),
+                   let event = try? decoder.decode(ProgressEvent.self,
+                                                   from: Data(line.utf8)) {
+                    onEvent?(event)
+                }
+            }
         }
-        // Drain fully; small outputs never deadlock, large ones need the reads
-        // to happen off the termination wait.
-        async let outData = out.fileHandleForReading.readToEndAsync()
-        async let errData = err.fileHandleForReading.readToEndAsync()
+        let errCollector = LineCollector()
+        err.fileHandleForReading.readabilityHandler = { handle in
+            _ = errCollector.completeLines(appending: handle.availableData)
+        }
+
+        do { try process.run() } catch {
+            return CommandResult(
+                envelope: synthetic("could not launch: \(error.localizedDescription)"),
+                stderrTail: "")
+        }
         await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
             process.terminationHandler = { _ in c.resume() }
             if !process.isRunning { c.resume() }   // already exited
         }
-        let stdout = String(decoding: await outData, as: UTF8.self)
-        let stderr = String(decoding: await errData, as: UTF8.self)
+        out.fileHandleForReading.readabilityHandler = nil
+        err.fileHandleForReading.readabilityHandler = nil
+        collector.finish(out.fileHandleForReading)   // drain any remainder
+        errCollector.finish(err.fileHandleForReading)
 
-        let decoder = ContractDecoder.make()
-        var envelope: Envelope<R>?
-        for line in stdout.split(separator: "\n", omittingEmptySubsequences: true) {
-            let data = Data(line.utf8)
-            if line.contains("\"event\""),
-               let event = try? decoder.decode(ProgressEvent.self, from: data) {
-                onEvent?(event)
-            } else if let env = try? decoder.decode(Envelope<R>.self, from: data) {
-                envelope = env       // last decodable envelope wins (contract: last line)
-            }
+        let stderrTail = errCollector.allLines.suffix(50).joined(separator: "\n")
+        // Contract: the final envelope is the LAST non-empty stdout line.
+        // An earlier envelope followed by anything else is a corrupt stream.
+        guard let lastLine = collector.allLines.last(where: {
+                  !$0.trimmingCharacters(in: .whitespaces).isEmpty
+              }),
+              let envelope = try? decoder.decode(Envelope<R>.self,
+                                                 from: Data(lastLine.utf8))
+        else {
+            return CommandResult(
+                envelope: synthetic(stderrTail.isEmpty ? "no envelope on stdout"
+                                                       : stderrTail),
+                stderrTail: stderrTail)
         }
-        if let envelope { return envelope }
-        let tail = stderr.split(separator: "\n").suffix(50).joined(separator: "\n")
-        return synthetic(tail.isEmpty ? "no envelope on stdout" : tail)
+        return CommandResult(envelope: envelope, stderrTail: stderrTail)
     }
 
     private func synthetic<R>(_ message: String) -> Envelope<R> {
@@ -529,19 +611,15 @@ public actor PipelineClient {
     }
 }
 
-extension FileHandle {
-    func readToEndAsync() async -> Data {
-        await withCheckedContinuation { continuation in
-            DispatchQueue.global().async {
-                let data = (try? self.readToEnd()) ?? Data()
-                continuation.resume(returning: data)
-            }
-        }
-    }
-}
+/// Lock-guarded incremental line splitter shared by the readability handlers
+/// (they run on non-actor threads). `completeLines(appending:)` returns newly
+/// completed lines and retains the unterminated remainder; `allLines` is the
+/// full ordered history; `finish(_:)` reads any remaining data and flushes
+/// the final partial line.
+final class LineCollector: @unchecked Sendable { /* NSLock + buffer; ~30 lines */ }
 ```
 
-Implementation note: the double-await in `runMutating` above is the intent (chain then await); simplify during implementation if the serialization test stays green — the test with the `mkdir` lock is the arbiter. If `terminationHandler` set after exit proves racy, use `process.waitUntilExit()` inside a `Task.detached` with a continuation instead.
+`LineCollector` is small enough to write directly from that contract: `private let lock = NSLock()`, `private var buffer = ""`, `private(set) var lines: [String]`; `completeLines` appends decoded UTF-8, splits on `"\n"`, keeps the last fragment in `buffer`, appends completed lines to `lines` and returns them; `finish` reads `readDataToEndOfFile()`, appends, then flushes a non-empty `buffer` as a final line. Its own unit test: feed chunks that split a line mid-UTF-8 boundary-safe string (`"ab"`, `"c\nde"`, `"f\n"`) → lines `["abc", "def"]`.
 
 - [ ] **Step 4: Run to verify pass** — `swift test --package-path app/PrintworksCore` → PASS.
 
@@ -563,6 +641,8 @@ git commit -m "feat(app): PipelineClient actor — NDJSON streaming, env pinning
 **Interfaces:**
 - Produces:
   - `CropMath.nudged(_ window: CropWindow, dx: Double, dy: Double) -> CropWindow` — translates by (dx, dy) in normalized units, clamps x to [0, 1−w] and y to [0, 1−h], w/h/source unchanged (aspect is locked by construction).
+  - `CropMath.aspectFitRect(image: CGSize, container: CGSize) -> CGRect` — the rectangle the image actually occupies when aspect-fit inside the container (centered, letterboxed). Task 9's overlay MUST draw and normalize drags against this rect, not the whole view, or windows misalign whenever the canvas letterboxes.
+  - `RepoPaths.resolve(_ relative: String, repo: URL) -> URL` — repo-relative contract paths (e.g. `previews/P1_natural_preview.jpg`) to absolute file URLs; passes absolute inputs through unchanged. All view-layer image loading goes through this.
   - `final class Debouncer: @unchecked Sendable` — `init(delay: Duration)`, `func schedule(_ action: @escaping @Sendable () async -> Void)` (cancels any pending action), `func flush() async` (runs a pending action immediately — the approve path), `var hasPending: Bool`.
 
 - [ ] **Step 1: Write the failing tests**
@@ -581,6 +661,33 @@ final class CropMathTests: XCTestCase {
         XCTAssertEqual(pinned.x, 0)
         XCTAssertEqual(pinned.y, 0)
         XCTAssertEqual(pinned.w, 0.75)                   // size untouched
+    }
+
+    func testAspectFitRectLetterboxesAndPillarboxes() {
+        // 4:3 image in a wide container → pillarboxed, full height, centered
+        let wide = CropMath.aspectFitRect(image: CGSize(width: 4000, height: 3000),
+                                          container: CGSize(width: 1000, height: 600))
+        XCTAssertEqual(wide.height, 600)
+        XCTAssertEqual(wide.width, 800)
+        XCTAssertEqual(wide.minX, 100)
+        XCTAssertEqual(wide.minY, 0)
+        // 4:3 image in a tall container → letterboxed, full width, centered
+        let tall = CropMath.aspectFitRect(image: CGSize(width: 4000, height: 3000),
+                                          container: CGSize(width: 400, height: 600))
+        XCTAssertEqual(tall.width, 400)
+        XCTAssertEqual(tall.height, 300)
+        XCTAssertEqual(tall.minY, 150)
+    }
+}
+
+final class RepoPathsTests: XCTestCase {
+    func testResolvesRelativeAndPassesThroughAbsolute() {
+        let repo = URL(fileURLWithPath: "/Users/x/photo-edits")
+        XCTAssertEqual(
+            RepoPaths.resolve("previews/P1_natural_preview.jpg", repo: repo).path,
+            "/Users/x/photo-edits/previews/P1_natural_preview.jpg")
+        XCTAssertEqual(RepoPaths.resolve("/tmp/abs.jpg", repo: repo).path,
+                       "/tmp/abs.jpg")
     }
 }
 
@@ -610,12 +717,30 @@ final class DebouncerTests: XCTestCase {
 
 ```swift
 // CropMath.swift
+import Foundation
+
 public enum CropMath {
     public static func nudged(_ window: CropWindow, dx: Double, dy: Double)
     -> CropWindow {
         CropWindow(x: min(max(window.x + dx, 0), 1 - window.w),
                    y: min(max(window.y + dy, 0), 1 - window.h),
                    w: window.w, h: window.h, source: window.source)
+    }
+
+    public static func aspectFitRect(image: CGSize, container: CGSize) -> CGRect {
+        let scale = min(container.width / image.width,
+                        container.height / image.height)
+        let size = CGSize(width: image.width * scale, height: image.height * scale)
+        return CGRect(x: (container.width - size.width) / 2,
+                      y: (container.height - size.height) / 2,
+                      width: size.width, height: size.height)
+    }
+}
+
+public enum RepoPaths {
+    public static func resolve(_ relative: String, repo: URL) -> URL {
+        relative.hasPrefix("/") ? URL(fileURLWithPath: relative)
+                                : repo.appendingPathComponent(relative)
     }
 }
 ```
@@ -686,18 +811,24 @@ git commit -m "feat(app): crop nudge math + cancellable debouncer"
 **Interfaces:**
 - Consumes: `PipelineClient` (behind a protocol so tests inject a fake), Contract types, `Debouncer`.
 - Produces:
-  - `protocol PipelineRunning: Sendable` — `func status() async -> Envelope<StatusSnapshot>`; `func mutate<R>(_ type: R.Type, args: [String], onEvent: (@Sendable (ProgressEvent) -> Void)?) async -> Envelope<R>`; `func crops(stem: String) async -> Envelope<CropsResult>`. `PipelineClient` gets a conforming extension mapping to `run`/`runMutating` with the canonical arg spellings.
+  - `protocol PipelineRunning: Sendable` — `func status() async -> CommandResult<StatusSnapshot>`; `func mutate<R>(_ type: R.Type, args: [String], onEvent: (@Sendable (ProgressEvent) -> Void)?) async -> CommandResult<R>`; `func crops(stem: String) async -> CommandResult<CropsResult>`. `PipelineClient` gets a conforming extension mapping to `run`/`runMutating` with the canonical arg spellings. The model stores each failure's `stderrTail` alongside `banner` (`bannerDetails: String?`) for the Show Details disclosure.
+  - **Result-before-error rule (binding):** on any `ok: false` envelope with a non-nil `result` (aggregate `run`/`ingest`), the model applies the result's successes (progress records, notifications for `published` entries) BEFORE setting `banner`; every action's exit path — success or failure — ends with `refresh()`.
   - `struct ReviewDraft: Sendable { stem: String; baseRevision: String; checks: [String: Bool]; note: String; cropNudges: [String: CropWindow]; isStale: Bool }` — check keys: `"eyes_open"`, `"expressions_natural"`, `"no_blinks_in_crops"`.
   - `@Observable @MainActor final class AppModel`:
-    - `init(client: PipelineRunning, sliderDebounce: Duration = .seconds(2))`
-    - Published state: `snapshot: StatusSnapshot?`, `drafts: [String: ReviewDraft]`, `banner: PipelineErrorInfo?`, `busyExternally: Bool`, `activeCommand: String?` (nil = idle), `renderProgress: [String: ProgressEvent]` (latest per stem), `selectedStem: String?`, `selectedStyle: String` (default `"natural"`).
+    - `init(client: PipelineRunning, repo: URL, sliderDebounce: Duration = .seconds(2))` — `repo` is needed for `pendingInputFiles` (Task 10) and repo-relative path resolution; exposed as `let repo: URL`.
+    - Published state: `snapshot: StatusSnapshot?`, `drafts: [String: ReviewDraft]`, `banner: PipelineErrorInfo?`, `bannerDetails: String?` (stderr tail), `busyExternally: Bool`, `activeCommand: String?` (nil = idle), `activeStem: String?` (the stem the active command targets, for §6.1 deferred reconcile), `renderProgress: [String: ProgressEvent]` (latest per stem), `selectedStem: String?`, `selectedStyle: String` (default `"natural"`), `selectedDeliveryId: String??` (`.none` = browse all; `.some(nil)` = the "Earlier" group) — consumed by Task 7's sidebar; `lastPublished: [PublishedPhoto]` (successes from the most recent run result — applied even on `PARTIAL_FAILURE`, drives Task 10's notifications).
+    - Slider debouncing is keyed **per (stem, style)**: `private var debouncers: [String: Debouncer]` keyed `"\(stem)|\(style)"`, each with its own pending temperature/exposure accumulator — switching photo or style must never cancel or merge another pair's pending edit. `flushPendingAdjustments(stem:) async` flushes every debouncer for that stem (all styles) — approve calls it.
+    - `func reprocess(stem: String) async` / `func reprocessAll() async` — `run --stem S --force --json` / `run --force --json` through the standard action cycle (consumed by Task 7's toolbar; test asserts args).
+    - `func retryBannerAction() async` — re-runs the last failed action for `RENDER_FAILED`/`VERIFY_FAILED`/`INTERNAL` banners (the model remembers the last mutating args); `.openSettings` and `.reReview` are signaled to views via `bannerAction: BannerAction?` (`enum BannerAction { case retry, openSettings, reReview }` derived from the error code per spec §7).
     - `func refresh() async` — `client.status()`; on ok: store snapshot, `busyExternally = snapshot.lock.held && activeCommand == nil`, reconcile drafts (below); on error: `banner = error`.
-    - Draft reconcile: for each draft, if the photo's `reviewRevision != draft.baseRevision` and no rebase pair matched since the last refresh → `isStale = true` (contents preserved). While `activeCommand != nil` and the command targets that stem, defer reconcile (spec §6.1).
+    - Draft reconcile: for each draft, if the photo's `reviewRevision != draft.baseRevision` and no rebase pair matched since the last refresh → `isStale = true` (contents preserved). While `activeCommand != nil && activeStem == stem`, defer reconcile for that stem (spec §6.1); reconcile once at the command's terminal refresh.
+    - **One shared rebase path** used by BOTH `applyAdjust` and `rerenderPreview` (their results carry the same `reviewRevisionBefore/After` pair): `rebase(stem:, before:, after:)` — rebases iff `draft.baseRevision == before` (→ `baseRevision = after`), else marks stale.
+    - `func reReview(stem: String)` — the stale-banner action: adopts the photo's current `reviewRevision` as the draft's `baseRevision`, **resets all three checks to false** (the user must re-verify against the fresh pixels), clears `isStale`, keeps the note and crop nudges.
     - `func startDraft(stem: String)` — creates a draft keyed to the photo's current `reviewRevision`, all checks false.
     - `func canApprove(stem: String) -> Bool` — draft exists, all three checks true, `!isStale`, photo `stalePreviews.isEmpty`, `activeCommand == nil`, `!busyExternally`.
     - `func setSlider(stem: String, style: String, temperature: Double?, exposure: Double?)` — stores pending values and debounces `applyAdjust`.
     - `func applyAdjust(stem: String, style: String, temperature: Double?, exposure: Double?) async` — `mutate(AdjustResult…)`; on ok, rebase the stem's draft iff `draft.baseRevision == result.reviewRevisionBefore` → `baseRevision = result.reviewRevisionAfter`; else mark stale. Then `refresh()`.
-    - `func approve(stem: String) async` — flush the debouncer; build the review-file JSON (audit strings below, crops = `crops` from status merged with `cropNudges`, `expected_review_revision` = draft.baseRevision); write to `FileManager.default.temporaryDirectory`; `mutate(ApproveResult…, args: ["approve", stem, "--review-file", path, "--json"])`; on ok chain `mutate(RunResult…, args: ["run", "--stem", stem, "--json"])` feeding `renderProgress`; delete temp file; `refresh()`; on `STALE_REVIEW` → banner + mark draft stale.
+    - `func approve(stem: String) async` — flush the debouncer; build the review-file JSON (audit strings below, crops = `crops` from status merged with `cropNudges`, `expected_review_revision` = draft.baseRevision); write to `FileManager.default.temporaryDirectory`; `mutate(ApproveResult…, args: ["approve", "--stem", stem, "--review-file", path, "--json"])`; on ok chain `mutate(RunResult…, args: ["run", "--stem", stem, "--json"])` feeding `renderProgress`; delete temp file; `refresh()`; on `STALE_REVIEW` → banner + mark draft stale.
     - Audit string mapping: `"eyes open — all: pass"`, `"expressions natural: pass"`, `"no blinks in crops: pass"`, plus `"note: \(note)"` when non-empty — only checked items make `canApprove` true, so all three always serialize as `: pass`.
     - `func ingest(paths: [String]) async` — `mutate(IngestResult…, args: ["ingest", "--from"] + paths + ["--delivery-id", UUID().uuidString, "--json"])`, then `mutate(RunResult…, ["run", "--json"])`, then refresh; surfaces skips/conflicts via `banner` when non-empty (message joined).
     - `func deliveries() -> [(id: String?, photos: [PhotoStatus])]` — group by `deliveryId`, `nil` last as "Earlier", newest `ingestedAt` first.
@@ -709,21 +840,26 @@ import XCTest
 @testable import PrintworksCore
 
 /// Scriptable fake: every call pops the next canned envelope.
+/// (Envelopes are wrapped in CommandResult with an empty stderrTail.)
 final class FakeClient: PipelineRunning, @unchecked Sendable {
     var statusQueue: [Envelope<StatusSnapshot>] = []
     var mutateLog: [[String]] = []
     var mutateHandler: ((_ args: [String]) -> Any)!
 
-    func status() async -> Envelope<StatusSnapshot> { statusQueue.removeFirst() }
-    func crops(stem: String) async -> Envelope<CropsResult> {
-        Envelope(ok: true, result: CropsResult(
-            stem: stem, basis: "faces", windows: [:]), error: nil)
+    func status() async -> CommandResult<StatusSnapshot> {
+        CommandResult(envelope: statusQueue.removeFirst(), stderrTail: "")
+    }
+    func crops(stem: String) async -> CommandResult<CropsResult> {
+        CommandResult(envelope: Envelope(ok: true, result: CropsResult(
+            stem: stem, basis: "faces", windows: [:]), error: nil),
+            stderrTail: "")
     }
     func mutate<R>(_ type: R.Type, args: [String],
                    onEvent: (@Sendable (ProgressEvent) -> Void)?) async
-    -> Envelope<R> {
+    -> CommandResult<R> {
         mutateLog.append(args)
-        return mutateHandler(args) as! Envelope<R>
+        return CommandResult(envelope: mutateHandler(args) as! Envelope<R>,
+                             stderrTail: "")
     }
 }
 
@@ -752,7 +888,7 @@ final class AppModelTests: XCTestCase {
         let fake = FakeClient()
         fake.statusQueue = [snap([photo(stem: "P1", revision: "r1")]),
                             snap([photo(stem: "P1", revision: "r2")])]
-        let model = AppModel(client: fake, sliderDebounce: .zero)
+        let model = AppModel(client: fake, repo: URL(fileURLWithPath: "/r"), sliderDebounce: .zero)
         await model.refresh()
         model.startDraft(stem: "P1")
         await model.refresh()                       // external change r1→r2
@@ -771,7 +907,7 @@ final class AppModelTests: XCTestCase {
                 reviewRevisionBefore: "r1", reviewRevisionAfter: "r2"),
                 error: nil)
         }
-        let model = AppModel(client: fake, sliderDebounce: .zero)
+        let model = AppModel(client: fake, repo: URL(fileURLWithPath: "/r"), sliderDebounce: .zero)
         await model.refresh()
         model.startDraft(stem: "P1")
         await model.applyAdjust(stem: "P1", style: "natural",
@@ -783,7 +919,7 @@ final class AppModelTests: XCTestCase {
     func testCanApproveGates() async {
         let fake = FakeClient()
         fake.statusQueue = [snap([photo(stem: "P1", revision: "r1")])]
-        let model = AppModel(client: fake, sliderDebounce: .zero)
+        let model = AppModel(client: fake, repo: URL(fileURLWithPath: "/r"), sliderDebounce: .zero)
         await model.refresh()
         model.startDraft(stem: "P1")
         XCTAssertFalse(model.canApprove(stem: "P1"))     // unchecked boxes
@@ -799,7 +935,7 @@ final class AppModelTests: XCTestCase {
         let fake = FakeClient()
         fake.statusQueue = [snap([photo(stem: "P1", revision: "r1",
                                         stale: ["filmic"])])]
-        let model = AppModel(client: fake, sliderDebounce: .zero)
+        let model = AppModel(client: fake, repo: URL(fileURLWithPath: "/r"), sliderDebounce: .zero)
         await model.refresh()
         model.startDraft(stem: "P1")
         for key in ["eyes_open", "expressions_natural", "no_blinks_in_crops"] {
@@ -811,7 +947,7 @@ final class AppModelTests: XCTestCase {
     func testBusyPillFromExternalLock() async {
         let fake = FakeClient()
         fake.statusQueue = [snap([], lockHeld: true)]
-        let model = AppModel(client: fake, sliderDebounce: .zero)
+        let model = AppModel(client: fake, repo: URL(fileURLWithPath: "/r"), sliderDebounce: .zero)
         await model.refresh()
         XCTAssertTrue(model.busyExternally)
     }
@@ -837,7 +973,7 @@ final class AppModelTests: XCTestCase {
                                            artifactCount: 29)],
                 advanced: [], failed: []), error: nil) as Any
         }
-        let model = AppModel(client: fake, sliderDebounce: .zero)
+        let model = AppModel(client: fake, repo: URL(fileURLWithPath: "/r"), sliderDebounce: .zero)
         await model.refresh()
         model.startDraft(stem: "P1")
         for key in ["eyes_open", "expressions_natural", "no_blinks_in_crops"] {
@@ -849,6 +985,77 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(body["expected_review_revision"] as? String, "r1")
         let audit = try XCTUnwrap(body["expression_audit"] as? [String])
         XCTAssertTrue(audit.contains("eyes open — all: pass"))
+    }
+
+    func testDebouncersAreKeyedPerStemAndStyle() async {
+        let fake = FakeClient()
+        fake.statusQueue = Array(repeating: snap([photo(stem: "P1", revision: "r1"),
+                                                  photo(stem: "P2", revision: "r1")]),
+                                 count: 4)
+        fake.mutateHandler = { args in
+            Envelope(ok: true, result: AdjustResult(
+                stem: args[args.firstIndex(of: "--stem")! + 1],
+                style: args[args.firstIndex(of: "--style")! + 1],
+                preview: "p.jpg",
+                temperature: Control(value: 5600, source: "sidecar"),
+                exposure: Control(value: nil, source: "camera"),
+                reviewRevisionBefore: "r1", reviewRevisionAfter: "r1"),
+                error: nil)
+        }
+        let model = AppModel(client: fake, repo: URL(fileURLWithPath: "/r"),
+                             sliderDebounce: .zero)
+        await model.refresh()
+        // Two different (stem, style) pairs scheduled back-to-back: BOTH fire.
+        model.setSlider(stem: "P1", style: "natural", temperature: 5600,
+                        exposure: nil)
+        model.setSlider(stem: "P2", style: "bw", temperature: 5400,
+                        exposure: nil)
+        await model.flushPendingAdjustments(stem: "P1")
+        await model.flushPendingAdjustments(stem: "P2")
+        let adjustTargets = fake.mutateLog.filter { $0.first == "adjust" }
+            .map { "\($0[$0.firstIndex(of: "--stem")! + 1])|\($0[$0.firstIndex(of: "--style")! + 1])" }
+        XCTAssertEqual(Set(adjustTargets), ["P1|natural", "P2|bw"])
+    }
+
+    func testReReviewAdoptsRevisionAndResetsChecks() async {
+        let fake = FakeClient()
+        fake.statusQueue = [snap([photo(stem: "P1", revision: "r1")]),
+                            snap([photo(stem: "P1", revision: "r2")])]
+        let model = AppModel(client: fake, repo: URL(fileURLWithPath: "/r"),
+                             sliderDebounce: .zero)
+        await model.refresh()
+        model.startDraft(stem: "P1")
+        for key in ["eyes_open", "expressions_natural", "no_blinks_in_crops"] {
+            model.drafts["P1"]!.checks[key] = true
+        }
+        await model.refresh()                       // r1 → r2: stale
+        XCTAssertTrue(model.drafts["P1"]!.isStale)
+        model.reReview(stem: "P1")
+        let draft = model.drafts["P1"]!
+        XCTAssertFalse(draft.isStale)
+        XCTAssertEqual(draft.baseRevision, "r2")
+        XCTAssertTrue(draft.checks.values.allSatisfy { $0 == false })
+    }
+
+    func testPartialFailureAppliesResultBeforeBanner() async {
+        let fake = FakeClient()
+        fake.statusQueue = [snap([photo(stem: "P1", revision: "r1")]),
+                            snap([photo(stem: "P1", revision: "r1")])]
+        fake.mutateHandler = { _ in
+            Envelope(ok: false, result: RunResult(
+                published: [PublishedPhoto(stem: "P1", version: "v004",
+                                           artifactCount: 29)],
+                advanced: [], failed: [StemFailure(
+                    stem: "P2", code: "VERIFY_FAILED", message: "bad")]),
+                error: PipelineErrorInfo(code: "PARTIAL_FAILURE",
+                                         message: "1 of 2 failed"))
+        }
+        let model = AppModel(client: fake, repo: URL(fileURLWithPath: "/r"),
+                             sliderDebounce: .zero)
+        await model.refresh()
+        await model.reprocessAll()
+        XCTAssertEqual(model.lastPublished.map(\.stem), ["P1"])  // result first
+        XCTAssertEqual(model.banner?.code, "PARTIAL_FAILURE")    // then error
     }
 }
 ```
@@ -874,7 +1081,8 @@ git commit -m "feat(app): AppModel — snapshot state, draft lifecycle, approve 
 
 **Interfaces:**
 - Produces:
-  - `final class RepoWatcher: @unchecked Sendable` — `init(repo: URL, coalesce: Duration = .milliseconds(500))`; `var changes: AsyncStream<Void>` (one element per coalesced burst); `func start()`, `func stop()`. Watches `Input previews sidecars recipes config Output run` under the repo via per-directory `DispatchSource.makeFileSystemObjectSource(fileDescriptor:eventMask:[.write, .rename, .delete])` (kqueue — directory writes fire on entry create/delete/rename; sufficient here because every pipeline mutation creates/replaces files).
+  - `final class RepoWatcher: @unchecked Sendable` — `init(repo: URL, coalesce: Duration = .milliseconds(500))`; `var changes: AsyncStream<Void>` (one element per coalesced burst); `func start()`, `func stop()`. kqueue directory sources are **non-recursive**, so the watched set explicitly enumerates every review-input directory: `Input previews sidecars recipes config config/styles config/lab-profiles config/rawtherapee-seed Output Output/photos run` (each via `DispatchSource.makeFileSystemObjectSource(fileDescriptor:eventMask:[.write, .rename, .delete])`; a directory that doesn't exist yet is skipped and retried on the next `start()`/poll). A `config/styles/*.pp3` edit or a new `Output/photos/<stem>` publish must produce an emission — both are tested.
+  - **Refresh gate (AppModel-side, spec §7 watcher storms):** `AppModel.refresh()` is guarded so at most one `status` call is in flight; a change arriving mid-refresh sets a `trailingRefresh` flag that triggers exactly one follow-up refresh when the current one completes. Unit-tested in `AppModelTests` with a slow fake client: 5 rapid `refresh()` calls → exactly 2 client `status()` invocations (one active + one trailing).
   - `startPolling(interval: Duration = .seconds(5))` / `stopPolling()` — the busy-pill fallback; emits a change per tick while active. `AppModel` (Task 7 wiring) starts polling when `busyExternally`, stops otherwise.
 
 - [ ] **Step 1: Write the failing tests**
@@ -887,8 +1095,9 @@ final class RepoWatcherTests: XCTestCase {
     func testCoalescedChangeEmission() async throws {
         let repo = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
-        for dir in ["Input", "previews", "sidecars", "recipes", "config",
-                    "Output", "run"] {
+        for dir in ["Input", "previews", "sidecars", "recipes",
+                    "config/styles", "config/lab-profiles",
+                    "config/rawtherapee-seed", "Output/photos", "run"] {
             try FileManager.default.createDirectory(
                 at: repo.appendingPathComponent(dir),
                 withIntermediateDirectories: true)
@@ -912,6 +1121,22 @@ final class RepoWatcherTests: XCTestCase {
             to: repo.appendingPathComponent("sidecars/P1_bw.pp3"))
         let second = await withTimeout(seconds: 2) { await iterator.next() }
         XCTAssertNotNil(second)
+
+        // Nested review-input dirs are covered (kqueue is non-recursive,
+        // so these have their own sources): a style edit must emit.
+        try await Task.sleep(for: .milliseconds(300))
+        try Data("[Exposure]\n".utf8).write(
+            to: repo.appendingPathComponent("config/styles/natural.pp3"))
+        let third = await withTimeout(seconds: 2) { await iterator.next() }
+        XCTAssertNotNil(third)
+
+        // A publish (new directory under Output/photos) must emit.
+        try await Task.sleep(for: .milliseconds(300))
+        try FileManager.default.createDirectory(
+            at: repo.appendingPathComponent("Output/photos/P1"),
+            withIntermediateDirectories: true)
+        let fourth = await withTimeout(seconds: 2) { await iterator.next() }
+        XCTAssertNotNil(fourth)
     }
 }
 
@@ -985,7 +1210,7 @@ struct MainWindow: View {
 }
 ```
 
-Status-dot mapping (single helper used by sidebar + grid badges): `verified`→`Theme.statusPublished`/"Published", `preview_ready`/`review_required`→`Theme.statusReview`/"Needs review", `approved`/`rendered`→accent/"Rendering", else `Theme.statusIngested`/"Ingested". Grid cards: `LazyVGrid(columns: [GridItem(.adaptive(minimum: 260))])`, preview thumb via `NSImage(contentsOfFile:)` in an `.id(photo.previewHashes["natural"] ?? "")`-keyed view (content-hash cache key), badge top-left, `ProgressView(value:)` overlay when `model.renderProgress[stem]` present, `.onTapGesture(count: 2)` → openReview.
+Status-dot mapping (single helper used by sidebar + grid badges): `verified`→`Theme.statusPublished`/"Published", `preview_ready`/`review_required`→`Theme.statusReview`/"Needs review", `approved`/`rendered`→accent/"Rendering", else `Theme.statusIngested`/"Ingested". Grid cards: `LazyVGrid(columns: [GridItem(.adaptive(minimum: 260))])`; every image load resolves the contract's repo-relative path via `RepoPaths.resolve(path, repo: model.repo)` then `NSImage(contentsOf:)`, inside an `.id(photo.previewHashes["natural"] ?? "")`-keyed view (content-hash cache key — never URL/mtime caching); badge top-left, `ProgressView(value:)` overlay when `model.renderProgress[stem]` present, `.onTapGesture(count: 2)` → openReview. Sidebar delivery rows drive `model.selectedDeliveryId`; the toolbar Reprocess menu calls `model.reprocess(stem:)`/`reprocessAll()` (both exist from Task 5 — views add no model logic).
 
 - [ ] **Step 1: Implement the four files** per the skeleton (no unit tests — logic already covered in core; the gate is the build).
 - [ ] **Step 2: Build** — `xcodegen generate` (if project.yml changed) + `xcodebuild … build` → BUILD SUCCEEDED. Also `swift test --package-path app/PrintworksCore` still green.
@@ -1010,7 +1235,7 @@ git commit -m "feat(app): main window shell — sidebar, grid, drop target, busy
 - Produces: `ReviewScreen(model:)` — large canvas on `Theme.canvas` showing the selected style's preview (`NSImage(contentsOfFile:)`, `.id(previewHash)` so a content-hash change forces reload; never `AsyncImage`/URL cache); segmented style control bound to `model.selectedStyle`; keyboard: `⌘1`–`⌘4` (`.keyboardShortcut("1", modifiers: .command)` on hidden buttons) switch style, `space` toggles `CompareView`, `c` toggles the crop overlay (Task 9), `←`/`→` move `model.selectedStem` through the open delivery; per-style "preview out of date — re-render" chip when the style ∈ `stalePreviews` → `model.rerenderPreview(stem:style:)` (`preview <stem> <style> --json` via `mutate`); "rendering preview…" shimmer overlay while that command is `activeCommand`.
 - `CompareView(model:)` — 2×2 grid of the four styles' previews with labels; click a panel → sets `selectedStyle`, dismisses compare.
 
-- [ ] **Step 1: Implement** both views; add `rerenderPreview` to `AppModel` **with a unit test first** in `AppModelTests` (asserts args `["preview", "P1", "filmic", "--json"]` and a refresh after).
+- [ ] **Step 1: Implement** both views; add `rerenderPreview` to `AppModel` **with unit tests first** in `AppModelTests`: (a) asserts args `["preview", "--stem", "P1", "--style", "filmic", "--json"]` and a refresh after; (b) asserts the result's `reviewRevisionBefore/After` pair flows through the SAME shared `rebase(stem:before:after:)` path as `applyAdjust` — a matching pair rebases the draft, a non-matching one marks it stale. Canvas image loading resolves via `RepoPaths.resolve` + content-hash `.id` keying, as in Task 7.
 - [ ] **Step 2: Gate** — `swift test --package-path app/PrintworksCore` PASS + `xcodebuild … build` SUCCEEDED.
 - [ ] **Step 3: Manual smoke + screenshot** — review P1036163: style switching updates the canvas; space shows 4-up compare.
 - [ ] **Step 4: Commit**
@@ -1031,7 +1256,7 @@ git commit -m "feat(app): review screen — canvas, style switching, compare mod
 **Interfaces:**
 - Consumes: `CropMath.nudged`, `AppModel.drafts[...].cropNudges`, `model.crops(stem:)` (new: calls the `crops` command, caches result per stem until revision moves — unit-tested).
 - Produces:
-  - `CropOverlayView(windows:onNudge:)` — draws the 8×10 window solid amber, 5×7 dashed, over the canvas in normalized→view coordinate mapping (`GeometryReader`); `DragGesture` translates via `CropMath.nudged` (aspect/size locked by construction) and reports the final window through `onNudge(cropName, window)` → stored in the draft's `cropNudges`; a small `basis` chip ("centered fallback" / "detection failed — centered") when the crops result's basis ≠ "faces"/"persisted".
+  - `CropOverlayView(windows:imageSize:onNudge:)` — draws the 8×10 window solid amber, 5×7 dashed, over the canvas. Coordinate mapping goes through `CropMath.aspectFitRect(image:container:)` — windows are drawn inside, and drag deltas normalized against, the rectangle the image ACTUALLY occupies (letterboxing means the `GeometryReader` frame is wrong for both). `DragGesture` translates via `CropMath.nudged` (aspect/size locked by construction) and reports the final window through `onNudge(cropName, window)` → stored in the draft's `cropNudges`; a small `basis` chip ("centered fallback" / "detection failed — centered") when the crops result's basis ≠ "faces"/"persisted".
   - `InspectorView(model:)` — fixed 260 pt column on `Theme.panel`: ADJUST section (Warmth slider 3000–9000 K showing "As shot" when `Control.source == "camera"` and untouched; Exposure −1.00…+1.00; both call `model.setSlider` on change — the 2 s debounce and `adjust` composition are already model-tested; Reset button → `model.resetAdjust(stem:style:)` issuing `--reset`, test-first); CROPS section (per-crop status line + "nudged" tag); EXPRESSION AUDIT checklist (three `Toggle`s + note `TextField` bound to the draft); stale-draft banner ("This photo changed on disk — re-check before approving" + Re-review button clearing `isStale` after re-confirmation per spec §6.1); Approve button (`Theme.accent`, enabled by `model.canApprove`, running `model.approve`).
 
 - [ ] **Step 1: Model additions test-first** — `AppModelTests`: `setSlider` composes `adjust --stem P1 --style natural --temperature 5600 --json` (only changed control); `resetAdjust` sends `--reset`; `crops(stem:)` sends `["crops", "--stem", "P1", "--json"]` once and caches until `reviewRevision` changes.
@@ -1055,7 +1280,7 @@ git commit -m "feat(app): crop overlay drag-nudge + inspector (sliders, audit, a
 
 **Interfaces:**
 - Produces:
-  - Settings: two fields (repo path default `~/photo-edits`, python path default `<repo>/.venv/bin/python`) stored in `UserDefaults` keys `repoPath`/`pythonPath`; Validate button runs `status --json` with candidate values via a throwaway `PipelineClient` and shows ok/error inline; saving rebuilds the model's client + watcher.
+  - Settings: two fields (repo path default `~/photo-edits`, python path default `<repo>/.venv/bin/python`) stored in `UserDefaults` keys `repoPath`/`pythonPath`. Paths are tilde-expanded (`NSString.expandingTildeInPath`) before any use — `URL(fileURLWithPath: "~/…")` does NOT expand. Validation is **live** (spec §5.5): field changes debounce (~600 ms) into a `status --json` probe via a throwaway `PipelineClient`, showing ok/error inline; Save enables only while the current pair validates; saving rebuilds the model's client + watcher.
   - `AppModel.pendingInputFiles: [String]` — computed on refresh by listing `Input/*.rw2|*.RW2` whose stems are absent from the snapshot (test with a temp dir set as repo); `IngestBanner` renders "N new RAW files — Ingest now?" → `model.ingestPending()` (plain `ingest --delivery-id <uuid> --json` + `run --json`, test-first).
   - Notification on publish: after an approve-chain or reprocess `RunResult` containing `published` entries, post `UNUserNotificationCenter` notification "P1036163 published (v004, 29 files)" (request authorization once at first use; guard `#if !DEBUG`-free — personal app, always attempt; failure to authorize is silently ignored).
 
@@ -1079,7 +1304,7 @@ git commit -m "feat(app): ingest banner, settings sheet with validation, publish
 
 **Interfaces:**
 - Produces:
-  - `SmokeTests` — builds a temp fixture repo (dirs from `tests/conftest.py` list; two fake photos: recipes + tiny preview JPG bytes) and a stub `python` shell script that answers `status --json` from a canned `StatusSnapshot` JSON (with `stale_previews: []`), `adjust`/`approve`/`run` from canned envelopes; drives the REAL `PipelineClient` + `AppModel` end-to-end: refresh → startDraft → check all → approve → asserts the approve/run arg sequence and final refresh landed. This is the app-side twin of Plan 1's fixtures — it catches wiring drift the unit fakes can't.
+  - `SmokeTests` — builds a temp fixture repo (dirs from `tests/conftest.py` list; two fake photos: recipes + tiny preview JPG bytes) and a stub `python` shell script that answers `status --json` from a canned `StatusSnapshot` JSON (with `stale_previews: []`), `adjust`/`preview`/`approve`/`run` from canned envelopes (adjust/preview envelopes carry a `review_revision_before/after` pair matching the canned status revisions). Drives the REAL `PipelineClient` + `AppModel` end-to-end through the full spec-§8 flow: refresh → startDraft → `setSlider` → `flushPendingAdjustments` (debounced adjust fires, draft REBASES on the revision pair, not stale) → check all → approve → asserts the adjust/approve/run arg sequence, the review-file contents the stub received, and the final refresh landed. This is the app-side twin of Plan 1's fixtures — it catches wiring drift the unit fakes can't.
   - `scripts/build-app.sh`:
 
 ```bash
