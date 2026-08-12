@@ -443,6 +443,14 @@ def test_remove_section_if_empty(tmp_path):
     assert doc.get("Exposure", "Compensation") == "0.1"           # untouched
 
 
+def test_remove_section_if_empty_preserves_comment_only_sections(tmp_path):
+    p = tmp_path / "s.pp3"
+    p.write_text("[White Balance]\n# hand note kept on purpose\n")
+    doc = Pp3.load(p)
+    assert doc.remove_section_if_empty("White Balance") is False
+    assert "# hand note kept on purpose" in doc.dump()
+
+
 def test_write_atomic(tmp_path):
     p = tmp_path / "s.pp3"
     doc = Pp3.load(p)
@@ -549,10 +557,14 @@ class Pp3:
         return keys
 
     def remove_section_if_empty(self, section):
-        if self.section_keys(section):
-            return False
+        # "Empty" means the section body is ONLY blank lines — a section
+        # holding comments or unknown content is preserved (line-preservation
+        # contract; reset restoration must never delete hand-written text).
         span = self._section_span(section)
         if span is None:
+            return False
+        body = self._lines[span[0] + 1:span[1]]
+        if any(line.strip() for line in body):
             return False
         del self._lines[span[0]:span[1]]
         return True
@@ -811,7 +823,7 @@ git commit -m "feat(pipeline): preview provenance + review_revision"
 
 **Interfaces:**
 - Consumes: `render.rt_render`, `render.resolve_raw`, `provenance.record_preview`, `_dims`, `_record_render_dims`.
-- Produces: `driver.preview_photo(stem, style) -> Path`, in this exact order (each step's failure leaves the previous preview AND recipe untouched):
+- Produces: `driver.preview_photo(stem, style) -> Path`, in this exact order. Failure contract: any failure through step 6's `recipe.save` leaves the previous preview AND recipe untouched; the one remaining window (crash/failure between the save and the final `os.replace`) degrades to a *stale-flagged* state — recorded hash ≠ on-disk preview, so `stale_styles` reports it — and can never read as falsely fresh:
   1. load `rec`; **verify the RAW**: `_sha256(render.resolve_raw(stem)) == rec["raw_sha256"]` else `RuntimeError` (same message pattern as `render_photo`, driver.py:207-211);
   2. **capture the pre-render input snapshot**: `material = provenance.gather_material(stem)`; `inputs_hash = provenance.style_input_hash(stem, style, rec, material)` — computed BEFORE rendering so an edit landing mid-render produces a mismatch on the next staleness check instead of being certified;
   3. render to `paths.run_dir()/f"preview-{stem}-{style}.tmp.jpg"` via `render.rt_render(raw, style, tmp, "jpg", 92, extra_profiles=(render.denoise_profile(),) if rec["overrides"].get("denoise") else ())` — same denoise handling as `render_photo`, or the inputs hash (which covers `overrides`) would describe profiles that weren't applied;
@@ -973,7 +985,7 @@ def preview_photo(stem, style):
 
 (Recorded content hash is of the temp bytes — byte-identical to `final` after `os.replace`. Additional tests: `overrides["denoise"] = True` → the fake `rt_render` receives one extra profile; a `_dims` failure on the temp leaves the previous preview file and recipe bytes unchanged; a sidecar mutated inside the fake `rt_render` (simulating a mid-render edit) → `RuntimeError` mentioning "inputs changed" and no recipe/preview change.)
 
-In `process_all` (driver.py:475-476), replace `render.preview(stem, style)` with `preview_photo(stem, style)`. In `__main__.py:20`, replace the `preview` handler body with `print(driver.preview_photo(ns.stem, ns.style))` (import stays lazy via the existing `from . import driver`).
+In `process_all` (driver.py:475-476), replace `render.preview(stem, style)` with `preview_photo(stem, style)`. In `__main__.py:20`, the `preview` handler resolves the positional/flag pair first — `stem = ns.stem_flag or ns.stem; style = ns.style_flag or ns.style` (error `BAD_INPUT`/usage if a value is missing or given both ways) — then `print(driver.preview_photo(stem, style))` (import stays lazy via the existing `from . import driver`).
 
 - [ ] **Step 4: Run to verify pass** — `.venv/bin/python -m pytest tests/test_driver.py -q` → PASS. If any existing preview-path test asserts `render.preview` is called from `process_all`, update it here explicitly (declared exception (b)) and note the update in the commit message.
 
@@ -1148,8 +1160,10 @@ def _photo(stem, m):
     previews, hashes = {}, {}
     for style in paths.STYLES:
         p = paths.previews_dir() / f"{stem}_{style}_preview.jpg"
-        previews[style] = _rel(p) if p.exists() else None
-        hashes[style] = material["preview_hashes"][style]   # single snapshot
+        # Existence derives from the SAME snapshot as the hashes — a fresh
+        # p.exists() could disagree with them mid-mutation.
+        hashes[style] = material["preview_hashes"][style]
+        previews[style] = _rel(p) if hashes[style] is not None else None
     crops = {c: w for c, w in rec["crops"].items() if w is not None}
     published = {"version": None, "path": None, "artifact_count": None}
     current = paths.output_dir() / "photos" / stem / "current"
@@ -2360,6 +2374,8 @@ git commit -m "test(pipeline): golden JSON contract fixtures + legacy output gua
 ## Review-round decisions (covers this plan AND `2026-08-12-printworks-app.md`)
 
 Codex xhigh full review of both plans: 4 Critical, 14 Major, 1 Minor — all 19 applied (plans rev 2). Scoped verify of the fix diff: 10 PASS, 9 FAIL; all 9 closed in rev 3 (post-render input-equality check + valid RAW test fixtures; `gather_material` snapshots preview hashes so approve/status make zero re-reads; `remove_section_if_empty` on reset; validate-always + save-before-replace preview ordering; `basis: String?` in Swift + flagged spellings everywhere; `verify --json` typed body instead of `SystemExit`; runnable staged-source test; `adjust_stream.ndjson` consumed by a Plan 2 contract test; full `LineCollector` + pre-run terminationHandler; contract/smoke test harness skeletons).
+
+Final scoped verify (rev 3.1 diff): #2, #8, #9, #11, #13 PASS; five residual textual items closed in rev 3.2 — status preview existence derived from the snapshot (not a fresh `exists()`); `remove_section_if_empty` preserves comment-bearing sections; `preview_photo`'s failure contract stated honestly (post-save/pre-replace window degrades to stale, never falsely fresh); `preview` handler resolves positional/flag args before use; smoke stub invoked via `executableOverride`. Loop closed — remaining defects have two further nets (each task's failing-test cycle and the per-task SDD reviewer).
 
 Two findings were deliberately applied in **lighter form** than prescribed — judged for soundness, with accepted residuals:
 - **#2 (immutable staged profile copies for preview renders):** applied as a pre/post input-hash equality gate instead — a preview is recorded only if its inputs hashed identically before AND after the render. Residual: an edit made and fully reverted *within one render* is undetectable; accepted for a single-user machine where every mutating command is lock-serialized (same risk class as the spec's §10 deferrals).
