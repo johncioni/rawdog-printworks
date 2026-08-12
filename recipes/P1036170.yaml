@@ -1,0 +1,17 @@
+approval:
+  approved_at: null
+  fingerprint: null
+crops:
+  5x7: null
+  8x10: null
+expression_audit: []
+height: 4336
+manual_assets: []
+overrides:
+  denoise: false
+raw_sha256: d2de9217c96196aaeec16560e939b96c37bdf4455022519c8d08918e59cff7cd
+sharpen:
+  5x7: 0x0.9+0.9+0.01
+  8x10: 0x1.0+0.8+0.01
+  native: 0x0.8+0.6+0.008
+width: 5776
