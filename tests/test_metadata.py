@@ -1,7 +1,39 @@
 import json
 import subprocess
 
+import pytest
+
 from pipeline import metadata, toolchain
+
+
+def _signature(path):
+    """Decoded-pixel hash, computed independently of the guard's own helper."""
+    return subprocess.run(
+        ["magick", str(path), "-format", "%#", "info:"],
+        capture_output=True, text=True, check=True,
+    ).stdout.strip()
+
+
+def _make_predictor_tif(tmp_path):
+    """A deflate TIF with horizontal differencing, as RawTherapee writes.
+
+    Predictor is decode-critical: without it a reader treats the differenced
+    bytes as literal samples and renders an embossed mess. The tag is asserted
+    here so a build that ignores the define fails loudly instead of leaving
+    every predictor test passing vacuously.
+    """
+    p = tmp_path / "predictor.tif"
+    subprocess.run(
+        ["magick", "-size", "64x64", "gradient:", "-depth", "16",
+         "-compress", "Zip", "-define", "tiff:predictor=2", str(p)],
+        check=True,
+    )
+    out = subprocess.run(
+        ["exiftool", "-j", "-Predictor", str(p)],
+        capture_output=True, text=True, check=True,
+    ).stdout
+    assert json.loads(out)[0]["Predictor"] == "Horizontal differencing"
+    return p
 
 
 def _make_jpg(tmp_path):
@@ -201,7 +233,54 @@ def test_image_category_structural_allowlist_is_exact():
         "ExifVersion", "FlashpixVersion", "ComponentsConfiguration",
         "ColorSpace", "ExifImageWidth", "ExifImageHeight", "InteropIndex",
         "InteropVersion", "SampleFormat",
+        "Predictor", "FillOrder", "TileWidth", "TileLength", "TileOffsets",
+        "TileByteCounts", "FreeOffsets", "FreeByteCounts", "NewSubfileType",
     }
+
+
+def test_strip_preserves_predictor_on_deflate_tif(tmp_path):
+    """RawTherapee writes deflate TIFs with horizontal differencing.
+
+    Predictor reads as an EXIF Image tag, so before it joined the structural
+    allowlist strip() deleted it and every published TIF master decoded as
+    garbage while the JPGs and PDFs (derived pre-strip) looked fine.
+    """
+    p = _make_predictor_tif(tmp_path)
+    before = _signature(p)
+
+    metadata.strip(p, keep_capture_date=True)
+
+    out = subprocess.run(
+        ["exiftool", "-j", "-Predictor", str(p)],
+        capture_output=True, text=True, check=True,
+    ).stdout
+    assert json.loads(out)[0]["Predictor"] == "Horizontal differencing"
+    assert _signature(p) == before
+    assert metadata.assert_clean(p, keep_capture_date=True) == []
+
+
+def test_strip_aborts_and_restores_when_it_changes_decoded_pixels(
+    tmp_path, monkeypatch
+):
+    """The guard, not the allowlist, is what makes this class of bug loud.
+
+    Dropping Predictor from the allowlist reproduces the original corruption
+    exactly, so this pins the systemic property: a metadata edit that moves a
+    single decoded pixel raises and leaves the file on disk untouched.
+    """
+    p = _make_predictor_tif(tmp_path)
+    original = p.read_bytes()
+    monkeypatch.setattr(
+        metadata,
+        "STRUCTURAL_IMAGE_TAGS",
+        metadata.STRUCTURAL_IMAGE_TAGS - {"Predictor"},
+    )
+
+    with pytest.raises(RuntimeError, match="changed decoded pixels"):
+        metadata.strip(p, keep_capture_date=True)
+
+    assert p.read_bytes() == original
+    assert [q.name for q in tmp_path.iterdir()] == [p.name]
 
 
 def test_strip_sets_jpg_resolution_when_ppi_is_provided(tmp_path):
