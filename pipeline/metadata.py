@@ -21,6 +21,12 @@ STRUCTURAL_IMAGE_TAGS = {
     "YResolution",
     "ResolutionUnit",
     "SubfileType",
+    # JPEG chroma structure, not descriptive metadata. exiftool materializes
+    # YCbCrPositioning in IFD0 as a side effect of writing the resolution tags,
+    # so omitting these makes every ppi-stamped JPG fail its own clean check.
+    "YCbCrPositioning",
+    "YCbCrSubSampling",
+    "YCbCrCoefficients",
 }
 ALLOWED = {
     "Orientation",

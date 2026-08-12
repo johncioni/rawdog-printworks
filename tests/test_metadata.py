@@ -156,6 +156,7 @@ def test_image_category_structural_allowlist_is_exact():
         "RowsPerStrip", "StripOffsets", "StripByteCounts", "MinSampleValue",
         "MaxSampleValue", "PlanarConfiguration", "XResolution",
         "YResolution", "ResolutionUnit", "SubfileType",
+        "YCbCrPositioning", "YCbCrSubSampling", "YCbCrCoefficients",
     }
 
 
@@ -195,3 +196,7 @@ def test_strip_sets_jpg_resolution_when_ppi_is_provided(tmp_path):
     assert tags["XResolution"] == 300
     assert tags["YResolution"] == 300
     assert tags["ResolutionUnit"] == "inches"
+    # Writing the resolution tags makes exiftool materialize the IFD0 chroma
+    # companions, so the strip must leave the JPG clean rather than reintroduce
+    # a violation QA then rejects.
+    assert metadata.assert_clean(p, keep_capture_date=True) == []
