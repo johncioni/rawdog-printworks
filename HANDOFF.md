@@ -2,45 +2,43 @@
 
 ## Goal
 Turn family-photoshoot RW2 files (Panasonic Lumix DC-GH7) from `Input/` into
-print-and-frame-ready outputs in a natural, restrained style: per photo, 3
-16-bit sRGB TIF masters (natural/filmic/bw), 9 JPGs (3 styles × native/8x10/5x7
-crops), 9 print PDFs, 1 style-comparison PDF — 22 files. Pipeline must be
-repeatable for new RW2 drops over the coming days.
+print-ready outputs, natural restrained style: per photo, 3 16-bit sRGB TIF
+masters (natural/filmic/bw), 9 JPGs (3 styles × native/8x10/5x7), 9 ancillary
+PDFs, 1 comparison sheet — 22 files. All inputs are pre-selected keepers.
+Repeatable for new RW2 drops over the coming days.
 
 ## Done
-- Brainstorming complete (superpowers:brainstorming); all design decisions
-  approved by user: styles, sRGB for print labs, curated 22-file matrix,
-  additions 1–5 (output sharpening, lens corrections, comparison sheets,
-  100% QA pass, RAW archiving with SHA-256).
-- Tool inventory: no CLI raw tools installed yet; brew + python3 present;
-  Photoshop 2020 / Affinity / Pixelmator / Topaz Photo AI installed as apps.
-- EXIF pulled via mdls: DC-GH7, ISO 200, f/3.1, 1/800s — clean files.
-- git repo initialized (branch main); .gitignore excludes Input/, Output/,
-  archive/, previews/, .manifest.
-- Spec written + committed (06792a5):
-  docs/superpowers/specs/2026-08-11-raw-print-pipeline-design.md
-- Spec self-review passed (fixed 21→22 file count inline).
-- Added per-person expression audit + best-frame culling section to spec at
-  user request; generative expression editing added to exclusions (head/eye
-  compositing stays a manual case-by-case option only).
+- Brainstorming complete; all design decisions user-approved.
+- Spec v1 committed (06792a5); expression audit added (549fa17).
+- Codex xhigh review of spec ran (thread 019ff375-4b22-7243-a69b-49a3ab21bf7f,
+  agent af949dc0a2bc217a9): 9 findings (5 P1, 4 P2).
+- User decided: PDFs ancillary (not lab submissions); all inputs keepers →
+  all get 22 outputs (ranking, not culling); generic configurable lab
+  profile first.
+- Spec rev 2 committed (c97db28) addressing all 9 findings: workflow state
+  machine (ingested→…→verified), exact output geometry table, versioned lab
+  profile, darktable --configdir isolation + explicit export opts, manifest
+  keyed on dependency hashes + staging/atomic publish, ranking terminology,
+  calibration-aware decoder fallbacks + darktable cask disable note
+  (2026-09-01, .dmg fallback), qpdf/pdfimages PDF QA, ingest preflight +
+  EXIF privacy stripping (GPS/serial/owner) on deliverables.
 
 ## Ruled out
-- RawTherapee CLI and Python rawpy as primary decoders — kept only as
-  fallbacks if darktable-cli can't decode GH7 RW2 (2024 body, support risk).
-- Cropped TIFs (masters stay native 4:3), AI upscaling, denoising, skin
-  smoothing, HDR — excluded deliberately; see spec.
-- Photoshop/Affinity/Pixelmator as pipeline tools — not scriptable enough.
-- Lab soft-proofing — deferred until user picks a print lab (additive later).
+- RawTherapee/rawpy as primary decoders — fallbacks only; recipes don't
+  transfer between engines (fallback = recalibrate all styles).
+- Cropped TIFs, AI upscaling, skin smoothing, HDR, generative expression
+  editing — see spec exclusions. Denoise now default-off per-image, not
+  globally excluded.
+- Boolean "done" manifest flags — replaced by dependency-hash keying.
+- Lab soft-proofing — deferred until a real lab profile is added.
 
 ## In flight
-- Nothing running. Awaiting user review of the spec (user-review gate in the
-  brainstorming skill). Two RW2 files present: Input/P1036163.rw2,
-  Input/P1036170.rw2 (~40 MB each).
+- Nothing running. Awaiting user review of spec rev 2 (user-review gate).
+- Input/P1036163.rw2, Input/P1036170.rw2 present (~40 MB each).
 
 ## Next
-1. On user approval of spec, invoke Skill(superpowers:writing-plans) to write
-   the implementation plan from the spec.
+1. On user approval of rev 2, invoke Skill(superpowers:writing-plans).
 2. Plan's first task = Checkpoint 1: `brew install darktable exiftool
-   imagemagick img2pdf`, then test-decode one file, e.g.
-   `darktable-cli Input/P1036163.rw2 previews/test.jpg` and visually verify
-   GH7 color rendition before building anything else.
+   imagemagick img2pdf qpdf poppler` (darktable via .dmg if cask disabled),
+   then test-decode Input/P1036163.rw2 and verify color, orientation, lens
+   corrections, highlight recovery per spec Checkpoint 1 section.
