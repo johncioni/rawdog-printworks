@@ -37,7 +37,7 @@ def _descriptive_tags(path):
     return parsed
 
 
-def strip(path, keep_capture_date):
+def strip(path, keep_capture_date, ppi=None):
     keep = ALLOWED - ({"DateTimeOriginal"} if not keep_capture_date else set())
     remove = {
         (group, name)
@@ -53,6 +53,12 @@ def strip(path, keep_capture_date):
         "@",
     ]
     cmd += [f"-EXIF:{tag}" for tag in sorted(keep)]
+    if ppi is not None:
+        cmd += [
+            f"-EXIF:XResolution={ppi}",
+            f"-EXIF:YResolution={ppi}",
+            "-EXIF:ResolutionUnit=inches",
+        ]
     cmd += [f"-{group}:{name}=" for group, name in sorted(remove)]
     cmd += [str(path)]
     result = subprocess.run(cmd, capture_output=True, text=True)

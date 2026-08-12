@@ -132,7 +132,9 @@ def test_render_photo_records_dims_and_strips_before_pdfs(tmp_repo, monkeypatch)
     monkeypatch.setattr(crops, "jpg_from_tif", fake_jpg)
     stripped = []
     monkeypatch.setattr(
-        metadata, "strip", lambda path, keep: stripped.append(Path(path).name)
+        metadata,
+        "strip",
+        lambda path, keep, ppi=None: stripped.append((Path(path).name, ppi)),
     )
 
     raster_names = {
@@ -142,13 +144,13 @@ def test_render_photo_records_dims_and_strips_before_pdfs(tmp_repo, monkeypatch)
     }
 
     def fake_wrap(jpg, output, page_inches):
-        assert set(stripped) == raster_names
+        assert {name for name, _ in stripped} == raster_names
         Path(output).write_bytes(b"pdf")
 
     monkeypatch.setattr(pdfs, "wrap", fake_wrap)
 
     def fake_comparison(stem, native_jpgs, staging):
-        assert set(stripped) == raster_names
+        assert {name for name, _ in stripped} == raster_names
         assert set(native_jpgs) == set(paths.STYLES)
         output = Path(staging) / f"{stem}_comparison.pdf"
         source = Path(staging) / f"{stem}_comparison_src.jpg"
@@ -163,6 +165,11 @@ def test_render_photo_records_dims_and_strips_before_pdfs(tmp_repo, monkeypatch)
     assert render_calls == [
         (raw, style, (denoise,)) for style in paths.STYLES
     ]
+    assert {
+        name: ppi for name, ppi in stripped
+    } == {
+        name: 300 if name.endswith(".jpg") else None for name in raster_names
+    }
     saved = recipe.load("P1")
     assert (saved["render_width"], saved["render_height"]) == (5784, 4344)
     assert {path.name for path in staging.iterdir()} == (
@@ -319,7 +326,12 @@ def test_crop_preview_uses_recipe_window_and_lab_ppi(tmp_repo, monkeypatch):
         Path(output).write_bytes(b"preview")
 
     monkeypatch.setattr(crops, "jpg_from_tif", fake_jpg)
-    monkeypatch.setattr(metadata, "strip", lambda path, keep: None)
+    strip_calls = []
+    monkeypatch.setattr(
+        metadata,
+        "strip",
+        lambda path, keep, ppi=None: strip_calls.append((path, keep, ppi)),
+    )
 
     output = driver.crop_preview("P1", "natural", "8x10")
 
@@ -327,4 +339,5 @@ def test_crop_preview_uses_recipe_window_and_lab_ppi(tmp_repo, monkeypatch):
     assert validations == [
         (rec["crops"]["8x10"], 5784, 4344, "8x10", True, 300)
     ]
+    assert strip_calls == [(output, True, 300)]
     assert output.read_bytes() == b"preview"

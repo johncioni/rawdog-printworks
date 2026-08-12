@@ -291,7 +291,8 @@ def render_photo(stem, only: set[str] | None = None):
             created_rasters.add(output)
 
     for raster in sorted(created_rasters):
-        metadata.strip(raster, lab["keep_capture_date"])
+        ppi = lab["ppi"] if raster.suffix.lower() == ".jpg" else None
+        metadata.strip(raster, lab["keep_capture_date"], ppi=ppi)
 
     for style in paths.STYLES:
         for crop in (None, *paths.CROPS):
@@ -485,5 +486,5 @@ def crop_preview(stem, style, crop):
         lab["jpeg_quality"],
         lab["ppi"],
     )
-    metadata.strip(output, lab["keep_capture_date"])
+    metadata.strip(output, lab["keep_capture_date"], ppi=lab["ppi"])
     return output

@@ -1,3 +1,4 @@
+import json
 import subprocess
 
 from pipeline import metadata, toolchain
@@ -111,3 +112,41 @@ def test_strip_works_on_tif(tmp_path):
     )
     metadata.strip(p, keep_capture_date=True)
     assert metadata.assert_clean(p, keep_capture_date=True) == []
+
+
+def test_strip_sets_jpg_resolution_when_ppi_is_provided(tmp_path):
+    p = tmp_path / "resolution.jpg"
+    subprocess.run(
+        [
+            "magick",
+            "-size",
+            "32x32",
+            "xc:gray",
+            "-density",
+            "300",
+            "-units",
+            "PixelsPerInch",
+            str(p),
+        ],
+        check=True,
+    )
+
+    metadata.strip(p, keep_capture_date=True, ppi=300)
+
+    out = subprocess.run(
+        [
+            "exiftool",
+            "-j",
+            "-EXIF:XResolution",
+            "-EXIF:YResolution",
+            "-EXIF:ResolutionUnit",
+            str(p),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    tags = json.loads(out)[0]
+    assert tags["XResolution"] == 300
+    assert tags["YResolution"] == 300
+    assert tags["ResolutionUnit"] == "inches"
