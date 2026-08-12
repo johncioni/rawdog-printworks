@@ -22,6 +22,8 @@ def to_pixels(n, w, h):
 
 
 def validate_crop(n, w, h, crop, landscape, ppi):
+    if not (0 <= n["x"] <= 1 and 0 <= n["y"] <= 1):
+        raise ValueError(f"crop window origin outside normalized 0..1 range: {n}")
     px = to_pixels(n, w, h)
     if px["w"] < 1 or px["h"] < 1:
         raise ValueError(f"crop window is degenerate (smaller than one pixel): {px}")

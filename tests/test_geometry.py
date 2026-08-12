@@ -52,6 +52,14 @@ def test_validate_rejects_window_that_rounds_past_the_edge():
                                5776, 4336, "8x10", True, 300)
 
 
+def test_validate_rejects_negative_normalized_origin():
+    # x is outside normalized [0, 1] but rounds to pixel 0, so the pixel-space
+    # bounds check alone accepts it. The normalized contract must reject it.
+    with pytest.raises(ValueError):
+        geometry.validate_crop({"x": -0.00004, "y": 0.0, "w": 5420/5776, "h": 1.0},
+                               5776, 4336, "8x10", True, 300)
+
+
 def test_pdf_page_inches():
     assert geometry.pdf_page_inches("8x10", 2400, 3000, 300, False) == (8.0, 10.0)
     assert geometry.pdf_page_inches(None, 5776, 4336, 300, True) == (5776/300, 4336/300)
