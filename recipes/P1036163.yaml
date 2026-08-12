@@ -1,15 +1,24 @@
 approval:
-  approved_at: null
-  fingerprint: null
+  approved_at: '2026-08-12T08:15:08-04:00'
+  fingerprint: 088e6f267dbba66601f1cd06d417e58a7509e6a36effcc71c2d979cef8bd54aa
 crops:
   5x7: null
   8x10: null
-expression_audit: []
+expression_audit:
+- 'all eleven subjects: eyes open, natural smiles, engaged with camera'
+- 'three boys atop lifeguard stand: relaxed, genuine grins, no squints'
+- "older man back-left and older woman behind stand: partially occluded by front row\
+  \ (composition, not expression \u2014 no fix available in-frame)"
+- 'golden-hour backlight: no harsh shadows on any face'
+- "grouping note: different arrangement from P1036170 (lifeguard stand vs shoreline)\
+  \ \u2014 both are keepers, not competing frames"
 height: 4336
 manual_assets: []
 overrides:
   denoise: false
 raw_sha256: 34fc1abc1412f762070bc740472d00bc3110cbb5fec4724e9a1fb8dc1e283878
+render_height: 4344
+render_width: 5784
 sharpen:
   5x7: 0x0.9+0.9+0.01
   8x10: 0x1.0+0.8+0.01

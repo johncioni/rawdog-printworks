@@ -1,0 +1,11 @@
+# per-image override for P1036170 [filmic] — layered over config/styles/filmic.pp3
+# Dusk frame: base filmic 5650K is not enough against this cool light;
+# push warmth further and lift exposure to match P1036163's energy.
+
+[White Balance]
+Setting=Custom
+Temperature=5950
+Green=1.0
+
+[Exposure]
+Compensation=0.12

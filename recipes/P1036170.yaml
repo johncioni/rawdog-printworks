@@ -1,15 +1,22 @@
 approval:
-  approved_at: null
-  fingerprint: null
+  approved_at: '2026-08-12T08:15:08-04:00'
+  fingerprint: acfb1c4a0d0ef0b79d187ac97c42806ed8ee7917d1f993c2df8f6bb826ba0cf9
 crops:
   5x7: null
   8x10: null
-expression_audit: []
+expression_audit:
+- 'eleven of twelve subjects: eyes open, natural smiles, looking at camera'
+- "youngest boy front-center: gaze slightly left of lens, charming candid expression\
+  \ \u2014 not a defect; no better frame of this grouping exists"
+- 'dusk light is even: no blinks, no harsh shadows, all faces clean'
+- "grouping note: different arrangement from P1036163 \u2014 both keepers"
 height: 4336
 manual_assets: []
 overrides:
   denoise: false
 raw_sha256: d2de9217c96196aaeec16560e939b96c37bdf4455022519c8d08918e59cff7cd
+render_height: 4344
+render_width: 5784
 sharpen:
   5x7: 0x0.9+0.9+0.01
   8x10: 0x1.0+0.8+0.01
