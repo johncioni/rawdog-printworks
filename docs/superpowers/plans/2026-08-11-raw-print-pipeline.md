@@ -6,6 +6,13 @@
 corrections, publication allowlist, deliverable-wide metadata QA, structured
 toolchain verification, normalized crop geometry, full CLI wiring).
 
+> **Companion file:** wherever a task below says "as rev 1" or "rev 1's tests",
+> the complete code and test blocks are in
+> `docs/superpowers/plans/2026-08-11-raw-print-pipeline-rev1.md` under the SAME
+> task number. Read that section, then apply this file's stated changes on top.
+> Where the two conflict, THIS file wins. Implementers must consult both files
+> for any task that references rev 1.
+
 **Goal:** Build a repeatable pipeline that turns Panasonic GH7 `.rw2` files in `Input/` into 22 verified print-ready outputs per photo (3 TIF masters, 9 JPGs, 10 PDFs), with a human-in-the-loop visual review gate.
 
 **Architecture:** A Python package (`pipeline/`) driven by `scripts/process.sh`, orchestrating external tools: rawtherapee-cli (RAW decode with layered plain-text `.pp3` profiles: committed base style + per-image override), ImageMagick (crops/resample/sharpen/JPG), img2pdf (lossless PDF wrap), exiftool (metadata), qpdf + poppler (PDF QA). State lives in committed per-photo recipes plus a derived gitignored `.manifest` (rebuildable from recipes + published provenance); publishes are allowlisted immutable `vNNN` dirs behind an atomically-swapped `current` symlink.
