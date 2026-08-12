@@ -72,19 +72,32 @@ def _parse(stem, artifact):
 def artifact_deps(stem, artifact, rec, style_hashes, seed_hash, lock, lab,
                   crop_geometry):
     style, crop = _parse(stem, artifact)
+    sheet = artifact.endswith("_comparison.pdf")
     base = {"raw": rec["raw_sha256"], "seed": seed_hash,
             "style": style_hashes.get(style),
+            "overrides": rec["overrides"],
             "render_tools": toolchain.entries_for(lock, toolchain.RENDER_TOOLS)}
     if artifact.endswith(".tif"):
         return base
     base["lab_render"] = labprofile.render_view(lab)
-    base["crop_tools"] = toolchain.entries_for(lock, toolchain.CROP_TOOLS)
+    # render_view omits ppi because it is review-class for approval purposes,
+    # but ppi still sets the pixel dimensions of every raster we export.
+    base["ppi"] = lab["ppi"]
+    # Only the sheet draws text, so the font belongs to the sheet alone;
+    # charging it to the other 18 rasters would stale them all on a font update.
+    base["crop_tools"] = toolchain.entries_for(
+        lock, toolchain.CROP_TOOLS if sheet else {"magick"})
     base["crop"] = crop_geometry if crop else None
     base["sharpen"] = rec["sharpen"][crop or "native"] if style else None
     if artifact.endswith(".pdf"):
         base["pdf_tools"] = toolchain.entries_for(lock, toolchain.PDF_TOOLS)
-    if artifact.endswith("_comparison.pdf"):
-        base["sources"] = [f"{stem}_{s}.jpg" for s in paths.STYLES]
+    if sheet:
+        # Source filenames are constants, so recording them alone would leave
+        # the sheet fresh while its inputs moved. Embedding each source's whole
+        # record makes anything that stales a source stale the sheet too.
+        base["sources"] = {n: artifact_deps(stem, n, rec, style_hashes,
+                                            seed_hash, lock, lab, None)
+                           for n in (f"{stem}_{s}.jpg" for s in paths.STYLES)}
     return base
 
 
