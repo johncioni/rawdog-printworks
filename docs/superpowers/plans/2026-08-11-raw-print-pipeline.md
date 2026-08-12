@@ -33,7 +33,8 @@ Copied from spec (`docs/superpowers/specs/2026-08-11-raw-print-pipeline-design.m
 - Metadata allowlist applies to ALL deliverables (TIF + JPG; PDFs checked for empty document-info): descriptive namespaces EXIF/XMP/IPTC/MakerNotes only; allowed tags: Orientation, ExposureTime, FNumber, ISO, FocalLength, LensModel, DateTimeOriginal (per lab profile), Copyright, XResolution, YResolution, ResolutionUnit. ICC + structural tags preserved.
 - Oversized JPG (> lab `max_file_bytes`) FAILS verification for manual resolution.
 - Driver lockfile `run/driver.lock` (pid inside; stale-pid detection).
-- Tool discovery: rawtherapee-cli at `/Applications/RawTherapee.app/Contents/MacOS/rawtherapee-cli` OR on `PATH` (`shutil.which`) — resolved once in `paths.rt_cli()`.
+- Tool discovery: rawtherapee-cli via `shutil.which("rawtherapee-cli")` FIRST (Checkpoint 1 verified `/usr/local/bin/rawtherapee-cli` works); the in-bundle binary at `/Applications/RawTherapee.app/Contents/MacOS/rawtherapee-cli` is executable but exits 133/SIGTRAP — it is the LAST-resort fallback and every discovery must smoke-test `--version` before accepting a candidate. Resolved in `paths.rt_cli()`. Never modify the app bundle (breaks its code signature — Checkpoint 1 verified the bundle is pristine and notarized).
+- RawTherapee is pinned at 5.12 (official GitHub release; the Homebrew cask is 5.13 and requires macOS >= 26, unusable on this macOS 15 machine). GH7 renders measure 5784x4344 (RT ignores the RW2's declared 8px crop offsets; border pixels verified valid) — never hardcode 5776x4336 for rendered output.
 - Python: `.venv/bin/python`; tests `.venv/bin/python -m pytest`.
 - Commits end with `Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>`.
 - Visual verification steps require the worker to Read the referenced image and describe what they see.
@@ -111,7 +112,7 @@ Read and compare: `checkpoint_lens.jpg` vs neutral (`lfauto` = automatic lensfun
 - Modify: `.gitignore`
 
 **Interfaces:**
-- Produces: `paths.root() -> Path` (reads `PIPELINE_ROOT` env or repo root); accessor functions `paths.input_dir() / output_dir() / archive_dir() / staging_dir() / run_dir() / recipes_dir() / sidecars_dir() / previews_dir() / config_dir() / manifest_path()`; `paths.rt_cli() -> str` (bundle path if executable, else `shutil.which("rawtherapee-cli")`, else raises `RuntimeError`); constants `paths.STYLES = ("natural", "filmic", "bw")`, `paths.CROPS = ("8x10", "5x7")`; CLI `python -m pipeline status`.
+- Produces: `paths.root() -> Path` (reads `PIPELINE_ROOT` env or repo root); accessor functions `paths.input_dir() / output_dir() / archive_dir() / staging_dir() / run_dir() / recipes_dir() / sidecars_dir() / previews_dir() / config_dir() / manifest_path()`; `paths.rt_cli() -> str` (PATH via `shutil.which("rawtherapee-cli")` FIRST, bundle path as last resort, else raises `RuntimeError` — PATH-first is deliberate, see Global Constraints); constants `paths.STYLES = ("natural", "filmic", "bw")`, `paths.CROPS = ("8x10", "5x7")`; CLI `python -m pipeline status`.
 
 - [ ] **Step 1: venv + requirements + gitignore**
 
@@ -179,12 +180,14 @@ def config_dir():   return root() / "config"
 def manifest_path(): return root() / ".manifest"
 
 def rt_cli():
-    if os.access(_RT_BUNDLE, os.X_OK):
-        return _RT_BUNDLE
+    # PATH first: Checkpoint 1 found the in-bundle binary exits 133/SIGTRAP
+    # while /usr/local/bin/rawtherapee-cli (standalone 5.12 CLI) works.
     p = shutil.which("rawtherapee-cli")
     if p:
         return p
-    raise RuntimeError("rawtherapee-cli not found (bundle or PATH)")
+    if os.access(_RT_BUNDLE, os.X_OK):
+        return _RT_BUNDLE
+    raise RuntimeError("rawtherapee-cli not found (PATH or bundle)")
 ```
 
 `pipeline/__main__.py` (minimal now; Task 15 completes it):
@@ -343,7 +346,7 @@ def pdf_page_inches(crop, w, h, ppi, landscape):
 **Files:** Create `pipeline/toolchain.py`, `tests/test_toolchain.py`. The real `config/toolchain.lock` is generated in Task 9 Step 5 (after styles/seed/font choices exist), not here.
 
 **Interfaces:**
-- Produces: `toolchain.discover() -> dict` — entries for tools `rawtherapee, magick, img2pdf, qpdf, exiftool, pdfimages, pdfinfo` (`{"path","version","sha256"}`) plus assets `font` (`/System/Library/Fonts/Helvetica.ttc`) and `rt_icc` (the `RTv4_sRGB` output profile found by `glob` under the RT app bundle's `Resources` — record its path + sha256; if the running RT is not the bundle, glob relative to `Path(paths.rt_cli()).parent.parent`); `write_lock(entries, path)`; `verify(path) -> list[dict]` — structured `{"name": str, "problem": str}`; class sets `RENDER_TOOLS = {"rawtherapee", "rt_icc"}`, `CROP_TOOLS = {"magick", "font"}`, `PDF_TOOLS = {"img2pdf"}`, `VERIFY_TOOLS = {"qpdf", "pdfimages", "pdfinfo", "exiftool"}`; `entries_for(lock, names)`.
+- Produces: `toolchain.discover() -> dict` — entries for tools `rawtherapee, magick, img2pdf, qpdf, exiftool, pdfimages, pdfinfo` (`{"path","version","sha256"}`) plus assets `font` (`/System/Library/Fonts/Helvetica.ttc`) and `rt_icc` (the `RTv4_sRGB` output profile found by `glob` under `/Applications/RawTherapee.app/Contents/Resources` — the CLI on PATH is standalone, so do NOT derive the bundle path from `paths.rt_cli()`; if the bundle is absent, glob `Path(paths.rt_cli()).parent.parent` as fallback); `write_lock(entries, path)`; `verify(path) -> list[dict]` — structured `{"name": str, "problem": str}`; class sets `RENDER_TOOLS = {"rawtherapee", "rt_icc"}`, `CROP_TOOLS = {"magick", "font"}`, `PDF_TOOLS = {"img2pdf"}`, `VERIFY_TOOLS = {"qpdf", "pdfimages", "pdfinfo", "exiftool"}`; `entries_for(lock, names)`. `discover()` must treat a tool whose `--version` invocation fails (nonzero exit or empty output) as NOT FOUND even if the file is executable — Checkpoint 1 found the RT bundle binary is executable but SIGTRAPs; the smoke test is the acceptance criterion. The lock's rawtherapee entry must assert `--version` output contains `5.12` (catches PATH shadowing and the SIGTRAP failure mode). The lock also records `python` (the .venv interpreter version) and `pytest`/`pyyaml` versions as informational entries (no tool class — never invalidate artifacts). The lock pins RawTherapee 5.12 by hash; record in the lock file a `"_comment"` entry noting: the 5.13 cask requires macOS >= 26; the 5.12 official GitHub release is the reinstall path (notarized — no quarantine handling needed); and never copy anything into the app bundle (it ships its own CLI; modifying it breaks the code signature).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -418,7 +421,7 @@ Implementation identical in structure to rev 1 with the added fields. PASS, comm
 
 **Interfaces:**
 - As rev 1 (`STATES`, `load/save`, `set_state`, `effective_state`, `artifact_names` → 22 names, `artifact_deps`) with:
-  - `artifact_deps` uses lock-entry classes: TIF ← raw/style/seed/RENDER_TOOLS entries; JPG adds lab render fields + CROP_TOOLS entries + normalized crop + sharpen; PDF adds PDF_TOOLS; sheet ← three native JPG names. (Same code shape as rev 1.)
+  - `artifact_deps` uses lock-entry classes (as corrected in the Task 7 fix round): TIF ← raw/seed/style/`rec["overrides"]`/RENDER_TOOLS entries; JPG adds lab render fields + `lab["ppi"]` + the magick lock entry only + normalized crop + sharpen; PDF adds PDF_TOOLS; comparison sheet embeds the full dependency RECORDS of its three native-JPG sources and is the only artifact carrying the font entry.
   - NEW `manifest.record_artifacts(m, stem, deps_by_name: dict)` — stores the per-artifact dep records under `m["photos"][stem]["artifacts"]` at render time.
   - NEW `manifest.stale_artifacts(m, stem, current_deps_by_name) -> list[str]` — names whose stored deps ≠ current.
   - NEW `manifest.rebuild() -> dict` — reconstructs `.manifest` with no cache: for each `recipes/*.yaml`: state `verified` if `Output/photos/<stem>/current/provenance.json` exists AND its `fingerprint` matches the recipe's `approval.fingerprint`; else `approved` if the recipe has an approval fingerprint; else `ingested`. Artifact records restored from provenance.
@@ -566,14 +569,19 @@ Enabled=true
 Method=Coloropp
 
 [LensProfile]
-LcMode=lfauto
-UseDistortion=true
-UseVignette=true
-UseCA=true
+LcMode=none
 
 [Color Management]
 OutputProfile=RTv4_sRGB
 ```
+
+`LcMode=none` is DELIBERATE (Checkpoint 1 measurement): the GH7 body is not
+in RT 5.12's lensfun DB, so `lfauto` is a silent no-op today — but a future
+DB update would make it start applying corrections to identical pp3s
+(nondeterminism). The GH6-body substitution over-corrects badly (measured)
+and the RW2 already carries in-camera DistortionCorrection=On. If corner
+lift is wanted, tune an explicit gentle `[Vignetting Correction]` amount in
+the style during review — never a lensfun profile.
 
 `config/styles/filmic.pp3`: full copy of natural.pp3 with `[White Balance]` replaced by `Setting=Custom / Temperature=5650 / Green=1.0` and `[Exposure]` gaining `CurveMode=Standard` and `Curve=1;0;0;0.12;0.09;0.50;0.52;0.88;0.92;1;1;`.
 
@@ -720,7 +728,7 @@ def comparison_sheet(stem, native_jpgs, workdir):
 **Interfaces:**
 - `verify.check_image(path, expect_w, expect_h, expect_bits, ppi, max_bytes)` — `max_bytes=None` skips the size cap (TIFs); checks: exists/nonzero, exact dims, bit depth, sRGB ICC description, XResolution AND YResolution == ppi with ResolutionUnit inches (JPG only), TIF adds Compression contains "Deflate"/"Adobe Deflate" (exiftool `-Compression`).
 - `verify.check_pdf(pdf, source_jpg, page_pts, scratch_dir)` — as rev 1 PLUS: extraction writes into `scratch_dir` (a `run/qa-<stem>/` dir, NEVER staging), and `pdfinfo` output must show empty/absent Title, Author, Subject, Keywords (document-info hygiene).
-- `verify.photo(stem, staging_dir, rec, lab)` — native dims from `rec["width"]/rec["height"]` (ingest ground truth, not the TIF itself); TIF checks with `max_bytes=None` and 16-bit + compression; JPG checks with lab cap + `labprofile.check_filename`; metadata `assert_clean` on every TIF and JPG; unexpected-file check: staging must contain exactly `manifest.artifact_names(stem)` + `{stem}_comparison_src.jpg` + nothing else; scratch dir created under `run/` and removed at the end.
+- `verify.photo(stem, staging_dir, rec, lab)` — native dims from `rec["render_width"]/rec["render_height"]` (recorded once by the driver at first TIF render; RT output is 5784x4344, NOT the RW2's declared 5776x4336 — see Global Constraints). The driver's recording step sanity-checks render dims against ingest-declared `rec["width"]/rec["height"]` within ±16 px per axis and fails loudly outside that. All three style TIFs must share identical dims; TIF checks with `max_bytes=None` and 16-bit + compression; JPG checks with lab cap + `labprofile.check_filename`; metadata `assert_clean` on every TIF and JPG; unexpected-file check: staging must contain exactly `manifest.artifact_names(stem)` + `{stem}_comparison_src.jpg` + nothing else; scratch dir created under `run/` and removed at the end.
 
 - [ ] **Step 1: Write the failing test** — rev 1's four fixture tests adapted (pass `max_bytes=None` for a no-cap case; wrong-dims; pdf pass with scratch tmp dir; pdf wrong-source) plus:
 
@@ -836,7 +844,7 @@ def test_recover_repoints_broken_current(tmp_repo):
 **Interfaces (driver):**
 - `_current_fingerprint(stem)`, `_lab()`, `_lock()` as rev 1.
 - `current_artifact_deps(stem) -> dict` — `manifest.artifact_deps` evaluated for all 22 names with current inputs.
-- `render_photo(stem, only: set[str] | None = None)` — verifies the archived RAW's sha256 equals `rec["raw_sha256"]` before rendering (RuntimeError on mismatch — the implemented single-machine reproduction guard); renders all or only the named artifacts (TIF renders run when any dependent artifact is stale); applies `render.denoise_profile()` via `extra_profiles` when `rec["overrides"]["denoise"]`; crops from recipe normalized windows (default `centered_crop_norm`) validated with lab `ppi`; `metadata.strip` on every TIF and JPG; PDFs after strip (strip-then-wrap so embedded JPEG hashes match).
+- `render_photo(stem, only: set[str] | None = None)` — verifies the archived RAW's sha256 equals `rec["raw_sha256"]` before rendering (RuntimeError on mismatch — the implemented single-machine reproduction guard); after the first TIF render, records actual dims into `rec["render_width"]/rec["render_height"]` (sanity ±16 px/axis vs ingest-declared dims, RuntimeError outside; saves the recipe) — crops and verify all use render dims, never the RW2-declared dims; renders all or only the named artifacts (TIF renders run when any dependent artifact is stale); applies `render.denoise_profile()` via `extra_profiles` when `rec["overrides"]["denoise"]`; crops from recipe normalized windows (default `centered_crop_norm`) validated with lab `ppi`; `metadata.strip` on every TIF and JPG; PDFs after strip (strip-then-wrap so embedded JPEG hashes match).
 - `approve(stem)` — REFUSES (RuntimeError) if `rec["expression_audit"]` is empty ("audit before approval"); stores fingerprint + timestamp; sets state.
 - `verify_photo(stem)`, `_publish_photo(stem)` — publish allowlist = `set(manifest.artifact_names(stem))`; provenance = `{"fingerprint", "raw_sha256", "toolchain": lock, "artifacts": current_artifact_deps(stem)}`.
 - `process_all()` — lock; structured `toolchain.verify` split: problems whose name ∈ `VERIFY_TOOLS` → demote affected `verified` photos to `rendered` (re-verify only) with a warning; any other problem → hard stop. `publish.recover()`; `publish.rebuild_views()` (every startup); state advance per photo: `ingested` → sidecars + previews → `preview_ready`; `preview_ready|review_required` → print awaiting; `approved` → selective render (`manifest.stale_artifacts` decides `only`) → verify → publish → record artifacts → `verified`; `rendered` → verify → publish → `verified`.
@@ -953,6 +961,7 @@ As rev 1 Task 16 with these runbook changes (write `docs/superpowers/review-loop
 
 - Step 6 (crops) happens BEFORE approval, using `scripts/process.sh croppreview <stem> <style> <crop>` — Read the crop preview, adjust the recipe's normalized window if heads/hands are clipped or content sits inside the 2 % safe edge, re-preview, only then approve.
 - Step 5 (expression audit) is mandatory — `approve` refuses an empty `expression_audit`; when multiple frames of the same grouping exist in a delivery, add a ranking note to each recipe ("strongest frame of this grouping: <stem>") per the spec's ranking requirement.
+- Style calibration must be judged against BOTH current frames before either is approved: Checkpoint 1 found P1036170 (dusk overcast) is materially cooler and flatter than P1036163 (golden hour) — a style tuned only on 63 leaves 70 dull. Per-image sidecars are the tool for reconciling them.
 - Add Step 9: if a photo ever gets manual Photoshop/Topaz work, save the raster to `archive/`, record `{file, sha256}` in the recipe's `manual_assets`, and note the photo is outside automated re-render from that point.
 
 End state: both photos `verified`; `Output/photos/<stem>/current/` has exactly 22 files + provenance.json; JPG view shows 9 links per photo; full pytest suite green.

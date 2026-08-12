@@ -1,0 +1,13 @@
+submission_format: jpeg
+jpeg_quality: 92
+color_space: srgb
+embed_icc: true
+ppi: 300
+lab_color_correction: "off"
+safe_edge_percent: 2
+checkout_crop_review: required
+max_file_bytes: 26214400
+filename_rules: "ASCII, <= 64 chars"
+bleed: none
+strip_metadata_beyond_allowlist: true
+keep_capture_date: true

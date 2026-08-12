@@ -1,0 +1,12 @@
+# per-image override for P1036170 [natural] — layered over config/styles/natural.pp3
+# Dusk overcast frame: camera WB reads cool and light is flat relative to
+# P1036163. Warm to ~5700K and lift exposure slightly; keep the base
+# HistogramMatching tone baseline.
+
+[White Balance]
+Setting=Custom
+Temperature=5700
+Green=1.0
+
+[Exposure]
+Compensation=0.12

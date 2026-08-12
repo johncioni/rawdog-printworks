@@ -1,0 +1,58 @@
+{
+  "_comment": "RawTherapee is pinned to 5.12. The 5.13 cask requires macOS >= 26; reinstall from the official 5.12 GitHub release, which is notarized (no quarantine handling needed). Never copy anything into /Applications/RawTherapee.app: it ships its own CLI and modifying the bundle breaks the code signature.",
+  "exiftool": {
+    "path": "/opt/homebrew/bin/exiftool",
+    "sha256": "18b091f3a5cecac39f97440c1f4ae968c5fed2fcf1c74b29536b10d5fc12a4e2",
+    "version": "13.55"
+  },
+  "font": {
+    "path": "/System/Library/Fonts/Helvetica.ttc",
+    "sha256": "25eceb458d4baf628ee0b6a135a9f8ac5ec7b2826646720834bd2bf00dfc825a",
+    "version": "asset"
+  },
+  "img2pdf": {
+    "path": "/opt/homebrew/bin/img2pdf",
+    "sha256": "88aa52af62fbbe20d9066ad58e1a1874f2a417a1687975c4f02cda49ba4b2bc4",
+    "version": "img2pdf 0.6.3"
+  },
+  "magick": {
+    "path": "/opt/homebrew/bin/magick",
+    "sha256": "a124cfd03126df10fa746e1a869781cb7a01ae2ebec439d9ace45544bd29383d",
+    "version": "Version: ImageMagick 7.1.2-29 Q16-HDRI aarch64 b919b37fd:20260727 https://imagemagick.org"
+  },
+  "pdfimages": {
+    "path": "/opt/homebrew/bin/pdfimages",
+    "sha256": "9f457c6271d11d796011b45da728cea7c3ff0f9cab3e3dc9444bd27903a8da04",
+    "version": "pdfimages version 26.08.0"
+  },
+  "pdfinfo": {
+    "path": "/opt/homebrew/bin/pdfinfo",
+    "sha256": "f8402997445a922ba14270818df4f2a11514c8d1b3a92d38fbbdc53e4b2736b3",
+    "version": "pdfinfo version 26.08.0"
+  },
+  "pytest": {
+    "version": "9.1.1"
+  },
+  "python": {
+    "path": "/Users/john/photo-edits/.venv/bin/python",
+    "version": "3.14.6"
+  },
+  "pyyaml": {
+    "version": "6.0.3"
+  },
+  "qpdf": {
+    "path": "/opt/homebrew/bin/qpdf",
+    "sha256": "478cc6adb39aac5f608fc482a1a87577fc84f240e33805635b4ace5a398f29ca",
+    "version": "qpdf version 12.4.0"
+  },
+  "rawtherapee": {
+    "path": "/usr/local/bin/rawtherapee-cli",
+    "sha256": "e0fa0b4d5e17b3700bd0bf09751d23c73fd7f49a575fb535eb4d5c1872118c0e",
+    "version": "RawTherapee, version 5.12, command line."
+  },
+  "rt_icc": {
+    "path": "/Applications/RawTherapee.app/Contents/Resources/share/iccprofiles/output/RTv4_sRGB.icc",
+    "sha256": "17aebbdf8a88c39b07eb881dcd824eb1cf9828914d5e74a7324d7a31045e8871",
+    "version": "asset"
+  }
+}
