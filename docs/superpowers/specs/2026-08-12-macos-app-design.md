@@ -1,7 +1,7 @@
 # RAWdog Printworks — macOS App Design
 
 **Date:** 2026-08-12
-**Status:** Draft for review
+**Status:** Draft for review (rev 2 — post Codex review round 1)
 **Depends on:** `2026-08-11-raw-print-pipeline-design.md` (rev 8) — the pipeline this app fronts.
 
 ## 1. Goal
@@ -13,16 +13,16 @@ Personal, private use only. Self-signed. One user, one machine, one repo.
 ## 2. Global constraints
 
 - **macOS 15 (Sequoia) minimum.** Built with Xcode 26.3, Swift 6.2.4, SwiftUI. No third-party UI dependencies.
-- **Pipeline changes are additive only.** All existing CLI invocations behave byte-for-byte as today when `--json` is absent. The existing test suite (171 tests) keeps passing unmodified.
-- **No pipeline logic in Swift.** The app never computes state transitions, fingerprints, crops, or file layouts. It shells out to `python -m pipeline` and renders what the pipeline reports.
-- **Disk is the single source of truth.** Sliders write the same `sidecars/<stem>_<style>.pp3` files a human would; approvals, audits, and crops persist via `pipeline approve`; the app holds no state that isn't reconstructible from `status --json`.
-- **Concurrency between frontends** is arbitrated by the pipeline's existing `run/` lockfile. The app never bypasses or deletes it.
+- **Pipeline changes are additive only.** All existing CLI invocations behave byte-for-byte as today when the new flags are absent. The existing test suite (171 tests) keeps passing unmodified.
+- **No pipeline logic in Swift, no pipeline writes from Swift.** The app never computes state transitions, fingerprints, crops, or pp3 merges, and never writes to `sidecars/`, `recipes/`, `previews/`, or `Output/`. Every mutation goes through a `python -m pipeline` command that takes the driver lock. The app's only direct filesystem write is copying dropped RAW files into `Input/` — inert until `ingest` runs.
+- **Disk is the single source of truth for pipeline state.** The app holds no pipeline state that isn't reconstructible from `status --json`. (Unsubmitted user input — slider positions mid-drag, unchecked audit boxes, un-approved crop nudges — is transient UI draft state, not pipeline state; see §6.1 for its lifecycle.)
+- **Concurrency between frontends** is arbitrated by the pipeline's existing `run/` lockfile, which every mutating command (`ingest`, `preview`, `adjust`, `approve`, `run`) takes. `status` and `crops` are read-only and lock-free. The app never bypasses or deletes the lock.
 - **Dark-only.** The app forces dark appearance (`.preferredColorScheme(.dark)` at the window root); there is no light mode.
 
 ## 3. Out of scope
 
 - Redistribution: no notarization, no App Store, no sandboxing (the app needs plain filesystem access to the repo), no Sparkle updates. Ad-hoc/self-signed Debug and Release builds only.
-- Edit controls beyond the two sliders (no curves, crops-from-scratch, spot edits — Claude/CLI own those via sidecars).
+- Edit controls beyond the two sliders (no curves, crops-from-scratch, spot edits — Claude/CLI own those via hand-written sidecars, which remain fully supported).
 - In-app RAW decoding or color management beyond displaying the pipeline's sRGB preview JPGs.
 - Multi-repo / multi-library support. The repo path is a Settings field, singular.
 - Localization (English only), light mode, iPad/Catalyst.
@@ -52,26 +52,34 @@ Personal, private use only. Self-signed. One user, one machine, one repo.
 
 | Unit | Responsibility | Depends on |
 |---|---|---|
-| `PipelineClient` (actor) | Spawn `python -m pipeline` subprocesses; stream NDJSON progress events; decode the final envelope; serialize actions (one mutating command at a time). | Foundation `Process` |
-| `AppModel` (`@Observable`) | The app's single state tree: decoded `status` snapshot, per-photo draft review state (audit checkboxes, crop nudges, unsaved slider values), progress of the running command. | `PipelineClient`, `RepoWatcher` |
-| `RepoWatcher` | FSEvents on `Input/`, `previews/`, `sidecars/`, `recipes/`, `Output/`; coalesces bursts (500 ms) and triggers a `status --json` refresh. | FSEvents |
-| `SidecarWriter` | Merge warmth/exposure values into `sidecars/<stem>_<style>.pp3`, preserving unrelated sections; identical format to hand-written sidecars. | none |
+| `PipelineClient` (actor) | Spawn `python -m pipeline` subprocesses; stream NDJSON progress events; decode the final envelope; serialize mutating commands (FIFO, one at a time). Environment: `currentDirectoryURL` = repo path; python invoked by absolute path from Settings; `PATH` explicitly set to `/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin` (Finder-launched apps don't inherit shell env; the toolchain probes tools via `PATH`); no shell interpolation, argv only. | Foundation `Process` |
+| `AppModel` (`@Observable`) | The app's single state tree: decoded `status` snapshot, per-photo review drafts (§6.1), progress of the running command. | `PipelineClient`, `RepoWatcher` |
+| `RepoWatcher` | FSEvents on `Input/`, `previews/`, `sidecars/`, `recipes/`, `Output/`, and `run/` (lock transitions); coalesces bursts (500 ms) and triggers a `status --json` refresh. While `lock.held` by an external process, additionally polls `status` every 5 s so a no-op CLI run can't leave the busy pill stuck. | FSEvents |
 | Views | `MainWindow` (NavigationSplitView), `GridView`, `ReviewView`, `InspectorView`, `CompareView`, `CropOverlayView`, `ProgressHUD`, `SettingsSheet`, `EmptyDropView`. | `AppModel` |
 
 Each view reads `AppModel`; only `AppModel` talks to `PipelineClient`. Every mutating action follows the same cycle: **spawn → stream progress → final envelope → `status --json` refresh**. The UI is never updated speculatively.
 
 ### 4.2 Pipeline additions (Python)
 
-New flags/commands in `pipeline/__main__.py` (plus a small `pipeline/jsonio.py` helper). All additive:
+All additive, in `pipeline/__main__.py` plus a small `pipeline/jsonio.py` (envelope/event emission). Exact command grammar (bracketed = optional; all new commands support `--json`; existing invocation forms keep working unchanged):
 
-1. **`--json` output mode** on `ingest`, `preview`, `approve`, `run`, `status`. Stdout becomes NDJSON: zero or more *event lines*, then exactly one *final envelope* line. Human-readable output moves to stderr in this mode.
-2. **`status` command** (new): full machine-readable state; no side effects; does not take the lock.
-3. **`preview --stem <stem> --style <style>`**: re-render one preview JPG (the slider loop). Without the new flags, `preview` behaves as today.
-4. **`approve --stem <stem> --review-file <path>`**: reads audit entries and optional crop overrides from a JSON file (below) instead of interactive/args input. Existing invocation forms keep working.
+| Command | Semantics |
+|---|---|
+| `status --json` | Read-only, lock-free, side-effect-free snapshot (§4.3). |
+| `ingest --json` | Existing ingest + records `delivery_id` (ISO timestamp of the ingest invocation) and `ingested_at` per photo in the recipe (new optional fields; absent in legacy recipes). |
+| `preview --stem S --style Y --json` | Re-render one preview JPG. Renders to a temp file, atomically replaces the target only on success (failure leaves the previous JPG intact). Records decoded render dimensions in the recipe, same as the batch preview path, so approval's crop generation works for any photo previewed this way. Without `--stem/--style`, `preview` behaves exactly as today. |
+| `adjust --stem S --style Y [--temperature K] [--exposure EV] [--reset] --json` | Takes the lock; merges the values into `sidecars/S_Y.pp3` (`[White Balance]` Setting=Custom + Temperature; `[Exposure]` Compensation), preserving unrelated sections of an existing sidecar; writes atomically; then re-renders that preview (same as `preview --stem --style`). `--reset` removes the app-managed keys (and the file if empty). This is the slider backend — the app never writes pp3 itself. |
+| `crops --stem S --json` | Read-only: returns the crop windows the pipeline would use — persisted windows from the recipe if present, else freshly computed subject-centered suggestions (Vision path, not persisted). Result marks each window `"source": "persisted" \| "suggested"`. |
+| `approve --stem S --review-file P --json` | Reads audit entries + crop windows from the JSON file (§4.3); persists both via the existing `approve()` (fingerprint, validation via `geometry.validate_crop` — unchanged). |
+| `run [--stem S] [--force] --json` | Existing full run, plus: `--stem` restricts to one photo; `--force` re-renders even if the stored state says rendered/verified (the Reprocess menu). Render-time staleness and fingerprint re-verification behave exactly as today — an `adjust` after approval stales the fingerprint and `run` refuses that photo with `INVALID_STATE` until re-approved. |
+
+**Atomic state writes:** recipe and manifest saves switch from in-place writes to write-temp + `os.replace` (additive hardening; behavior otherwise identical). `status` retries once after 100 ms on a parse error, so an FSEvents-triggered read never surfaces a torn file to the UI.
 
 ### 4.3 JSON contract
 
-**Final envelope** (exactly one line, last line of stdout):
+Stdout in `--json` mode is NDJSON: zero or more *event lines*, then exactly one *final envelope* line (always the last line). Human-readable output moves to stderr. **Exit code is 0 iff the envelope says `ok: true`**; the envelope is authoritative when both are present. Any unhandled exception maps to `{"ok": false, "error": {"code": "INTERNAL", ...}}`.
+
+**Final envelope:**
 
 ```json
 {"ok": true, "result": { ... }}
@@ -80,16 +88,23 @@ New flags/commands in `pipeline/__main__.py` (plus a small `pipeline/jsonio.py` 
 
 Error codes (closed set, growable): `LOCK_HELD`, `TOOLCHAIN_FAILED`, `RENDER_FAILED`, `VERIFY_FAILED`, `INVALID_STATE`, `NOT_FOUND`, `BAD_INPUT`, `INTERNAL`.
 
-**Progress event lines** (zero or more, before the envelope):
+**Progress events** (all fields required unless marked; consumers ignore unknown event types and fields):
 
 ```json
-{"event": "progress", "stem": "P1036163", "stage": "render", "style": "filmic", "artifact": "8x10_tif", "index": 14, "total": 29}
-{"event": "stage", "stem": "P1036163", "stage": "verify"}
+{"event": "stage",    "stem": "P1036163", "stage": "render"}
+{"event": "progress", "stem": "P1036163", "stage": "render", "index": 14, "total": 29, "detail": "filmic 8x10 tif"}
 ```
 
-Consumers must ignore unknown event types and unknown fields (forward compatibility).
+`stage` ∈ `ingest | preview | render | verify | publish`. `index`/`total` are 1-based and scoped to the named `stage` of the named `stem` (`progress` for `render` counts artifacts 1–29; a multi-photo `run` emits independent sequences per stem). There is no terminal event — the envelope is the terminus. Per-card UI progress keys off `stem`; the toolbar shows the active stem + stage.
 
-**`status --json` result** (sketch; authoritative schema lives in the pytest golden fixtures):
+**Per-command `result` payloads** (authoritative schemas live in the pytest golden fixtures; sketches):
+
+- `ingest`: `{"ingested": ["P1036171"], "skipped": [{"file": "P1036163.RW2", "reason": "duplicate"}], "conflicts": [{"file": "...", "reason": "stem exists with different content"}]}` — partial success is `ok: true` with non-empty `skipped`/`conflicts`; the app surfaces both lists.
+- `preview` / `adjust`: `{"stem": "...", "style": "...", "preview": "previews/..._preview.jpg", "temperature": 5700, "exposure": 0.12}` (effective post-merge values).
+- `crops`: `{"stem": "...", "windows": {"8x10": {"x": 0.09, "y": 0.02, "w": 0.75, "h": 0.96, "source": "suggested"}, "5x7": {...}}}`
+- `approve`: `{"stem": "...", "state": "approved", "fingerprint": "sha256:..."}`
+- `run`: `{"published": [{"stem": "...", "version": "v004", "artifact_count": 29}], "failed": [{"stem": "...", "code": "VERIFY_FAILED", "message": "..."}]}` — `ok: true` iff `failed` is empty.
+- `status`:
 
 ```json
 {
@@ -101,40 +116,45 @@ Consumers must ignore unknown event types and unknown fields (forward compatibil
     {
       "stem": "P1036163",
       "state": "review_required",
-      "captured_at": "2026-08-09T18:42:07-04:00",
+      "delivery_id": "2026-08-11T09:14:02",     // null for legacy recipes → app groups as "Earlier"
+      "ingested_at": "2026-08-11T09:14:02",     // null for legacy recipes
+      "recipe_mtime": 1786550000.123,            // draft-staleness key (§6.1)
       "previews": {"natural": "previews/P1036163_natural_preview.jpg", "...": "..."},
-      "sidecars": {"natural": null, "...": "..."},
-      "crops": {"8x10": {"x": 0.09, "y": 0.02, "w": 0.75, "h": 0.96}, "5x7": {"...": "..."}},
-      "expression_audit": [],
-      "published": {"version": null, "path": null, "artifact_count": null}
+      "adjustments": {"natural": {"temperature": 5700, "exposure": 0.12, "source": "sidecar"},
+                       "filmic":  {"temperature": 5650, "exposure": null, "source": "style"},
+                       "bw":      {"temperature": null, "exposure": null, "source": "camera"}},
+      "crops": {"8x10": {"x": 0.09, "y": 0.02, "w": 0.75, "h": 0.96}},   // persisted only; {} before approval
+      "expression_audit": ["eyes open — all: pass", "..."],
+      "published": {"version": "v003", "path": "Output/photos/P1036163/current", "artifact_count": 29}
     }
   ]
 }
 ```
 
-Paths are repo-relative. Crop windows are normalized [0,1] floats, matching `pipeline/geometry.py`.
+`adjustments` reports the *effective* slider values per style: sidecar override if present (`"sidecar"`), else the style profile's pinned value (`"style"`), else `"camera"` (as-shot WB, no fixed Kelvin — the slider shows "As shot" until touched). Paths repo-relative; crop windows normalized [0,1], matching `pipeline/geometry.py`.
 
-**`--review-file` input** (written by the app to a temp file):
+**`--review-file` input** (written by the app to a temp file; deleted after the envelope):
 
 ```json
 {
   "expression_audit": [
-    {"check": "eyes_open_all", "result": "pass", "note": ""},
-    {"check": "expressions_natural", "result": "pass", "note": ""},
-    {"check": "no_blinks_in_crops", "result": "pass", "note": ""}
+    "eyes open — all: pass",
+    "expressions natural: pass",
+    "no blinks in crops: pass",
+    "note: dad mid-laugh in 5x7 — intentional keep"
   ],
-  "crops": {"8x10": {"x": 0.10, "y": 0.02, "w": 0.75, "h": 0.96}}
+  "crops": {"8x10": {"x": 0.10, "y": 0.02, "w": 0.75, "h": 0.96}, "5x7": {"x": 0.02, "y": 0.07, "w": 0.89, "h": 0.86}}
 }
 ```
 
-`crops` is optional; omitted crops keep the pipeline's subject-centered defaults. Validation (aspect, bounds, min resolution) stays in `pipeline/geometry.validate_crop` — the app only nudges positions.
+`expression_audit` is a **list of strings** — the exact format already durable in `recipes/*.yaml` and written by the CLI flow. The app composes the strings from its checklist + note field; existing recipes need no migration and the CLI review loop is unaffected. Both crop windows are required (the app always has them via `crops`/`status`); validation stays in `pipeline/geometry.validate_crop`.
 
 ## 5. UI design
 
 ### 5.1 Visual language
 
 - **Black primary.** Window base `#0A0A0B`; review canvas pure black. Panels `#141416`, hairlines `#232326`.
-- **Accent: amber `#E8A849`** — used for selection, status "needs review", slider thumbs, the Approve button, progress fills. Semantic greens/ambers/grays for state dots (published/review/ingested).
+- **Accent: amber `#E8A849`** — selection, "needs review" status, slider thumbs, Approve button, progress fills. Semantic greens/ambers/grays for state dots (published/review/ingested).
 - Sidebar uses `.ultraThinMaterial` translucency over the black window.
 - SF Pro (system), SF Symbols, 8–10 px card radii, generous spacing. Contemporary and quiet: no toolbars full of buttons, no chrome that competes with photographs.
 
@@ -142,11 +162,11 @@ Paths are repo-relative. Crop windows are normalized [0,1] floats, matching `pip
 
 `NavigationSplitView` with translucent sidebar + content area with two states:
 
-- **Sidebar — Browse level:** deliveries (a delivery = an ingest batch, labeled by ingest date), each with photo/review counts; below, a small pipeline block (toolchain OK, idle/busy).
+- **Sidebar — Browse level:** deliveries (grouped by `delivery_id`; legacy photos under "Earlier"), each with photo/review counts; below, a small pipeline block (toolchain OK, idle/busy).
 - **Sidebar — Review level:** the open delivery's photos with 42 px thumbnails and state dots.
 - **Content, state 1 — Grid:** `LazyVGrid` of photo cards (preview thumb, status badge, render-progress overlay while running). Double-click → Review.
 - **Content, state 2 — Review:** large preview; style segmented control; inspector column (fixed 260 pt) on the right.
-- **Toolbar:** delivery name, needs-review count, compact progress bar, Reprocess menu (this photo / all photos — mirrors CLI re-render), Grid/Review toggle.
+- **Toolbar:** delivery name, needs-review count, compact progress bar, Reprocess menu (this photo / all photos → `run --stem --force` / `run --force`), Grid/Review toggle.
 - **Empty state:** full-window drop target: "Drop RAW files to start a delivery."
 
 ### 5.3 Review interactions
@@ -155,46 +175,50 @@ Paths are repo-relative. Crop windows are normalized [0,1] floats, matching `pip
 |---|---|
 | `⌘1`–`⌘4` / segmented control | Switch style (natural, filmic, bw, vibrant — pipeline order). |
 | `space` | Compare mode: 2×2 grid of all four style previews; click a panel to zoom back into that style. |
-| `C` | Crop overlay: draw the 8×10 (solid) and 5×7 (dashed) windows from `status` over the preview; drag a window to nudge it (clamped to bounds, aspect locked). Nudges live in the app's draft until Approve. |
+| `C` | Crop overlay: windows from `crops --stem` (suggested) or `status` (persisted) drawn over the preview — 8×10 solid, 5×7 dashed; drag to nudge (clamped to bounds, aspect locked). Nudges live in the review draft until Approve. |
 | `←` / `→` | Previous / next photo in the delivery. |
-| Sliders | Warmth: absolute Kelvin, 3000–9000 K; initial position = the sidecar's `Temperature` if one exists, else marked "As shot" (untouched = no sidecar WB section written). Exposure: −1.00…+1.00 EV, written as absolute `Compensation`. Both per photo × style; `SidecarWriter` produces the same `[White Balance]`/`[Exposure]` sections as the hand-written sidecars. On change: 2 s debounce → sidecar merge → `preview --stem --style --json` → FSEvents refreshes the canvas. A subtle "rendering preview…" shimmer overlays the canvas while the re-render runs. |
-| Audit checklist | Three required checks (eyes open, expressions natural, no blinks in crops) + free-text note field; stored in the draft; written via `--review-file` on Approve. |
-| Approve button | Enabled only when all audit checks are marked. Runs `approve --review-file` then `run --stem` (render → verify → publish) as one chained action with streamed progress. |
+| Sliders | Warmth: absolute Kelvin 3000–9000, initialized from `status.adjustments` (shows "As shot" for `source: camera` until touched). Exposure: −1.00…+1.00 EV. Per photo × style. On change: 2 s debounce → `adjust --stem --style --temperature --exposure` (pipeline writes the sidecar and re-renders the preview) → FSEvents refreshes the canvas. "Rendering preview…" shimmer while the command runs; a Reset control issues `adjust --reset`. |
+| Audit checklist | Three required checks (eyes open, expressions natural, no blinks in crops) + free-text note; held in the review draft; serialized to audit strings in the review-file on Approve. |
+| Approve button | Enabled when all checks are marked **and** the draft isn't stale (§6.1). Runs `approve --review-file` then `run --stem` as one chained action with streamed progress. |
 
 ### 5.4 Ingest
 
-Drag RAW files or a folder anywhere onto the window: the app copies `.rw2`/`.RW2` files into `Input/` (skip-with-notice on duplicate stems), then runs `ingest --json` followed by preview generation. Files that appear in `Input/` by other means (Finder, CLI) are detected by `RepoWatcher` and surface as a banner: "2 new RAW files — Ingest now?"
+Drag RAW files or a folder anywhere onto the window: the app copies `.rw2`/`.RW2` files into `Input/`, then runs `ingest --json`. Duplicate policy matches the pipeline contract: a file whose content hash already exists is skipped with a notice; a file whose **stem** exists with different content is **not copied** — the app shows a blocking conflict ("P1036163.RW2 already exists with different content — resolve via CLI rename") and touches nothing. Files that appear in `Input/` by other means (Finder, CLI) are detected by `RepoWatcher` and surface as a banner: "2 new RAW files — Ingest now?"
 
 ### 5.5 Settings
 
-One sheet, two fields: repo path (default `~/photo-edits`), python interpreter path (default `<repo>/.venv/bin/python`). Both validated live (repo must contain `pipeline/`; python must import the pipeline). Nothing else.
+One sheet, two fields: repo path (default `~/photo-edits`), python interpreter path (default `<repo>/.venv/bin/python`). Both validated live by running `status --json` with the candidate values (repo must contain `pipeline/`; the probe uses the same environment rules as §4.1). Nothing else.
 
 ## 6. Data flow
 
 1. **Launch:** validate settings → `status --json` → populate `AppModel` → start `RepoWatcher`.
-2. **Ingest:** drop → copy to `Input/` → `ingest --json` (events stream into per-card progress) → refresh.
-3. **Slider:** UI value → debounce → sidecar write → `preview` → JPG replaced on disk → watcher event → canvas reloads image (cache-busted by file mtime).
-4. **Approve chain:** draft (audit + crop nudges) → temp review-file → `approve --json` → on success `run --stem --json` → progress events drive card + toolbar bars → envelope → refresh → native notification "P1036163 published (v4, 29 files)".
+2. **Ingest:** drop → conflict screen → copy accepted files to `Input/` → `ingest --json` (events stream into per-card progress; `skipped`/`conflicts` surfaced) → refresh.
+3. **Slider:** UI value → debounce → `adjust` (lock, sidecar merge, preview re-render all pipeline-side) → envelope → watcher event → canvas reloads image (cache-busted by file mtime).
+4. **Approve chain:** review draft (audit + crop windows) → temp review-file → `approve --json` → on success `run --stem --json` → progress events drive card + toolbar bars → envelope → refresh → native notification "P1036163 published (v4, 29 files)".
 5. **External change (CLI ran, file dropped in Input/):** FSEvents → coalesce 500 ms → `status --json` → diff → UI updates. No refresh button exists.
 
-The `PipelineClient` actor serializes mutating commands (ingest/preview/approve/run) into a FIFO queue; `status` may run concurrently. If the pipeline lockfile is held externally, actions return `LOCK_HELD` and the app shows a persistent "Pipeline busy (CLI)" pill until a later `status` shows the lock released.
+`PipelineClient` serializes mutating commands into a FIFO queue; `status`/`crops` may run concurrently with them. If the lockfile is held externally, mutating actions return `LOCK_HELD` → the app shows a persistent "Pipeline busy (CLI)" pill (not an error banner), disables mutating controls, keeps browsing fully usable, and clears the pill via lock-release FSEvents or the 5 s fallback poll.
+
+### 6.1 Review drafts
+
+A draft (audit checkboxes, note, crop nudges — slider values are *not* drafts; they commit to disk via `adjust` on debounce) is transient UI state keyed to `(stem, recipe_mtime)` from the `status` snapshot it was started against. On every refresh: if the photo's `recipe_mtime` or `state` changed externally, the draft is marked **stale** — contents preserved, banner shown ("This photo changed on disk — re-check before approving"), Approve disabled until the user re-confirms the checklist against the fresh state. `approve` itself re-validates state pipeline-side (`INVALID_STATE` if the photo isn't approvable), so a race that slips past the UI still can't corrupt anything. Drafts are dropped on app quit by design.
 
 ## 7. Error handling
 
 - **Uniform surface:** any `ok:false` envelope → banner with `message` in plain language, a "Show Details" disclosure (last 50 lines of stderr), and — where the code warrants it — one action button: Retry (`RENDER_FAILED`, `VERIFY_FAILED`, `INTERNAL`), Open Settings (`TOOLCHAIN_FAILED`, launch validation failures). After every failure the app re-runs `status --json`; the UI always converges to disk truth.
-- **`LOCK_HELD`:** not an error banner — the busy pill (§6). Mutating controls disable; browsing stays fully usable.
-- **Process-level failures** (python not found, non-JSON final line, crash): mapped to a synthetic `INTERNAL` envelope with captured stderr. Non-zero exit with a valid envelope trusts the envelope.
-- **Partial renders:** publish is atomic in the pipeline (vNNN + symlink swap on verified only), so a failed render leaves the card in its prior state with a "render failed" badge and Retry. No cleanup logic in the app.
-- **Watcher storms** (regeneration touches hundreds of files): 500 ms coalescing + a `status` call already in flight suppresses re-entry; at most one trailing refresh queues.
-- **Stale preview during slider loop:** preview re-render failures restore the previous JPG display and surface the banner; the sidecar keeps the user's values (disk truth = what will render).
+- **`LOCK_HELD`:** the busy pill (§6), never a banner.
+- **Process-level failures** (python not found, no valid final envelope line, crash): mapped to a synthetic `INTERNAL` envelope with captured stderr. Non-zero exit with a valid envelope trusts the envelope.
+- **Partial renders:** publish is atomic in the pipeline (vNNN + symlink swap on verified only); a failed render leaves the card in its prior state with a "render failed" badge and Retry (`run --stem`). Multi-photo `run` failures are per-stem in `result.failed`; successes still publish.
+- **Preview re-render failure:** the pipeline's temp-file + atomic-replace (§4.2) guarantees the previous JPG survives; the app surfaces the banner and keeps the slider at the user's value (the sidecar holds it — disk truth is what will render).
+- **Watcher storms** (regeneration touches hundreds of files): 500 ms coalescing; a `status` call already in flight suppresses re-entry; at most one trailing refresh queues.
 
 ## 8. Testing
 
-- **Pipeline (pytest, added to the existing suite):** envelope shape on success/failure for each command; progress-event line format; `status --json` schema (round-trips real repo states: empty, ingested, review_required, published); `--review-file` parsing incl. crop validation rejects; `preview --stem --style` renders exactly one JPG; `--json` absent ⇒ output identical to today (regression guard).
-- **Contract golden fixtures:** pytest writes canonical outputs for a fixture repo to `tests/fixtures/json_contract/*.json`. An Xcode build phase copies these into the app test bundle; XCTest decodes every fixture with the production `Codable` models. Contract drift breaks one side's tests immediately.
-- **Swift (XCTest):** `PipelineClient` NDJSON stream parsing (events + envelope, malformed lines, interleaved stderr); `SidecarWriter` merge preserves unrelated pp3 sections (fixtures copied from real sidecars); `AppModel` reducers (draft state, approve enablement, busy pill logic).
-- **Smoke test:** a scripted fixture repo (tiny fake previews, no RawTherapee) exercises launch → grid → review → slider write → approve-disabled/enabled logic with a stub `python` that replays fixture envelopes.
-- **Visual QA (done-criteria, per the Predictor lesson):** screenshots of grid, review, compare, crop overlay, progress, and error banner states on the real repo, reviewed by eye before the app is called done. Green tests alone are insufficient.
+- **Pipeline (pytest, added to the existing suite):** envelope shape + exit-code rule on success/failure for each command; progress-event format and 1-based/stage-scoped counting; `status --json` schema round-tripping real repo states (empty, ingested, review_required, published, legacy-recipe without delivery fields); `adjust` merge preserves unrelated pp3 sections (fixtures from real hand-written sidecars) and `--reset` semantics; `crops` suggested-vs-persisted sourcing; `--review-file` parsing incl. crop validation rejects and audit-string passthrough; `preview --stem --style` atomic replace (failure keeps prior JPG) + dimension recording; `run --stem`/`--force` scoping; duplicate-stem conflict behavior; atomic recipe/manifest writes; **no-flag regression guard: every existing invocation's output is byte-identical to today**.
+- **Contract golden fixtures:** pytest writes canonical envelopes/events/status for a fixture repo to `tests/fixtures/json_contract/*.json`. An Xcode build phase copies these into the app test bundle; XCTest decodes every fixture with the production `Codable` models. Contract drift breaks one side's tests immediately.
+- **Swift (XCTest):** `PipelineClient` NDJSON stream parsing (events + envelope, malformed lines, stderr interleave, missing envelope → synthetic `INTERNAL`); `AppModel` reducers (draft lifecycle incl. staleness on `recipe_mtime` change, approve enablement, busy-pill set/clear incl. poll fallback).
+- **Smoke test:** a scripted fixture repo (tiny fake previews, no RawTherapee) with a stub `python` that replays fixture envelopes exercises launch → grid → review → slider → approve-flow enablement.
+- **Visual QA (done-criteria, per the Predictor lesson):** screenshots of grid, review, compare, crop overlay, progress, busy pill, stale-draft banner, and error banner on the real repo, reviewed by eye before the app is called done. Green tests alone are insufficient.
 
 ## 9. Repo layout
 
@@ -207,3 +231,8 @@ tests/fixtures/json_contract/    canonical JSON fixtures (pytest-generated)
 ```
 
 Build/run: open in Xcode, ⌘R. Release build ad-hoc signed (`codesign --force --sign -`), copied to /Applications by hand. No CI changes.
+
+## 10. Review-round decisions (Codex round 1)
+
+Applied: findings 1–7, 9–14 (lock-safe `adjust` command replacing Swift sidecar writes; full command grammar incl. `run --stem/--force`; per-command result schemas + exit-code rule; progress-event semantics; audit strings kept backward-compatible; atomic recipe/manifest/preview writes + status retry; draft lifecycle with staleness keys; `crops` command for pre-approval windows + preview dimension recording; effective-adjustment reporting for slider init; subprocess environment pinning; lock-path watching + poll fallback; content-hash duplicate policy).
+Simplified rather than applied: finding 8's `captured_at` — delivery grouping needs `ingested_at`/`delivery_id` only, both now recorded at ingest; EXIF capture dates add contract surface with no consumer, so `captured_at` was dropped from the schema.
