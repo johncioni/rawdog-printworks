@@ -1,34 +1,41 @@
 # HANDOFF
 
 ## Goal
-COMPLETE. GH7 RW2 → 22 verified print-ready outputs per photo. Pipeline
-built, reviewed, hardened, merged to main (cce53fb). Both photos published.
+Pipeline COMPLETE on main (9f52ec3). NOW: brainstorming "RAWdog
+Printworks" — a SwiftUI macOS app frontend for the pipeline (Sequoia+,
+black-primary, amber accent, self-signed personal use). Spec will go to
+docs/superpowers/specs/2026-08-12-macos-app-design.md.
 
 ## Done
-- All 16 plan tasks + final whole-branch review + fix wave + migration
-  re-render. 159/159 tests. Branch pipeline-implementation merged to main
-  (--no-ff, branch preserved). SDD workspace deleted (git is the record).
-- Published: Output/photos/P1036163/current + P1036170/current — 22
-  artifacts + provenance.json each; views Output/TIF (6) / JPG (18) /
-  PDF (20). QA verified: 300dpi both axes, sRGB ICC, privacy-clean
-  metadata (allowlist asserted), 3-channel bw JPGs, PDF info empty,
-  losslessness proven by extraction hash, exact pixel geometry.
-- Styles: P1036163 base styles as-is; P1036170 sidecar-tuned (natural
-  5700K +0.12EV, filmic 5950K +0.12EV, bw +0.15EV + S-curve). Expression
-  audits + fingerprint-bound crops in committed recipes.
+- Decisions LOCKED: app + CLI coexist over shared disk state; in-app
+  review (previews, crop overlays w/ drag-nudge, audit checklist);
+  in-app edits = warmth+exposure sliders only (write sidecars);
+  layout = A+C hybrid (grid browse + translucent sidebar + review
+  inspector); name "RAWdog Printworks"; ingest = drag&drop + Input/
+  watch; Approve runs approve→render→publish chain.
+- Architecture APPROVED: SwiftUI app, PipelineClient actor shells to
+  `python -m pipeline` w/ new --json envelopes, status --json, progress
+  events, single-style preview cmd; FSEvents watcher; lockfile arbitrates.
+- Components APPROVED: compare mode (space), crop overlay (C), ⌘1-4
+  styles, debounced 2s slider→sidecar→preview loop, progress HUD,
+  minimal settings (repo path + python path).
+- Sections 3-5 (data flow, error handling, testing w/ shared golden JSON
+  fixtures + visual QA done-criteria) PRESENTED — awaiting user approval.
 
 ## Ruled out
-(historical — see git log and docs/superpowers/specs rev 6 exclusions)
+- Embedded Python (packaging pain); Electron/Tauri (not native).
 
 ## In flight
-- Nothing running.
+- Visual companion server port 60219; session dir
+  .superpowers/brainstorm/22193-1786559112/ (mockups in content/,
+  clicks in state/events). Currently showing waiting screen.
 
-## Next (for future deliveries — the repeatable loop)
-1. Drop new .rw2/.RW2 files into Input/.
-2. scripts/process.sh ingest && scripts/process.sh run  → previews.
-3. Operator review loop per docs/superpowers/review-loop.md (preview →
-   sidecar tune → croppreview → expression audit in recipe →
-   scripts/process.sh approve <stem> → scripts/process.sh run).
-4. Commit recipes/ + sidecars/ after each approval.
-5. When a print lab is chosen: add config/lab-profiles/<lab>-v1.yaml per
-   spec; artifact deps re-render exactly the affected outputs.
+## Next
+1. On user approval of sections 3-5: write spec to
+   docs/superpowers/specs/2026-08-12-macos-app-design.md
+   (use elements-of-style skill), self-review, commit (+ .gitignore
+   change adding .superpowers/), then user spec review gate.
+2. Then Skill(superpowers:writing-plans) for the implementation plan.
+3. Implementation later: Codex Sol 5.6 xhigh implements / Fable reviews
+   (per model-usage-preferences memory); enable swift-lsp; Impeccable +
+   axiom-macos for UI build; computer-use screenshots for visual QA.
