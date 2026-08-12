@@ -219,10 +219,21 @@ def test_class_sets_cover_all_locked_names():
             "pdfimages", "pdfinfo", "font", "rt_icc"} == all_names
 
 
-def test_class_sets_are_disjoint():
-    classes = [toolchain.RENDER_TOOLS, toolchain.CROP_TOOLS,
-               toolchain.PDF_TOOLS, toolchain.VERIFY_TOOLS]
-    assert sum(len(c) for c in classes) == len(set().union(*classes))
+def test_class_sets_are_disjoint_except_exiftool():
+    """exiftool is the one adjudicated overlap; any other is a mistake.
+
+    It writes PDF document info in pdfs.wrap(), so PDF_TOOLS membership stales
+    PDFs on drift, while VERIFY_TOOLS membership keeps that drift soft in the
+    driver instead of a hard stop.
+    """
+    classes = [("render", toolchain.RENDER_TOOLS), ("crop", toolchain.CROP_TOOLS),
+               ("pdf", toolchain.PDF_TOOLS), ("verify", toolchain.VERIFY_TOOLS)]
+    overlaps = {}
+    for i, (name, members) in enumerate(classes):
+        for other, other_members in classes[i + 1:]:
+            if shared := members & other_members:
+                overlaps[f"{name}/{other}"] = shared
+    assert overlaps == {"pdf/verify": {"exiftool"}}
 
 
 def test_discovered_names_are_all_classified():

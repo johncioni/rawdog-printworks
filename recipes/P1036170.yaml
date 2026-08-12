@@ -1,9 +1,17 @@
 approval:
-  approved_at: '2026-08-12T08:15:08-04:00'
-  fingerprint: acfb1c4a0d0ef0b79d187ac97c42806ed8ee7917d1f993c2df8f6bb826ba0cf9
+  approved_at: '2026-08-12T09:37:26-04:00'
+  fingerprint: 9c5e81da2b1856bb263ec725e5552f2c3145d08ef876ed0725885996586ed780
 crops:
-  5x7: null
-  8x10: null
+  5x7:
+    h: 0.9509668508287292
+    w: 1.0
+    x: 0.0
+    y: 0.02451657458563536
+  8x10:
+    h: 1.0
+    w: 0.9387966804979253
+    x: 0.030601659751037343
+    y: 0.0
 expression_audit:
 - 'eleven of twelve subjects: eyes open, natural smiles, looking at camera'
 - "youngest boy front-center: gaze slightly left of lens, charming candid expression\

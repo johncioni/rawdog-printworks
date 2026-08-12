@@ -1,9 +1,17 @@
 approval:
-  approved_at: '2026-08-12T08:15:08-04:00'
-  fingerprint: 088e6f267dbba66601f1cd06d417e58a7509e6a36effcc71c2d979cef8bd54aa
+  approved_at: '2026-08-12T09:37:26-04:00'
+  fingerprint: 7f4dedef77f36a9fbe0104aefc441096ac2ec8fbfae327ca042139a33c9b1b86
 crops:
-  5x7: null
-  8x10: null
+  5x7:
+    h: 0.9509668508287292
+    w: 1.0
+    x: 0.0
+    y: 0.02451657458563536
+  8x10:
+    h: 1.0
+    w: 0.9387966804979253
+    x: 0.030601659751037343
+    y: 0.0
 expression_audit:
 - 'all eleven subjects: eyes open, natural smiles, engaged with camera'
 - 'three boys atop lifeguard stand: relaxed, genuine grins, no squints'

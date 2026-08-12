@@ -93,11 +93,29 @@ def test_font_only_stales_the_comparison_sheet():
     assert "font" in str(_deps("P1_comparison.pdf"))
 
 
-def test_verify_tools_are_in_no_record():
+def test_verify_only_tools_are_in_no_record():
     for name in manifest.artifact_names("P1"):
         blob = str(_deps(name, crop={"x": 0}))
-        for tool in ("qpdf", "pdfimages", "pdfinfo", "exiftool"):
+        for tool in ("qpdf", "pdfimages", "pdfinfo"):
             assert tool not in blob, f"{tool} leaked into {name}"
+
+
+def test_exiftool_belongs_to_pdf_records_only():
+    # wrap() rewrites document info with exiftool after img2pdf, so it shapes
+    # PDF bytes; the rasters it never touches must not carry it.
+    for name in manifest.artifact_names("P1"):
+        blob = str(_deps(name, crop={"x": 0}))
+        assert ("exiftool" in blob) == name.endswith(".pdf"), name
+
+
+def test_exiftool_drift_stales_pdfs_but_not_jpgs():
+    drifted = {**FULL_LOCK, "exiftool": {"sha256": "h2"}}
+    for pdf, jpg in (("P1_natural_8x10.pdf", "P1_natural_8x10.jpg"),
+                     ("P1_comparison.pdf", "P1_natural.jpg")):
+        assert _deps(pdf, lock=drifted, crop={"x": 0}) != _deps(
+            pdf, crop={"x": 0})
+        assert _deps(jpg, lock=drifted, crop={"x": 0}) == _deps(
+            jpg, crop={"x": 0})
 
 
 def test_stem_containing_a_style_token_parses():

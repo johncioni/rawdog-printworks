@@ -11,7 +11,10 @@ from . import paths
 
 RENDER_TOOLS = {"rawtherapee", "rt_icc"}
 CROP_TOOLS = {"magick", "font"}
-PDF_TOOLS = {"img2pdf"}
+# exiftool is deliberately in both PDF_TOOLS and VERIFY_TOOLS: pdfs.wrap()
+# rewrites document info with it after img2pdf, so it shapes PDF bytes and must
+# stale PDFs, while VERIFY_TOOLS membership keeps its drift soft in the driver.
+PDF_TOOLS = {"img2pdf", "exiftool"}
 VERIFY_TOOLS = {"qpdf", "pdfimages", "pdfinfo", "exiftool"}
 
 # rawtherapee-cli 5.12 has no zero-exit version flag (--version exits 2, -v and
