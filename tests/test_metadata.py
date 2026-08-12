@@ -114,6 +114,51 @@ def test_strip_works_on_tif(tmp_path):
     assert metadata.assert_clean(p, keep_capture_date=True) == []
 
 
+def test_tif_image_category_only_exempts_structural_tags(tmp_path):
+    p = tmp_path / "descriptive.tif"
+    subprocess.run(
+        ["magick", "-size", "32x32", "xc:red", "-type", "TrueColor", str(p)],
+        check=True,
+    )
+    subprocess.run(
+        [
+            "exiftool",
+            "-overwrite_original",
+            "-Software=Leaky Software",
+            "-ImageDescription=Leaky Description",
+            str(p),
+        ],
+        check=True,
+    )
+
+    violations = metadata.assert_clean(p, keep_capture_date=True)
+    assert any("EXIF:Software" in violation for violation in violations)
+    assert any("EXIF:ImageDescription" in violation for violation in violations)
+
+    metadata.strip(p, keep_capture_date=True)
+
+    out = subprocess.run(
+        ["exiftool", "-j", "-Software", "-ImageDescription", str(p)],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    tags = json.loads(out)[0]
+    assert "Software" not in tags
+    assert "ImageDescription" not in tags
+    assert metadata.assert_clean(p, keep_capture_date=True) == []
+
+
+def test_image_category_structural_allowlist_is_exact():
+    assert metadata.STRUCTURAL_IMAGE_TAGS == {
+        "ImageWidth", "ImageHeight", "BitsPerSample", "Compression",
+        "PhotometricInterpretation", "Orientation", "SamplesPerPixel",
+        "RowsPerStrip", "StripOffsets", "StripByteCounts", "MinSampleValue",
+        "MaxSampleValue", "PlanarConfiguration", "XResolution",
+        "YResolution", "ResolutionUnit", "SubfileType",
+    }
+
+
 def test_strip_sets_jpg_resolution_when_ppi_is_provided(tmp_path):
     p = tmp_path / "resolution.jpg"
     subprocess.run(

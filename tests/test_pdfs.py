@@ -1,4 +1,5 @@
 import hashlib
+import json
 import subprocess
 
 from pipeline import pdfs
@@ -44,6 +45,35 @@ def test_wrap_is_lossless(tmp_path):
     assert hashlib.sha256(extracted.read_bytes()).hexdigest() == hashlib.sha256(
         jpg.read_bytes()
     ).hexdigest()
+
+
+def test_wrap_clears_pdf_info_and_remains_qpdf_valid(tmp_path):
+    jpg = _jpg(tmp_path, "clean.jpg")
+    pdf = tmp_path / "clean.pdf"
+
+    pdfs.wrap(jpg, pdf, (8.0, 10.0))
+
+    info = subprocess.run(
+        [
+            "exiftool",
+            "-j",
+            "-PDF:Producer",
+            "-PDF:CreationDate",
+            "-PDF:ModDate",
+            str(pdf),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout
+    tags = json.loads(info)[0]
+    assert not tags.get("Producer")
+    assert not tags.get("CreationDate")
+    assert not tags.get("ModDate")
+    checked = subprocess.run(
+        ["qpdf", "--check", str(pdf)], capture_output=True, text=True
+    )
+    assert checked.returncode == 0, checked.stderr
 
 
 def test_comparison_sheet_canvas_and_page(tmp_path):

@@ -3,6 +3,25 @@ import subprocess
 
 
 DESCRIPTIVE_GROUPS = {"EXIF", "XMP", "IPTC", "MakerNotes"}
+STRUCTURAL_IMAGE_TAGS = {
+    "ImageWidth",
+    "ImageHeight",
+    "BitsPerSample",
+    "Compression",
+    "PhotometricInterpretation",
+    "Orientation",
+    "SamplesPerPixel",
+    "RowsPerStrip",
+    "StripOffsets",
+    "StripByteCounts",
+    "MinSampleValue",
+    "MaxSampleValue",
+    "PlanarConfiguration",
+    "XResolution",
+    "YResolution",
+    "ResolutionUnit",
+    "SubfileType",
+}
 ALLOWED = {
     "Orientation",
     "ExposureTime",
@@ -32,7 +51,9 @@ def _descriptive_tags(path):
         if len(parts) != 3:
             continue
         group, category, name = parts
-        if group in DESCRIPTIVE_GROUPS and category != "Image":
+        if (group in DESCRIPTIVE_GROUPS
+                and not (category == "Image"
+                         and name in STRUCTURAL_IMAGE_TAGS)):
             parsed.append((group, name, value))
     return parsed
 

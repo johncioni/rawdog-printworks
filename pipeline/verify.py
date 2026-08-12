@@ -57,7 +57,7 @@ def check_image(path, expect_w, expect_h, expect_bits, ppi, max_bytes):
             problems.append(
                 f"{path.name}: bit depth {bits}, expected {expect_bits}"
             )
-        if colorspace not in ("sRGB", "Gray", "RGB"):
+        if colorspace not in ("sRGB", "RGB"):
             problems.append(f"{path.name}: colorspace {colorspace}")
 
     meta_result = subprocess.run(
@@ -174,7 +174,9 @@ def check_pdf(pdf, source_jpg, page_pts, scratch_dir):
             f"{pdf.name}: page size "
             f"{page_size and page_size.groups()}, expected {page_pts} pts"
         )
-    for field in ("Title", "Author", "Subject", "Keywords"):
+    for field in (
+            "Title", "Author", "Subject", "Keywords",
+            "Producer", "CreationDate", "ModDate"):
         match = re.search(rf"^{field}:\s*(.*)$", info, re.MULTILINE)
         if match and match.group(1).strip():
             problems.append(

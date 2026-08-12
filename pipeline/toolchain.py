@@ -160,7 +160,11 @@ def verify(lock_path):
         have, failures = discover(), {}
     except DiscoveryError as e:
         have, failures = e.entries, e.failures
-    problems = []
+    required = RENDER_TOOLS | CROP_TOOLS | PDF_TOOLS | VERIFY_TOOLS
+    problems = [
+        {"name": name, "problem": "missing from lock"}
+        for name in sorted(required - set(want))
+    ]
     for name, entry in sorted(want.items()):
         # Only the comment and the named informational entries are hashless.
         if name.startswith("_") or name in _INFORMATIONAL:

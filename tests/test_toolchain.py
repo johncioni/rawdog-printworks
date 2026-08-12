@@ -7,8 +7,15 @@ import pytest
 
 from pipeline import toolchain
 
-FAKE = {"rawtherapee": {"path": "/x", "version": "5.12", "sha256": "aa"},
-        "magick": {"path": "/y", "version": "7.1", "sha256": "bb"}}
+FAKE = {
+    name: {"path": f"/{name}", "version": "1.0", "sha256": f"hash-{name}"}
+    for name in (
+        toolchain.RENDER_TOOLS | toolchain.CROP_TOOLS |
+        toolchain.PDF_TOOLS | toolchain.VERIFY_TOOLS
+    )
+}
+FAKE["rawtherapee"] = {"path": "/x", "version": "5.12", "sha256": "aa"}
+FAKE["magick"] = {"path": "/y", "version": "7.1", "sha256": "bb"}
 
 
 def _completed(stdout="RawTherapee 5.12\n", stderr="", returncode=0):
@@ -90,9 +97,24 @@ def test_verify_clean_when_unchanged(tmp_path, monkeypatch):
 def test_verify_reports_missing_tool(tmp_path, monkeypatch):
     lock = tmp_path / "toolchain.lock"
     toolchain.write_lock(FAKE, lock)
-    monkeypatch.setattr(toolchain, "discover",
-                        lambda: {"rawtherapee": FAKE["rawtherapee"]})
+    monkeypatch.setattr(
+        toolchain,
+        "discover",
+        lambda: {name: entry for name, entry in FAKE.items() if name != "magick"},
+    )
     assert toolchain.verify(lock) == [{"name": "magick", "problem": "missing"}]
+
+
+def test_verify_reports_required_name_missing_from_lock(tmp_path, monkeypatch):
+    lock = tmp_path / "toolchain.lock"
+    locked = {name: entry for name, entry in FAKE.items()
+              if name != "rawtherapee"}
+    toolchain.write_lock(locked, lock)
+    monkeypatch.setattr(toolchain, "discover", lambda: dict(FAKE))
+
+    assert toolchain.verify(lock) == [
+        {"name": "rawtherapee", "problem": "missing from lock"}
+    ]
 
 
 def test_verify_reports_failed_probe_and_still_checks_other_tools(tmp_path, fake_tools):
@@ -224,7 +246,8 @@ def test_entries_for_subsets():
 
 
 def test_entries_for_skips_names_absent_from_lock():
-    assert set(toolchain.entries_for(FAKE, {"magick", "img2pdf"})) == {"magick"}
+    lock = {"magick": FAKE["magick"]}
+    assert set(toolchain.entries_for(lock, {"magick", "img2pdf"})) == {"magick"}
 
 
 def test_discover_records_tools_assets_and_informational(fake_tools):

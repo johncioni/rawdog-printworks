@@ -105,6 +105,45 @@ def test_approve_requires_expression_audit(tmp_repo, monkeypatch):
         driver.approve("P1")
 
 
+def test_approve_persists_default_crops_before_fingerprinting(
+        tmp_repo, monkeypatch):
+    rec = recipe.new("P1", "raw", 5776, 4336)
+    rec.update(render_width=5784, render_height=4344)
+    rec["expression_audit"] = ["all expressions reviewed"]
+    recipe.save("P1", rec)
+    expected = {
+        crop: geometry.centered_crop_norm(5784, 4344, crop, True)
+        for crop in paths.CROPS
+    }
+    seen = []
+
+    def fingerprint(stem):
+        saved = recipe.load(stem)
+        seen.append(saved["crops"])
+        return "fp-bound-to-persisted-crops"
+
+    monkeypatch.setattr(driver, "_current_fingerprint", fingerprint)
+
+    driver.approve("P1")
+
+    saved = recipe.load("P1")
+    assert seen == [expected]
+    assert saved["crops"] == expected
+    assert saved["approval"]["fingerprint"] == "fp-bound-to-persisted-crops"
+
+
+def test_approve_requires_render_dims_for_default_crops(tmp_repo, monkeypatch):
+    rec = recipe.new("P1", "raw", 5776, 4336)
+    rec["expression_audit"] = ["all expressions reviewed"]
+    recipe.save("P1", rec)
+    monkeypatch.setattr(driver, "_current_fingerprint", lambda stem: "fp")
+
+    with pytest.raises(RuntimeError, match="croppreview/preview"):
+        driver.approve("P1")
+
+    assert recipe.load("P1")["crops"] == {"8x10": None, "5x7": None}
+
+
 def test_render_photo_records_dims_and_strips_before_pdfs(tmp_repo, monkeypatch):
     raw = tmp_repo / "archive/P1.RW2"
     raw.write_bytes(b"raw")
@@ -190,6 +229,22 @@ def test_render_photo_refuses_archive_hash_mismatch(tmp_repo, monkeypatch):
         driver.render_photo("P1")
 
 
+def test_render_photo_refuses_manual_assets_before_rendering(
+        tmp_repo, monkeypatch):
+    rec = recipe.new("P1", "raw", 5776, 4336)
+    rec["manual_assets"] = [{"file": "P1_retouch.tif", "sha256": "abc"}]
+    recipe.save("P1", rec)
+    monkeypatch.setattr(
+        render,
+        "resolve_raw",
+        lambda stem: (_ for _ in ()).throw(AssertionError("must not resolve")),
+    )
+
+    with pytest.raises(
+            RuntimeError, match="^manual assets present; outside automated re-render$"):
+        driver.render_photo("P1")
+
+
 def test_current_artifact_deps_covers_allowlist(tmp_repo, monkeypatch):
     rec = recipe.new("P1", "raw", 5776, 4336)
     rec.update(render_width=5784, render_height=4344)
@@ -251,6 +306,36 @@ def test_process_all_passes_only_stale_artifacts(tmp_repo, monkeypatch):
     assert photo["artifacts"] == current
 
 
+def test_process_all_refreshes_stale_artifacts_for_verified_photo(
+        tmp_repo, monkeypatch):
+    names = manifest.artifact_names("P1")
+    current = {name: {"version": 2} for name in names}
+    stored = dict(current)
+    stale_name = "P1_bw_5x7.jpg"
+    stored[stale_name] = {"version": 1}
+    m = manifest.load()
+    manifest.set_state(m, "P1", "verified")
+    m["photos"]["P1"].update(fingerprint="fp", artifacts=stored)
+    manifest.save(m)
+    monkeypatch.setattr(driver, "_current_fingerprint", lambda stem: "fp")
+    monkeypatch.setattr(driver, "current_artifact_deps", lambda stem: current)
+    calls = []
+    monkeypatch.setattr(
+        driver,
+        "render_photo",
+        lambda stem, only=None: calls.append((stem, only)),
+    )
+    monkeypatch.setattr(driver, "verify_photo", lambda stem: [])
+    monkeypatch.setattr(driver, "_publish_photo", lambda stem: current)
+
+    driver.process_all()
+
+    assert calls == [("P1", {stale_name})]
+    photo = manifest.load()["photos"]["P1"]
+    assert photo["state"] == "verified"
+    assert photo["artifacts"] == current
+
+
 def test_process_all_renders_approved_photo_without_stored_artifacts(
         tmp_repo, monkeypatch):
     m = manifest.load()
@@ -270,6 +355,36 @@ def test_process_all_renders_approved_photo_without_stored_artifacts(
     driver.process_all()
 
     assert calls == ["P1"]
+
+
+def test_process_all_skips_manual_assets_and_continues(
+        tmp_repo, monkeypatch, capsys):
+    m = manifest.load()
+    for stem in ("P1", "P2"):
+        manifest.set_state(m, stem, "approved")
+        m["photos"][stem]["fingerprint"] = "fp"
+    manifest.save(m)
+    monkeypatch.setattr(driver, "_current_fingerprint", lambda stem: "fp")
+    calls = []
+
+    def render_one(stem):
+        calls.append(stem)
+        if stem == "P1":
+            raise RuntimeError(
+                "manual assets present; outside automated re-render")
+
+    monkeypatch.setattr(driver, "render_photo", render_one)
+    monkeypatch.setattr(driver, "verify_photo", lambda stem: [])
+    monkeypatch.setattr(driver, "_publish_photo", lambda stem: {})
+
+    driver.process_all()
+
+    assert calls == ["P1", "P2"]
+    assert manifest.load()["photos"]["P1"]["state"] == "approved"
+    assert manifest.load()["photos"]["P2"]["state"] == "verified"
+    output = capsys.readouterr().out
+    assert "P1" in output
+    assert "manual assets present; outside automated re-render" in output
 
 
 def test_publish_uses_exact_allowlist_and_provenance(tmp_repo, monkeypatch):

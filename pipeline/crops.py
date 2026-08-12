@@ -25,6 +25,10 @@ def magick_cmd(tif, out_jpg, crop_window, target, unsharp, quality, ppi):
         str(ppi),
         "-units",
         "PixelsPerInch",
+        "-colorspace",
+        "sRGB",
+        "-type",
+        "TrueColor",
         str(out_jpg),
     ]
     return cmd

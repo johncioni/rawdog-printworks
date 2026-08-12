@@ -17,12 +17,16 @@ def _jpg(directory, name="v.jpg"):
             "xc:gray",
             "-depth",
             "8",
-            "-profile",
-            str(SRGB_PROFILE),
             "-density",
             "300",
             "-units",
             "PixelsPerInch",
+            "-colorspace",
+            "sRGB",
+            "-type",
+            "TrueColor",
+            "-profile",
+            str(SRGB_PROFILE),
             str(path),
         ],
         check=True,
@@ -41,6 +45,32 @@ def test_image_wrong_dims(tmp_path):
         _jpg(tmp_path), 999, 400, 8, 300, 10_000_000
     )
     assert any("dimensions" in problem for problem in problems)
+
+
+def test_image_rejects_gray_colorspace(tmp_path):
+    path = tmp_path / "gray.jpg"
+    subprocess.run(
+        [
+            "magick",
+            "-size",
+            "300x400",
+            "xc:gray",
+            "-depth",
+            "8",
+            "-profile",
+            str(SRGB_PROFILE),
+            "-density",
+            "300",
+            "-units",
+            "PixelsPerInch",
+            str(path),
+        ],
+        check=True,
+    )
+
+    problems = verify.check_image(path, 300, 400, 8, 300, 10_000_000)
+
+    assert any("colorspace Gray" in problem for problem in problems)
 
 
 def test_pdf_pass(tmp_path):
@@ -72,6 +102,30 @@ def test_pdf_wrong_source(tmp_path):
     assert any("sha256" in problem.lower() for problem in problems)
 
 
+def test_pdf_rejects_producer_and_dates(tmp_path):
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    jpg = _jpg(tmp_path)
+    pdf = tmp_path / "dirty.pdf"
+    pdfs.wrap(jpg, pdf, (1.0, 400 / 300))
+    subprocess.run(
+        [
+            "exiftool",
+            "-overwrite_original",
+            "-PDF:Producer=Leaky Producer",
+            "-PDF:CreateDate=2026:08:12 12:00:00-04:00",
+            "-PDF:ModifyDate=2026:08:12 12:01:00-04:00",
+            str(pdf),
+        ],
+        check=True,
+    )
+
+    problems = verify.check_pdf(pdf, jpg, (72, 96), scratch)
+
+    for field in ("Producer", "CreationDate", "ModDate"):
+        assert any(field in problem for problem in problems)
+
+
 def test_tif_exempt_from_size_cap(tmp_path):
     path = tmp_path / "big.tif"
     subprocess.run(
@@ -84,6 +138,10 @@ def test_tif_exempt_from_size_cap(tmp_path):
             "16",
             "-compress",
             "Zip",
+            "-colorspace",
+            "sRGB",
+            "-type",
+            "TrueColor",
             "-profile",
             str(SRGB_PROFILE),
             str(path),

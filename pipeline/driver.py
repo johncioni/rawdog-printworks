@@ -10,6 +10,7 @@ from . import (crops, geometry, labprofile, manifest, metadata, paths, pdfs,
 
 
 LAB_PROFILE = "generic-v1"
+MANUAL_ASSETS_ERROR = "manual assets present; outside automated re-render"
 
 
 def _lab():
@@ -198,6 +199,8 @@ def _stage_published(stem):
 
 def render_photo(stem, only: set[str] | None = None):
     rec = recipe.load(stem)
+    if rec.get("manual_assets"):
+        raise RuntimeError(MANUAL_ASSETS_ERROR)
     raw = render.resolve_raw(stem)
     actual_hash = _sha256(raw)
     if actual_hash != rec["raw_sha256"]:
@@ -343,6 +346,24 @@ def approve(stem):
     rec = recipe.load(stem)
     if not rec.get("expression_audit"):
         raise RuntimeError("audit before approval")
+    default_crops = [
+        crop for crop in paths.CROPS if rec["crops"].get(crop) is None
+    ]
+    if default_crops:
+        try:
+            width, height = _render_dims(rec)
+        except ValueError as error:
+            raise RuntimeError(
+                "render dims not recorded; run croppreview/preview first"
+            ) from error
+        landscape = width >= height
+        for crop in default_crops:
+            rec["crops"][crop] = geometry.centered_crop_norm(
+                width, height, crop, landscape
+            )
+        # Approval must bind the materialized geometry, not an implicit default
+        # that could change independently of the persisted recipe.
+        recipe.save(stem, rec)
     fingerprint = _current_fingerprint(stem)
     rec["approval"] = {
         "fingerprint": fingerprint,
@@ -421,37 +442,50 @@ def process_all():
                 manifest.save(data)
 
         for stem in sorted(data["photos"]):
-            fingerprint = _current_fingerprint(stem)
-            state = manifest.effective_state(data, stem, fingerprint)
-            if state != data["photos"][stem]["state"]:
-                manifest.set_state(data, stem, state)
-                manifest.save(data)
+            try:
+                fingerprint = _current_fingerprint(stem)
+                state = manifest.effective_state(data, stem, fingerprint)
+                if state != data["photos"][stem]["state"]:
+                    manifest.set_state(data, stem, state)
+                    manifest.save(data)
 
-            if state == "ingested":
-                render.ensure_sidecar_all(stem)
-                for style in paths.STYLES:
-                    render.preview(stem, style)
-                manifest.set_state(data, stem, "preview_ready")
-                manifest.save(data)
-                print(f"{stem}: previews ready — visual review required")
-            elif state in ("preview_ready", "review_required"):
-                print(f"{stem}: awaiting visual review + approve")
-            elif state == "approved":
-                stored = data["photos"][stem].get("artifacts", {})
-                if not stored:
-                    render_photo(stem)
-                else:
+                if state == "ingested":
+                    render.ensure_sidecar_all(stem)
+                    for style in paths.STYLES:
+                        render.preview(stem, style)
+                    manifest.set_state(data, stem, "preview_ready")
+                    manifest.save(data)
+                    print(f"{stem}: previews ready — visual review required")
+                elif state in ("preview_ready", "review_required"):
+                    print(f"{stem}: awaiting visual review + approve")
+                elif state == "approved":
+                    stored = data["photos"][stem].get("artifacts", {})
+                    if not stored:
+                        render_photo(stem)
+                    else:
+                        current = current_artifact_deps(stem)
+                        stale = set(manifest.stale_artifacts(
+                            data, stem, current
+                        ))
+                        if stale == set(current):
+                            render_photo(stem)
+                        elif stale:
+                            render_photo(stem, only=stale)
+                    _finish_verified(data, stem)
+                elif state == "rendered":
+                    _finish_verified(data, stem)
+                elif state == "verified":
                     current = current_artifact_deps(stem)
                     stale = set(manifest.stale_artifacts(
                         data, stem, current
                     ))
-                    if stale == set(current):
-                        render_photo(stem)
-                    elif stale:
+                    if stale:
                         render_photo(stem, only=stale)
-                _finish_verified(data, stem)
-            elif state == "rendered":
-                _finish_verified(data, stem)
+                        _finish_verified(data, stem)
+            except RuntimeError as error:
+                if str(error) != MANUAL_ASSETS_ERROR:
+                    raise
+                print(f"{stem}: skipped — {error}")
 
 
 def crop_preview(stem, style, crop):

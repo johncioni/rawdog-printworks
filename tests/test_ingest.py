@@ -33,6 +33,22 @@ def test_preflight_flags_unexpected_body(monkeypatch):
     assert any("DC-S5" in warning for warning in warnings)
 
 
+@pytest.mark.parametrize("lens", [None, "", "   "])
+def test_preflight_flags_missing_or_empty_lens_model(monkeypatch, lens):
+    monkeypatch.setattr(ingest, "exif_summary",
+                        lambda p: dict(GOOD, LensModel=lens))
+    warnings, _ = ingest.preflight("Input/P9.rw2", set(), set())
+    assert any("LensModel" in warning for warning in warnings)
+
+
+def test_preflight_flags_non_native_aspect_ratio(monkeypatch):
+    monkeypatch.setattr(ingest, "exif_summary",
+                        lambda p: dict(GOOD, AspectRatio="16:9"))
+    warnings, _ = ingest.preflight("Input/P9.rw2", set(), set())
+    assert any("AspectRatio" in warning and "4:3" in warning
+               for warning in warnings)
+
+
 def test_preflight_rejects_duplicate_stem(monkeypatch):
     monkeypatch.setattr(ingest, "exif_summary", lambda p: dict(GOOD))
     with pytest.raises(ingest.IngestError):

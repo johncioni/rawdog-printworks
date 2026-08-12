@@ -82,6 +82,16 @@ def _preflight(path, existing_stems, existing_hashes, src_sha=None):
                 f"{stem}: unexpected {key} {meta.get(key)!r} "
                 f"(expected {expected!r})")
 
+    lens_model = meta.get("LensModel")
+    if not str(lens_model or "").strip():
+        warnings.append(f"{stem}: missing or empty LensModel")
+
+    if "AspectRatio" in meta and meta.get("AspectRatio") != "4:3":
+        warnings.append(
+            f"{stem}: unexpected AspectRatio {meta.get('AspectRatio')!r} "
+            "(expected GH7 native '4:3')"
+        )
+
     iso = meta.get("ISO")
     try:
         high_iso = not isinstance(iso, bool) and float(iso) > 1600

@@ -54,6 +54,20 @@ def wrap(jpg, out_pdf, page_inches):
             str(out_pdf),
         ]
     )
+    _run(
+        [
+            "exiftool",
+            "-overwrite_original",
+            "-PDF:Producer=",
+            "-PDF:CreationDate=",
+            "-PDF:ModDate=",
+            # ExifTool exposes the writable PDF names as CreateDate and
+            # ModifyDate, while pdfinfo labels them CreationDate and ModDate.
+            "-PDF:CreateDate=",
+            "-PDF:ModifyDate=",
+            str(out_pdf),
+        ]
+    )
 
 
 def comparison_sheet(stem, native_jpgs, workdir):

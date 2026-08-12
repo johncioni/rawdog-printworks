@@ -12,6 +12,7 @@ def test_magick_cmd_native():
     )
     assert "-crop" not in cmd and "-resize" not in cmd
     assert "-unsharp" in cmd and "92" in cmd
+    assert cmd[-5:] == ["-colorspace", "sRGB", "-type", "TrueColor", "out.jpg"]
 
 
 def test_magick_cmd_crop_and_resize():
