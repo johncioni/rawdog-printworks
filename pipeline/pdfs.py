@@ -3,6 +3,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from . import paths
+
 
 class PdfError(Exception):
     pass
@@ -74,27 +76,22 @@ def comparison_sheet(stem, native_jpgs, workdir):
     workdir = Path(workdir)
     tiles = workdir / f"{stem}_comparison_tiles.jpg"
     src = workdir / f"{stem}_comparison_src.jpg"
-    _run(
+    montage = [
+        "magick",
+        "montage",
+        "-font",
+        "Helvetica",
+        "-pointsize",
+        "36",
+    ]
+    for style in paths.STYLES:
+        montage.extend(["-label", style, str(native_jpgs[style])])
+    montage.extend(
         [
-            "magick",
-            "montage",
-            "-font",
-            "Helvetica",
-            "-pointsize",
-            "36",
-            "-label",
-            "natural",
-            str(native_jpgs["natural"]),
-            "-label",
-            "filmic",
-            str(native_jpgs["filmic"]),
-            "-label",
-            "bw",
-            str(native_jpgs["bw"]),
             "-tile",
-            "3x1",
+            "4x1",
             "-resize",
-            "1000x",
+            "750x",
             "-geometry",
             "+20+40",
             "-background",
@@ -102,6 +99,7 @@ def comparison_sheet(stem, native_jpgs, workdir):
             str(tiles),
         ]
     )
+    _run(montage)
     _run(
         [
             "magick",

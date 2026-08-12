@@ -1,0 +1,30 @@
+[Version]
+AppVersion=5.12
+Version=352
+
+[White Balance]
+Setting=Camera
+
+[Exposure]
+Auto=false
+Compensation=0
+HistogramMatching=true
+CurveMode=Standard
+Curve=1;0;0;0.25;0.22;0.75;0.78;1;1;
+
+[Vibrance]
+Enabled=true
+Pastels=35
+Saturated=18
+ProtectSkins=true
+AvoidColorShift=true
+
+[HLRecovery]
+Enabled=true
+Method=Coloropp
+
+[LensProfile]
+LcMode=none
+
+[Color Management]
+OutputProfile=RTv4_sRGB

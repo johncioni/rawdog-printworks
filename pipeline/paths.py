@@ -1,7 +1,7 @@
 import os, shutil
 from pathlib import Path
 
-STYLES = ("natural", "filmic", "bw")
+STYLES = ("natural", "filmic", "bw", "vibrant")
 CROPS = ("8x10", "5x7")
 _RT_BUNDLE = "/Applications/RawTherapee.app/Contents/MacOS/rawtherapee-cli"
 

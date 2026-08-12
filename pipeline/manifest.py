@@ -84,7 +84,7 @@ def artifact_deps(stem, artifact, rec, style_hashes, seed_hash, lock, lab,
     # but ppi still sets the pixel dimensions of every raster we export.
     base["ppi"] = lab["ppi"]
     # Only the sheet draws text, so the font belongs to the sheet alone;
-    # charging it to the other 18 rasters would stale them all on a font update.
+    # charging it to every JPG and PDF would stale them all on a font update.
     base["crop_tools"] = toolchain.entries_for(
         lock, toolchain.CROP_TOOLS if sheet else {"magick"})
     base["crop"] = crop_geometry if crop else None

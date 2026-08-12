@@ -2,7 +2,7 @@ import json
 
 import yaml
 
-from pipeline import manifest, recipe
+from pipeline import manifest, paths, recipe
 
 LOCK = {"rawtherapee": {"sha256": "aa"}, "magick": {"sha256": "bb"},
         "img2pdf": {"sha256": "cc"}}
@@ -16,7 +16,7 @@ LAB = {"jpeg_quality": 92, "submission_format": "jpeg", "embed_icc": True,
        "max_file_bytes": 1, "filename_rules": "x",
        "strip_metadata_beyond_allowlist": True, "keep_capture_date": True,
        "ppi": 300}
-STYLE_HASHES = {"natural": "s", "filmic": "f", "bw": "b"}
+STYLE_HASHES = {"natural": "s", "filmic": "f", "bw": "b", "vibrant": "v"}
 
 
 def _deps(artifact, rec=None, style_hashes=None, lock=FULL_LOCK, lab=LAB,
@@ -29,10 +29,20 @@ def _deps(artifact, rec=None, style_hashes=None, lock=FULL_LOCK, lab=LAB,
 
 def test_artifact_names_count():
     names = manifest.artifact_names("P1")
-    assert len(names) == 22
-    assert len(set(names)) == 22
+    assert len(names) == 29
+    assert len(set(names)) == 29
+    assert names[:4] == [f"P1_{style}.tif" for style in paths.STYLES]
     assert "P1_natural.tif" in names and "P1_bw_5x7.jpg" in names
     assert "P1_filmic_8x10.pdf" in names and "P1_comparison.pdf" in names
+    assert {
+        "P1_vibrant.tif",
+        "P1_vibrant.jpg",
+        "P1_vibrant_8x10.jpg",
+        "P1_vibrant_5x7.jpg",
+        "P1_vibrant.pdf",
+        "P1_vibrant_8x10.pdf",
+        "P1_vibrant_5x7.pdf",
+    } <= set(names)
 
 
 def test_state_downgrade_on_fingerprint_change(tmp_repo):
@@ -86,8 +96,8 @@ def test_pdf_record_is_strict_superset_of_its_jpg():
 
 
 def test_font_only_stales_the_comparison_sheet():
-    # The font is only drawn on the sheet, so carrying it in the other 18
-    # records would stale every JPG and PDF on a font update.
+    # The font is only drawn on the sheet, so carrying it in every JPG and PDF
+    # record would stale all of them on a font update.
     assert "font" not in str(_deps("P1_natural_8x10.jpg", crop={"x": 0}))
     assert "font" not in str(_deps("P1_natural.pdf"))
     assert "font" in str(_deps("P1_comparison.pdf"))
@@ -130,6 +140,7 @@ def test_stem_containing_a_style_token_parses():
 def test_sheet_embeds_source_records_and_stales_with_them(tmp_repo):
     sheet = _deps("P1_comparison.pdf")
     assert sheet["sources"]["P1_natural.jpg"] == _deps("P1_natural.jpg")
+    assert sheet["sources"]["P1_vibrant.jpg"] == _deps("P1_vibrant.jpg")
     m = manifest.load()
     manifest.set_state(m, "P1", "rendered")
     manifest.record_artifacts(m, "P1", {"P1_comparison.pdf": sheet})
