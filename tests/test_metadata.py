@@ -114,6 +114,47 @@ def test_strip_works_on_tif(tmp_path):
     assert metadata.assert_clean(p, keep_capture_date=True) == []
 
 
+def test_strip_tolerates_the_exif_block_it_rebuilds(tmp_path):
+    """Restoring any allowed EXIF tag makes exiftool rebuild the ExifIFD.
+
+    A valid ExifIFD is required to carry the mandatory block (ExifVersion,
+    ComponentsConfiguration, ColorSpace), so the strip auto-creates tags it
+    never asked for. test_strip_works_on_tif misses this: a bare TIF has no
+    allowed EXIF tag to restore, so no ExifIFD is ever built.
+    """
+    p = tmp_path / "rebuilt.tif"
+    subprocess.run(
+        ["magick", "-size", "32x32", "xc:gray", "-depth", "16", "-type",
+         "TrueColor", str(p)],
+        check=True,
+    )
+    subprocess.run(
+        ["exiftool", "-overwrite_original", "-ISO=200",
+         "-DateTimeOriginal=2026:07:30 16:11:53", "-Artist=Somebody", str(p)],
+        check=True,
+    )
+    # Writing those tags creates the mandatory block as a side effect. Clear it
+    # so the fixture matches a fresh RawTherapee render, which carries the
+    # allowed tags without the block; leaving it in makes strip() name it for
+    # deletion and the auto-creation never shows.
+    subprocess.run(
+        ["exiftool", "-overwrite_original", "-EXIF:ExifVersion=",
+         "-EXIF:ComponentsConfiguration=", "-EXIF:ColorSpace=", str(p)],
+        check=True,
+    )
+
+    metadata.strip(p, keep_capture_date=True)
+
+    assert metadata.assert_clean(p, keep_capture_date=True) == []
+    out = subprocess.run(
+        ["exiftool", "-j", "-ISO", "-Artist", str(p)],
+        capture_output=True, text=True, check=True,
+    ).stdout
+    tags = json.loads(out)[0]
+    assert tags["ISO"] == 200
+    assert "Artist" not in tags
+
+
 def test_tif_image_category_only_exempts_structural_tags(tmp_path):
     p = tmp_path / "descriptive.tif"
     subprocess.run(
@@ -157,6 +198,9 @@ def test_image_category_structural_allowlist_is_exact():
         "MaxSampleValue", "PlanarConfiguration", "XResolution",
         "YResolution", "ResolutionUnit", "SubfileType",
         "YCbCrPositioning", "YCbCrSubSampling", "YCbCrCoefficients",
+        "ExifVersion", "FlashpixVersion", "ComponentsConfiguration",
+        "ColorSpace", "ExifImageWidth", "ExifImageHeight", "InteropIndex",
+        "InteropVersion", "SampleFormat",
     }
 
 

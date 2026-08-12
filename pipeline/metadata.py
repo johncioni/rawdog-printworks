@@ -27,6 +27,21 @@ STRUCTURAL_IMAGE_TAGS = {
     "YCbCrPositioning",
     "YCbCrSubSampling",
     "YCbCrCoefficients",
+    # Mandatory EXIF block. Restoring any allowed EXIF tag makes exiftool
+    # rebuild the ExifIFD, and a valid ExifIFD must carry these, so the strip
+    # auto-creates them no matter what we ask for.
+    "ExifVersion",
+    "FlashpixVersion",
+    "ComponentsConfiguration",
+    "ColorSpace",
+    "ExifImageWidth",
+    "ExifImageHeight",
+    "InteropIndex",
+    "InteropVersion",
+    # TIFF pixel layout. exiftool refuses to write or delete it ("doesn't
+    # exist or isn't writable"), so every RawTherapee 16-bit TIF carries it
+    # permanently and QA can never be satisfied by stripping it.
+    "SampleFormat",
 }
 ALLOWED = {
     "Orientation",
