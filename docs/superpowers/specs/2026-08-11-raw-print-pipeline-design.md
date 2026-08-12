@@ -1,7 +1,8 @@
 # RAW → Print-Ready Pipeline — Design Spec
 
-**Date:** 2026-08-11 (rev 5 — final: fingerprint completeness, single-machine
-scope, explicit descopes)
+**Date:** 2026-08-11 (rev 6 — RawTherapee promoted to primary engine:
+plain-text .pp3 profiles make per-image tuning by the operator tractable;
+darktable's encoded XMP params do not. darktable becomes the fallback.)
 **Status:** Approved pending user review
 **Camera:** Panasonic Lumix DC-GH7 (25 MP Micro Four Thirds, native 4:3, RW2 files)
 
@@ -34,9 +35,10 @@ ingested → preview_ready → review_required → approved → rendered → ver
   crop windows by eye. Approval is recorded in the committed recipe as an
   **approval fingerprint**: a hash over every input that can change rendered
   pixels — the RAW SHA-256, style sidecars, crop geometry, denoise/retouch
-  settings, the output-sharpening recipe, the darktable-seed hash, the
-  rendering entries of `toolchain.lock` (darktable, lensfun, ICC profile),
-  and the lab profile's review-invalidating fields. If any fingerprinted
+  settings, the output-sharpening recipe, the base style profiles and
+  RawTherapee config-seed hashes, the rendering entries of `toolchain.lock`
+  (rawtherapee-cli, output ICC profile), and the lab profile's
+  review-invalidating fields. If any fingerprinted
   input later changes, the photo transitions **backward** to
   `review_required` — nothing is ever published that wasn't visually
   approved in its exact current form.
@@ -65,13 +67,16 @@ other photos continue.
   geometry per crop, approval record with approval fingerprint,
   expression-audit notes, references to the three style sidecars, per-image
   overrides (e.g. denoise on).
-- `sidecars/` — per-image, per-style darktable XMP edit files.
+- `sidecars/` — per-image, per-style RawTherapee `.pp3` override profiles
+  (plain text), layered at render time over the committed base style
+  profiles in `config/styles/`.
 - `config/toolchain.lock` — exact tool versions with binary hashes
-  (darktable, ImageMagick, img2pdf, exiftool, qpdf, poppler) and rendering
-  asset hashes (sRGB ICC profile, lensfun database, comparison-sheet font).
+  (rawtherapee-cli, ImageMagick, img2pdf, exiftool, qpdf, poppler) and
+  rendering asset hashes (output sRGB ICC profile, comparison-sheet font).
   Renders refuse to run if the live toolchain doesn't match the lock;
   updating tools is an explicit, committed lock change.
-- `config/lab-profiles/` and `config/darktable-seed/` (below).
+- `config/lab-profiles/`, `config/styles/`, and `config/rawtherapee-seed/`
+  (below).
 
 **Gitignored (transient, derivable):**
 - `.manifest` — derived state machine position and cached dependency hashes
@@ -177,12 +182,13 @@ photo-edits/
 │   └── TIF/ JPG/ PDF/          # format views: symlinks through current
 ├── archive/                    # verbatim RW2 + SHA-256 manifest (gitignored)
 ├── staging/                    # per-photo render workspace (gitignored)
-├── run/                        # live darktable configdir copies (gitignored)
+├── run/                        # live config copies + driver lock (gitignored)
 ├── recipes/                    # per-photo durable recipes (committed)
-├── sidecars/                   # per-image, per-style XMPs (committed)
+├── sidecars/                   # per-image, per-style .pp3 overrides (committed)
 ├── previews/                   # review working files (gitignored)
 ├── config/lab-profiles/        # versioned lab profiles (committed)
-├── config/darktable-seed/      # immutable config seed (committed)
+├── config/styles/              # base style .pp3 profiles (committed)
+├── config/rawtherapee-seed/    # immutable RT options seed (committed)
 ├── scripts/process.sh          # driver: ingest/review/render/verify/publish
 ├── .manifest                   # derived state + cached hashes (gitignored)
 └── docs/superpowers/specs/
@@ -211,28 +217,28 @@ explicitly outside the atomicity guarantee and self-heal.
 
 ## Reproducibility
 
-- `config/darktable-seed/` is an **immutable committed seed** (darktablerc
-  settings, styles). At run start it is copied into gitignored
-  `run/<run-id>/configdir/`; darktable-cli runs against the copy with
-  `--library :memory:`. Committed state is never touched by execution or
-  version migrations.
-- darktable-cli is invoked with `--apply-custom-presets false`, OpenCL
-  disabled (CPU path only — hardware-compiled OpenCL kernels are a
-  cross-machine determinism hazard), and TIFF bit depth, compression, and
-  ICC options passed explicitly on every invocation — never inherited from
-  GUI state.
+- `config/rawtherapee-seed/` is an **immutable committed seed** (RawTherapee
+  `options` file). At run start it is copied into gitignored
+  `run/<run-id>/xdg/RawTherapee/`, and rawtherapee-cli runs with
+  `XDG_CONFIG_HOME` pointed at the copy. Committed state is never touched
+  by execution or version migrations.
+- rawtherapee-cli is invoked with explicit `-p` profile chains only (base
+  style + per-image override) — never `-d` default/GUI profiles — with
+  output format, bit depth, and compression passed explicitly on every
+  invocation. RawTherapee's CLI renders on CPU, avoiding GPU-kernel
+  determinism hazards.
 - All tool and asset pinning lives in the committed `config/toolchain.lock`
   (exact versions + binary/asset hashes); renders verify the live toolchain
   against the lock before running, and each publish writes the lock snapshot
   into that version's `provenance.json`.
 - **Artifact-level dependency tracking:** every one of the 22 artifacts has
   its own dependency record keyed on individual `toolchain.lock` entries,
-  not the lock as a whole: darktable/lensfun/ICC changes invalidate rendered
+  not the lock as a whole: rawtherapee/ICC changes invalidate rendered
   pixels; ImageMagick/font changes invalidate crops and the comparison
   sheet; img2pdf changes invalidate PDFs only; qpdf/poppler/exiftool changes
   trigger re-verification only (`verified → rendered`), never a re-render.
-  E.g. `natural.tif` ← {RAW, natural sidecar, darktable seed, darktable +
-  lensfun + ICC lock entries}; `natural_8x10.jpg` adds {crop geometry,
+  E.g. `natural.tif` ← {RAW, natural base style + override pp3, RT seed,
+  rawtherapee + ICC lock entries}; `natural_8x10.jpg` adds {crop geometry,
   sharpening recipe, lab profile render fields, ImageMagick lock entry};
   the comparison sheet ← the three native JPGs. Invalidation scope and review scope are independent: a
   crop-geometry change (review-invalidating) forces re-approval but then
@@ -257,19 +263,22 @@ option — never scripted, never generative.
 
 ## Tooling
 
-**Install (Homebrew):** darktable (RAW engine), exiftool, ImageMagick,
-img2pdf, qpdf, poppler (`pdfimages`). The Homebrew darktable cask is marked
-for disabling 2026-09-01 — fallback is the official .dmg (CLI at
-`/Applications/darktable.app/Contents/MacOS/darktable-cli`).
+**Install (Homebrew):** RawTherapee (RAW engine; CLI at
+`/Applications/RawTherapee.app/Contents/MacOS/rawtherapee-cli`), exiftool,
+ImageMagick, img2pdf, qpdf, poppler (`pdfimages`). RawTherapee is primary
+because its `.pp3` profiles are plain text — the operator can make precise
+per-image adjustments during the review loop, which darktable's
+base64-encoded XMP parameters do not permit.
 
 **Already installed, roles:** Topaz Photo AI (`tpai` CLI) — optional rescue
 pass only; Photoshop 2020 / Affinity / Pixelmator Pro — manual one-off
 retouching only.
 
-**Decoder fallback (calibration-aware):** darktable 5.6 lists GH7 basic
-RawSpeed support (no GH7 WB presets / noise profile yet). If darktable fails
-Checkpoint 1, RawTherapee (`.pp3`) or rawpy are fallbacks — recipes do not
-transfer between engines; a fallback means recalibrating all three styles.
+**Decoder fallback (calibration-aware):** if RawTherapee fails Checkpoint 1
+on GH7 files, darktable (5.6 lists GH7 basic RawSpeed support; Homebrew cask
+marked for disabling 2026-09-01, official .dmg is the install path) or rawpy
+are fallbacks — recipes do not transfer between engines; a fallback means
+recalibrating all three styles and accepting reduced per-image tunability.
 
 ## Checkpoint 1 (gate for all other work)
 
@@ -323,8 +332,8 @@ first file.
   re-render exactly the affected outputs on any recipe/profile change, and
   review-invalidating changes force re-approval before anything publishes.
 - **Reproduction criterion (single-machine):** on this machine, with a
-  toolchain matching `toolchain.lock` (OpenCL disabled, custom presets
-  off), re-rendering from the RAW archive + committed recipes reproduces
+  toolchain matching `toolchain.lock` (explicit `-p` chains, no default
+  profiles), re-rendering from the RAW archive + committed recipes reproduces
   decoded pixel hashes exactly, with identical ICC profiles, geometry, and
   PDF page boxes. Cross-machine reproduction is explicitly out of scope
   (see Scope boundaries) — the recovery path for any machine is the RAW
