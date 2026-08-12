@@ -176,6 +176,12 @@ profiles + chromatic aberration removal).
 - **natural** — faithful color, true skin tones, restrained saturation
 - **filmic** — natural base + subtle warm tone curve, light film character
 - **bw** — channel-weighted monochrome, tuned per image for portrait tonality
+- **vibrant** (rev 8) — natural base + stronger vibrance (muted colors
+  lifted, skin tones explicitly protected) + gentle contrast S-curve.
+  Vibrance-driven, never global saturation — restraint is the constraint.
+  With four styles the per-photo set is 29 files (4 TIF + 12 JPG + 12 PDF
+  + 4-panel comparison sheet); every "22" and "3 styles" elsewhere in this
+  spec reads 29/4 from rev 8 onward.
 
 Denoising is **default-off**, enabled per image in the recipe when needed
 (ingest preflight flags ISO > 1600). Deliberately excluded: AI upscaling,
