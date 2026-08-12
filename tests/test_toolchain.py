@@ -1,3 +1,4 @@
+import collections
 import json
 import pathlib
 import types
@@ -36,12 +37,16 @@ def fake_tools(tmp_path, monkeypatch):
     icc.write_bytes(b"icc")
 
     broken = {}
+    calls = collections.Counter()
 
     def run(argv, *a, **kw):
         name = pathlib.Path(argv[0]).name
+        calls[name] += 1
         if name in broken:
-            return types.SimpleNamespace(returncode=broken[name][0],
-                                         stdout=broken[name][1], stderr="")
+            returncode, stdout, times = broken[name]
+            if times is None or calls[name] <= times:
+                return types.SimpleNamespace(returncode=returncode, stdout=stdout,
+                                             stderr="")
         return types.SimpleNamespace(returncode=0, stdout="RawTherapee 5.12\n",
                                      stderr="")
 
@@ -50,11 +55,12 @@ def fake_tools(tmp_path, monkeypatch):
     monkeypatch.setattr(toolchain, "_rt_icc_path", lambda: icc)
     monkeypatch.setattr(toolchain.subprocess, "run", run)
 
-    def break_tool(name, returncode=133, stdout=""):
-        broken[name] = (returncode, stdout)
+    def break_tool(name, returncode=133, stdout="", times=None):
+        """Break a probe forever, or for its first `times` calls only."""
+        broken[name] = (returncode, stdout, times)
 
     return types.SimpleNamespace(binaries=binaries, font=font, icc=icc,
-                                 break_tool=break_tool)
+                                 break_tool=break_tool, calls=calls)
 
 
 def test_write_and_verify_roundtrip(tmp_path):
@@ -108,6 +114,37 @@ def test_verify_reports_failed_probe_and_still_checks_other_tools(tmp_path, fake
     assert by_name["qpdf"].startswith("missing:")
     assert "qpdf" in by_name["qpdf"]
     assert by_name["magick"].startswith("hash mismatch")
+
+
+def test_verify_probes_each_tool_once_and_reports_the_first_pass(tmp_path, fake_tools):
+    """One discovery pass, so a flaky probe cannot change the answer.
+
+    qpdf fails its first probe and would succeed on a second. Re-probing after
+    a failure would lose the failure entirely (and double every other probe).
+    """
+    lock = tmp_path / "toolchain.lock"
+    toolchain.write_lock(toolchain.discover(), lock)
+    fake_tools.calls.clear()
+    fake_tools.break_tool("qpdf", times=1)
+
+    problems = toolchain.verify(lock)
+
+    assert [p["name"] for p in problems] == ["qpdf"]
+    assert problems[0]["problem"].startswith("missing:")
+    assert fake_tools.calls["qpdf"] == 1
+    assert set(fake_tools.calls) == set(toolchain._VERSION_ARGS)
+    assert set(fake_tools.calls.values()) == {1}
+
+
+def test_discovery_error_carries_partial_results(fake_tools):
+    """The partial pass is preserved on the exception, not discarded."""
+    fake_tools.break_tool("qpdf")
+    with pytest.raises(toolchain.DiscoveryError) as excinfo:
+        toolchain.discover()
+    assert set(excinfo.value.failures) == {"qpdf"}
+    assert "qpdf" not in excinfo.value.entries
+    assert excinfo.value.entries["magick"]["sha256"]
+    assert isinstance(excinfo.value, RuntimeError)
 
 
 def test_verify_reports_failed_probe_with_empty_output(tmp_path, fake_tools):

@@ -40,6 +40,20 @@ _COMMENT = (
 )
 
 
+class DiscoveryError(RuntimeError):
+    """Discovery failed for at least one name, carrying that pass's results.
+
+    Subclasses RuntimeError so callers that only care about the failure (Task 9
+    lock generation) are unaffected, while verify() can report per-name problems
+    from the same pass rather than probing again.
+    """
+
+    def __init__(self, entries, failures):
+        super().__init__("; ".join(failures.values()))
+        self.entries = entries
+        self.failures = failures
+
+
 def _sha256(path):
     h = hashlib.sha256()
     with open(path, "rb") as f:
@@ -128,7 +142,7 @@ def discover():
     """Full discovery, raising on any failure. Used to generate the lock."""
     entries, failures = _probe_all()
     if failures:
-        raise RuntimeError("; ".join(failures.values()))
+        raise DiscoveryError(entries, failures)
     return entries
 
 
@@ -139,12 +153,13 @@ def write_lock(entries, lock_path):
 def verify(lock_path):
     want = json.loads(Path(lock_path).read_text())
     try:
-        # Honors a monkeypatched discover(); falls back to the tolerant probe so
-        # a broken tool becomes a structured problem naming it, letting the
-        # caller tell verify-tool drift from render-tool drift.
+        # Exactly one discovery pass: on failure the partial results ride along
+        # on the exception, so a broken tool becomes a structured problem naming
+        # it (letting the caller tell verify-tool drift from render-tool drift)
+        # without re-probing, which could disagree with the first pass.
         have, failures = discover(), {}
-    except RuntimeError:
-        have, failures = _probe_all()
+    except DiscoveryError as e:
+        have, failures = e.entries, e.failures
     problems = []
     for name, entry in sorted(want.items()):
         # Only the comment and the named informational entries are hashless.
