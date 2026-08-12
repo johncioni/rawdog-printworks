@@ -200,7 +200,7 @@ git commit -m "feat(app): scaffold PrintworksCore package + RAWdogPrintworks app
   - `PhotoStatus { stem, state: String; deliveryId, ingestedAt: String?; reviewRevision: String; previews: [String: String?]; previewHashes: [String: String?]; stalePreviews: [String]; adjustments: [String: StyleAdjustments]; crops: [String: CropWindow]; expressionAudit: [String]; published: PublishedInfo }`
   - `StatusSnapshot { repo: String; toolchain: ToolchainStatus; lock: LockStatus; styles: [String]; photos: [PhotoStatus] }`
   - `AdjustResult { stem, style, preview: String; temperature, exposure: Control; reviewRevisionBefore, reviewRevisionAfter: String }`
-  - `CropsResult { stem: String; basis: String; windows: [String: CropWindow] }`
+  - `CropsResult { stem: String; basis: String?; windows: [String: CropWindow] }` — `basis` is `null` when every window is persisted (no suggestion ran; Plan 1 Task 9)
   - `ApproveResult { stem, state, fingerprint: String }`
   - `FileNote { file: String; reason: String }`, `FileFailure { file: String; code: String; message: String }`
   - `IngestResult { ingested: [String]; skipped: [FileNote]; conflicts: [FileNote]; failed: [FileFailure] }`
@@ -272,6 +272,26 @@ final class ContractTests: XCTestCase {
         let env = try ContractDecoder.make().decode(
             Envelope<ApproveResult>.self, from: fixture("approve_stale_review.json"))
         XCTAssertEqual(env.error?.code, "STALE_REVIEW")
+    }
+
+    func testAdjustStreamFixtureDecodesLineByLine() throws {
+        // The NDJSON fixture is the contract for PipelineClient's streaming
+        // parser: every non-final line is a ProgressEvent, the final line is
+        // the envelope, and the envelope equals adjust_ok.json.
+        let lines = String(decoding: try fixture("adjust_stream.ndjson"),
+                           as: UTF8.self)
+            .split(separator: "\n").map(String.init)
+        XCTAssertFalse(lines.isEmpty)
+        let decoder = ContractDecoder.make()
+        for line in lines.dropLast() {
+            XCTAssertNoThrow(try decoder.decode(ProgressEvent.self,
+                                                from: Data(line.utf8)), line)
+        }
+        let final = try decoder.decode(Envelope<AdjustResult>.self,
+                                       from: Data(lines.last!.utf8))
+        let canonical = try decoder.decode(Envelope<AdjustResult>.self,
+                                           from: fixture("adjust_ok.json"))
+        XCTAssertEqual(final, canonical)
     }
 }
 ```
@@ -536,6 +556,7 @@ public actor PipelineClient {
         onEvent: (@Sendable (ProgressEvent) -> Void)?
     ) async -> CommandResult<R> {
         let process = Process()
+        var launchError: Error?
         if let override = executableOverride {
             process.executableURL = override
             process.arguments = args
@@ -574,14 +595,21 @@ public actor PipelineClient {
             _ = errCollector.completeLines(appending: handle.availableData)
         }
 
-        do { try process.run() } catch {
-            return CommandResult(
-                envelope: synthetic("could not launch: \(error.localizedDescription)"),
-                stderrTail: "")
-        }
+        // terminationHandler is set BEFORE run(): Foundation invokes it
+        // exactly once on termination, so no isRunning fallback is needed —
+        // a fallback could double-resume the continuation.
         await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
             process.terminationHandler = { _ in c.resume() }
-            if !process.isRunning { c.resume() }   // already exited
+            do { try process.run() } catch {
+                process.terminationHandler = nil
+                c.resume()
+                launchError = error          // declared `var launchError: Error?` above
+            }
+        }
+        if let launchError {
+            return CommandResult(
+                envelope: synthetic("could not launch: \(launchError.localizedDescription)"),
+                stderrTail: "")
         }
         out.fileHandleForReading.readabilityHandler = nil
         err.fileHandleForReading.readabilityHandler = nil
@@ -616,10 +644,40 @@ public actor PipelineClient {
 /// completed lines and retains the unterminated remainder; `allLines` is the
 /// full ordered history; `finish(_:)` reads any remaining data and flushes
 /// the final partial line.
-final class LineCollector: @unchecked Sendable { /* NSLock + buffer; ~30 lines */ }
+final class LineCollector: @unchecked Sendable {
+    private let lock = NSLock()
+    private var buffer = ""
+    private var lines: [String] = []
+
+    var allLines: [String] {
+        lock.lock(); defer { lock.unlock() }
+        return lines
+    }
+
+    func completeLines(appending data: Data) -> [String] {
+        lock.lock(); defer { lock.unlock() }
+        buffer += String(decoding: data, as: UTF8.self)
+        var completed: [String] = []
+        while let newline = buffer.firstIndex(of: "\n") {
+            completed.append(String(buffer[..<newline]))
+            buffer.removeSubrange(...newline)
+        }
+        lines.append(contentsOf: completed)
+        return completed
+    }
+
+    func finish(_ handle: FileHandle) {
+        _ = completeLines(appending: handle.readDataToEndOfFile())
+        lock.lock(); defer { lock.unlock() }
+        if !buffer.isEmpty {
+            lines.append(buffer)
+            buffer = ""
+        }
+    }
+}
 ```
 
-`LineCollector` is small enough to write directly from that contract: `private let lock = NSLock()`, `private var buffer = ""`, `private(set) var lines: [String]`; `completeLines` appends decoded UTF-8, splits on `"\n"`, keeps the last fragment in `buffer`, appends completed lines to `lines` and returns them; `finish` reads `readDataToEndOfFile()`, appends, then flushes a non-empty `buffer` as a final line. Its own unit test: feed chunks that split a line mid-UTF-8 boundary-safe string (`"ab"`, `"c\nde"`, `"f\n"`) → lines `["abc", "def"]`.
+`LineCollector` unit test: feed chunks `"ab"`, `"c\nde"`, `"f\n"` → `allLines == ["abc", "def"]` after `finish` of an empty handle; a trailing unterminated `"partial"` flushes as a final line on `finish`.
 
 - [ ] **Step 4: Run to verify pass** — `swift test --package-path app/PrintworksCore` → PASS.
 
@@ -1232,7 +1290,7 @@ git commit -m "feat(app): main window shell — sidebar, grid, drop target, busy
 
 **Interfaces:**
 - Consumes: `AppModel.selectedStem/selectedStyle`, `PhotoStatus.previews/previewHashes/stalePreviews`.
-- Produces: `ReviewScreen(model:)` — large canvas on `Theme.canvas` showing the selected style's preview (`NSImage(contentsOfFile:)`, `.id(previewHash)` so a content-hash change forces reload; never `AsyncImage`/URL cache); segmented style control bound to `model.selectedStyle`; keyboard: `⌘1`–`⌘4` (`.keyboardShortcut("1", modifiers: .command)` on hidden buttons) switch style, `space` toggles `CompareView`, `c` toggles the crop overlay (Task 9), `←`/`→` move `model.selectedStem` through the open delivery; per-style "preview out of date — re-render" chip when the style ∈ `stalePreviews` → `model.rerenderPreview(stem:style:)` (`preview <stem> <style> --json` via `mutate`); "rendering preview…" shimmer overlay while that command is `activeCommand`.
+- Produces: `ReviewScreen(model:)` — large canvas on `Theme.canvas` showing the selected style's preview (`NSImage(contentsOfFile:)`, `.id(previewHash)` so a content-hash change forces reload; never `AsyncImage`/URL cache); segmented style control bound to `model.selectedStyle`; keyboard: `⌘1`–`⌘4` (`.keyboardShortcut("1", modifiers: .command)` on hidden buttons) switch style, `space` toggles `CompareView`, `c` toggles the crop overlay (Task 9), `←`/`→` move `model.selectedStem` through the open delivery; per-style "preview out of date — re-render" chip when the style ∈ `stalePreviews` → `model.rerenderPreview(stem:style:)` (`preview --stem S --style Y --json` via `mutate`); "rendering preview…" shimmer overlay while that command is `activeCommand`.
 - `CompareView(model:)` — 2×2 grid of the four styles' previews with labels; click a panel → sets `selectedStyle`, dismisses compare.
 
 - [ ] **Step 1: Implement** both views; add `rerenderPreview` to `AppModel` **with unit tests first** in `AppModelTests`: (a) asserts args `["preview", "--stem", "P1", "--style", "filmic", "--json"]` and a refresh after; (b) asserts the result's `reviewRevisionBefore/After` pair flows through the SAME shared `rebase(stem:before:after:)` path as `applyAdjust` — a matching pair rebases the draft, a non-matching one marks it stale. Canvas image loading resolves via `RepoPaths.resolve` + content-hash `.id` keying, as in Task 7.
@@ -1323,7 +1381,45 @@ echo "Install: cp -R \"$APP\" /Applications/"
 
   - **Visual QA gate (done-criteria, spec §8):** run the Release app against the real repo and capture screenshots of: grid, review (each of the 4 styles), compare mode, crop overlay, slider adjust with shimmer, render progress (trigger a reprocess of one photo), busy pill (hold the lock via a paused CLI `run` in another terminal), stale-draft banner (touch a sidecar mid-draft), error banner (bogus python path). Every screenshot is reviewed by eye before this task is complete; the review is recorded in the task's completion note. Green tests alone do not close this task.
 
-- [ ] **Step 1: Write SmokeTests** (canned JSON inline in the test file; stub script pattern from Task 3) → fail (compile) → implement any missing glue.
+- [ ] **Step 1: Write SmokeTests** (canned JSON inline in the test file; stub script pattern from Task 3) → fail (compile) → implement any missing glue. Structure (the stub dispatches on `$1`; canned payloads are string constants in the test file):
+
+```swift
+@MainActor
+final class SmokeTests: XCTestCase {
+    func testFullReviewFlowAgainstStubPipeline() async throws {
+        let repo = try makeFixtureRepo()          // conftest dir list + 2 recipes + tiny preview JPGs
+        let stub = try makeStubPython(at: repo)   // case "$2" in status) … adjust) … approve) … run) …
+        let client = PipelineClient(
+            config: PipelineConfig(repo: repo,
+                                   python: stub), executableOverride: stub)
+        let model = AppModel(client: PipelineClientAdapter(client),
+                             repo: repo, sliderDebounce: .zero)
+        await model.refresh()
+        XCTAssertEqual(model.snapshot?.photos.count, 2)
+
+        model.startDraft(stem: "P1")
+        model.setSlider(stem: "P1", style: "natural", temperature: 5600,
+                        exposure: nil)
+        await model.flushPendingAdjustments(stem: "P1")
+        // Canned adjust envelope carries review_revision_before/after matching
+        // the canned status revisions → the draft REBASES, not stales.
+        XCTAssertFalse(model.drafts["P1"]!.isStale)
+
+        for key in ["eyes_open", "expressions_natural", "no_blinks_in_crops"] {
+            model.drafts["P1"]!.checks[key] = true
+        }
+        await model.approve(stem: "P1")
+        // The stub logs argv per call to <repo>/stub-calls.log; assert the
+        // sequence adjust → approve (with a readable review-file whose
+        // expected_review_revision matches) → run --stem P1 → final status.
+        let calls = try String(contentsOf: repo.appendingPathComponent("stub-calls.log"),
+                               encoding: .utf8).split(separator: "\n")
+        XCTAssertTrue(calls.contains { $0.hasPrefix("adjust") })
+        XCTAssertTrue(calls.contains { $0.hasPrefix("approve") })
+        XCTAssertTrue(calls.contains { $0.hasPrefix("run --stem P1") })
+    }
+}
+```
 - [ ] **Step 2: Gate** — full `swift test` + `xcodebuild build` + `zsh scripts/build-app.sh` all succeed.
 - [ ] **Step 3: Visual QA** — capture + review the screenshot set; fix what the eye finds; re-shoot.
 - [ ] **Step 4: Commit**
