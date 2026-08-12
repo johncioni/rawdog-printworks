@@ -421,7 +421,7 @@ Implementation identical in structure to rev 1 with the added fields. PASS, comm
 
 **Interfaces:**
 - As rev 1 (`STATES`, `load/save`, `set_state`, `effective_state`, `artifact_names` → 22 names, `artifact_deps`) with:
-  - `artifact_deps` uses lock-entry classes: TIF ← raw/style/seed/RENDER_TOOLS entries; JPG adds lab render fields + CROP_TOOLS entries + normalized crop + sharpen; PDF adds PDF_TOOLS; sheet ← three native JPG names. (Same code shape as rev 1.)
+  - `artifact_deps` uses lock-entry classes (as corrected in the Task 7 fix round): TIF ← raw/seed/style/`rec["overrides"]`/RENDER_TOOLS entries; JPG adds lab render fields + `lab["ppi"]` + the magick lock entry only + normalized crop + sharpen; PDF adds PDF_TOOLS; comparison sheet embeds the full dependency RECORDS of its three native-JPG sources and is the only artifact carrying the font entry.
   - NEW `manifest.record_artifacts(m, stem, deps_by_name: dict)` — stores the per-artifact dep records under `m["photos"][stem]["artifacts"]` at render time.
   - NEW `manifest.stale_artifacts(m, stem, current_deps_by_name) -> list[str]` — names whose stored deps ≠ current.
   - NEW `manifest.rebuild() -> dict` — reconstructs `.manifest` with no cache: for each `recipes/*.yaml`: state `verified` if `Output/photos/<stem>/current/provenance.json` exists AND its `fingerprint` matches the recipe's `approval.fingerprint`; else `approved` if the recipe has an approval fingerprint; else `ingested`. Artifact records restored from provenance.
