@@ -6,7 +6,8 @@ import subprocess
 from pathlib import Path
 
 from . import (crops, geometry, labprofile, manifest, metadata, paths, pdfs,
-               publish, recipe, render, toolchain, verify as verify_mod)
+               publish, recipe, render, subject, toolchain,
+               verify as verify_mod)
 
 
 LAB_PROFILE = "generic-v1"
@@ -357,10 +358,30 @@ def approve(stem):
                 "render dims not recorded; run croppreview/preview first"
             ) from error
         landscape = width >= height
-        for crop in default_crops:
-            rec["crops"][crop] = geometry.centered_crop_norm(
-                width, height, crop, landscape
+        preview = paths.previews_dir() / f"{stem}_natural_preview.jpg"
+        bbox = None
+        if preview.is_file():
+            bbox = subject.group_bbox(preview)
+        else:
+            print(
+                f"NOTE: {stem}: natural preview missing; "
+                "using geometric center"
             )
+        for crop in default_crops:
+            if bbox is None:
+                window = geometry.centered_crop_norm(
+                    width, height, crop, landscape
+                )
+            else:
+                window = geometry.subject_crop_norm(
+                    width, height, crop, landscape, bbox
+                )
+                if bbox["w"] > window["w"] or bbox["h"] > window["h"]:
+                    print(
+                        f"WARNING: {stem} {crop}: group extends beyond "
+                        "crop window — review before approving"
+                    )
+            rec["crops"][crop] = window
         # Approval must bind the materialized geometry, not an implicit default
         # that could change independently of the persisted recipe.
         recipe.save(stem, rec)

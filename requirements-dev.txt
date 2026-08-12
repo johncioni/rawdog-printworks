@@ -1,2 +1,4 @@
 pytest
 pyyaml
+pyobjc-framework-Vision
+pyobjc-framework-Quartz

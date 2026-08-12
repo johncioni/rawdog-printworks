@@ -106,6 +106,18 @@ Orientation follows the source image; "8×10" means 4:5 portrait or 10×8
 landscape as appropriate. Crop windows are placed by eye per photo; their
 normalized geometry lives in the committed recipe.
 
+**Default crop placement is subject-centered (rev 7):** at approval time,
+faces are detected in the rendered natural preview via the macOS Vision
+framework (pyobjc bridge); the union of face boxes, padded, defines the
+group's center, and the aspect-correct maximal window is positioned so the
+group center lands as close to the window center as frame bounds allow.
+Fallback to geometric center when no faces are detected. If the padded
+group box cannot fully fit the crop aspect, the photo is flagged for
+operator attention rather than silently clipping people. Operator-recorded
+windows in the recipe always take precedence; the operator visually reviews
+every crop before approval either way. Detection runs on already-rendered
+previews only — it chooses framing; it never edits pixels.
+
 | Output | Pixel policy |
 |--------|--------------|
 | TIF masters | Native pixels, no resampling, 16-bit, Deflate compression |

@@ -1,16 +1,16 @@
 approval:
-  approved_at: '2026-08-12T09:37:26-04:00'
-  fingerprint: 7f4dedef77f36a9fbe0104aefc441096ac2ec8fbfae327ca042139a33c9b1b86
+  approved_at: '2026-08-12T10:31:12-04:00'
+  fingerprint: 19f8cb8d62c0dd759c37ebe8f80aca2155b63e0afba1d160b5b0c38d52b72e80
 crops:
   5x7:
     h: 0.9509668508287292
     w: 1.0
     x: 0.0
-    y: 0.02451657458563536
+    y: 0.0
   8x10:
     h: 1.0
     w: 0.9387966804979253
-    x: 0.030601659751037343
+    x: 0.06120331950207469
     y: 0.0
 expression_audit:
 - 'all eleven subjects: eyes open, natural smiles, engaged with camera'

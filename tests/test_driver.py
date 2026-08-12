@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 
 from pipeline import (crops, driver, geometry, manifest, metadata, paths, pdfs,
-                      publish, recipe, render, toolchain)
+                      publish, recipe, render, subject, toolchain)
 
 
 @pytest.fixture(autouse=True)
@@ -105,14 +105,24 @@ def test_approve_requires_expression_audit(tmp_repo, monkeypatch):
         driver.approve("P1")
 
 
-def test_approve_persists_default_crops_before_fingerprinting(
+def test_approve_persists_subject_crops_before_fingerprinting(
         tmp_repo, monkeypatch):
     rec = recipe.new("P1", "raw", 5776, 4336)
     rec.update(render_width=5784, render_height=4344)
     rec["expression_audit"] = ["all expressions reviewed"]
     recipe.save("P1", rec)
+    preview = tmp_repo / "previews/P1_natural_preview.jpg"
+    preview.write_bytes(b"preview")
+    bbox = {"x": 0.05, "y": 0.3, "w": 0.2, "h": 0.25}
+    detected = []
+
+    def group_bbox(image_path):
+        detected.append(image_path)
+        return bbox
+
+    monkeypatch.setattr(subject, "group_bbox", group_bbox)
     expected = {
-        crop: geometry.centered_crop_norm(5784, 4344, crop, True)
+        crop: geometry.subject_crop_norm(5784, 4344, crop, True, bbox)
         for crop in paths.CROPS
     }
     seen = []
@@ -127,9 +137,86 @@ def test_approve_persists_default_crops_before_fingerprinting(
     driver.approve("P1")
 
     saved = recipe.load("P1")
+    assert detected == [preview]
     assert seen == [expected]
     assert saved["crops"] == expected
     assert saved["approval"]["fingerprint"] == "fp-bound-to-persisted-crops"
+
+
+def test_approve_centers_default_crops_when_subject_detection_returns_none(
+        tmp_repo, monkeypatch):
+    rec = recipe.new("P1", "raw", 5776, 4336)
+    rec.update(render_width=5784, render_height=4344)
+    rec["expression_audit"] = ["all expressions reviewed"]
+    recipe.save("P1", rec)
+    preview = tmp_repo / "previews/P1_natural_preview.jpg"
+    preview.write_bytes(b"preview")
+    detected = []
+    monkeypatch.setattr(
+        subject,
+        "group_bbox",
+        lambda image_path: detected.append(image_path),
+    )
+    monkeypatch.setattr(driver, "_current_fingerprint", lambda stem: "fp")
+
+    driver.approve("P1")
+
+    expected = {
+        crop: geometry.centered_crop_norm(5784, 4344, crop, True)
+        for crop in paths.CROPS
+    }
+    assert detected == [preview]
+    assert recipe.load("P1")["crops"] == expected
+
+
+def test_approve_notes_missing_natural_preview_and_uses_centered_crops(
+        tmp_repo, monkeypatch, capsys):
+    rec = recipe.new("P1", "raw", 5776, 4336)
+    rec.update(render_width=5784, render_height=4344)
+    rec["expression_audit"] = ["all expressions reviewed"]
+    recipe.save("P1", rec)
+    monkeypatch.setattr(
+        subject,
+        "group_bbox",
+        lambda image_path: (_ for _ in ()).throw(AssertionError),
+    )
+    monkeypatch.setattr(driver, "_current_fingerprint", lambda stem: "fp")
+
+    driver.approve("P1")
+
+    expected = {
+        crop: geometry.centered_crop_norm(5784, 4344, crop, True)
+        for crop in paths.CROPS
+    }
+    assert recipe.load("P1")["crops"] == expected
+    assert capsys.readouterr().out == (
+        "NOTE: P1: natural preview missing; using geometric center\n"
+    )
+
+
+def test_approve_warns_when_group_is_larger_than_crop_window(
+        tmp_repo, monkeypatch, capsys):
+    rec = recipe.new("P1", "raw", 5776, 4336)
+    rec.update(render_width=5784, render_height=4344)
+    rec["expression_audit"] = ["all expressions reviewed"]
+    recipe.save("P1", rec)
+    preview = tmp_repo / "previews/P1_natural_preview.jpg"
+    preview.write_bytes(b"preview")
+    monkeypatch.setattr(
+        subject,
+        "group_bbox",
+        lambda image_path: {"x": 0.0, "y": 0.0, "w": 1.0, "h": 1.0},
+    )
+    monkeypatch.setattr(driver, "_current_fingerprint", lambda stem: "fp")
+
+    driver.approve("P1")
+
+    assert capsys.readouterr().out == (
+        "WARNING: P1 8x10: group extends beyond crop window — "
+        "review before approving\n"
+        "WARNING: P1 5x7: group extends beyond crop window — "
+        "review before approving\n"
+    )
 
 
 def test_approve_requires_render_dims_for_default_crops(tmp_repo, monkeypatch):
