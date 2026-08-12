@@ -1,4 +1,5 @@
 import json
+import pathlib
 import types
 
 import pytest
@@ -17,19 +18,43 @@ def _completed(stdout="RawTherapee 5.12\n", stderr="", returncode=0):
 
 @pytest.fixture
 def fake_tools(tmp_path, monkeypatch):
-    """Every tool resolves to one real file; no real tool is ever invoked."""
-    binary = tmp_path / "bin" / "tool"
-    binary.parent.mkdir()
-    binary.write_bytes(b"binary")
+    """Each tool resolves to its own real file; no real tool is ever invoked.
+
+    Per-tool files (not one shared binary) so a test can break exactly one
+    probe and give each tool a distinct hash.
+    """
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    binaries = {}
+    for name in toolchain._VERSION_ARGS:
+        f = bindir / name
+        f.write_bytes(f"binary-{name}".encode())
+        binaries[name] = f
     font = tmp_path / "Helvetica.ttc"
     font.write_bytes(b"font")
     icc = tmp_path / "RTv4_sRGB.icc"
     icc.write_bytes(b"icc")
-    monkeypatch.setattr(toolchain, "_tool_path", lambda name: str(binary))
+
+    broken = {}
+
+    def run(argv, *a, **kw):
+        name = pathlib.Path(argv[0]).name
+        if name in broken:
+            return types.SimpleNamespace(returncode=broken[name][0],
+                                         stdout=broken[name][1], stderr="")
+        return types.SimpleNamespace(returncode=0, stdout="RawTherapee 5.12\n",
+                                     stderr="")
+
+    monkeypatch.setattr(toolchain, "_tool_path", lambda name: str(binaries[name]))
     monkeypatch.setattr(toolchain, "_FONT", str(font))
     monkeypatch.setattr(toolchain, "_rt_icc_path", lambda: icc)
-    monkeypatch.setattr(toolchain.subprocess, "run", _completed())
-    return types.SimpleNamespace(binary=binary, font=font, icc=icc)
+    monkeypatch.setattr(toolchain.subprocess, "run", run)
+
+    def break_tool(name, returncode=133, stdout=""):
+        broken[name] = (returncode, stdout)
+
+    return types.SimpleNamespace(binaries=binaries, font=font, icc=icc,
+                                 break_tool=break_tool)
 
 
 def test_write_and_verify_roundtrip(tmp_path):
@@ -62,6 +87,53 @@ def test_verify_reports_missing_tool(tmp_path, monkeypatch):
     monkeypatch.setattr(toolchain, "discover",
                         lambda: {"rawtherapee": FAKE["rawtherapee"]})
     assert toolchain.verify(lock) == [{"name": "magick", "problem": "missing"}]
+
+
+def test_verify_reports_failed_probe_and_still_checks_other_tools(tmp_path, fake_tools):
+    """A broken tool becomes a structured problem; the rest still verify.
+
+    Drives the real discovery path (the fixture patches _tool_path and
+    subprocess.run) rather than patching discover(), which would either hit
+    real tools or skip the per-tool failure collection entirely.
+    """
+    lock = tmp_path / "toolchain.lock"
+    toolchain.write_lock(toolchain.discover(), lock)
+
+    fake_tools.break_tool("qpdf")
+    fake_tools.binaries["magick"].write_bytes(b"upgraded magick")
+
+    problems = toolchain.verify(lock)
+    by_name = {p["name"]: p["problem"] for p in problems}
+    assert set(by_name) == {"qpdf", "magick"}
+    assert by_name["qpdf"].startswith("missing:")
+    assert "qpdf" in by_name["qpdf"]
+    assert by_name["magick"].startswith("hash mismatch")
+
+
+def test_verify_reports_failed_probe_with_empty_output(tmp_path, fake_tools):
+    lock = tmp_path / "toolchain.lock"
+    toolchain.write_lock(toolchain.discover(), lock)
+    fake_tools.break_tool("exiftool", returncode=0, stdout="   \n")
+    problems = toolchain.verify(lock)
+    assert [p["name"] for p in problems] == ["exiftool"]
+    assert problems[0]["problem"].startswith("missing:")
+
+
+def test_verify_flags_classified_entry_without_sha256(tmp_path, monkeypatch):
+    """Deleting sha256 from a classified tool must not buy an exemption."""
+    lock = tmp_path / "toolchain.lock"
+    toolchain.write_lock({**FAKE, "magick": {"path": "/y", "version": "7.1"}}, lock)
+    monkeypatch.setattr(toolchain, "discover", lambda: dict(FAKE))
+    assert toolchain.verify(lock) == [
+        {"name": "magick", "problem": "malformed lock entry"}]
+
+
+def test_verify_flags_non_dict_classified_entry(tmp_path, monkeypatch):
+    lock = tmp_path / "toolchain.lock"
+    toolchain.write_lock({**FAKE, "magick": "7.1"}, lock)
+    monkeypatch.setattr(toolchain, "discover", lambda: dict(FAKE))
+    assert toolchain.verify(lock) == [
+        {"name": "magick", "problem": "malformed lock entry"}]
 
 
 def test_verify_ignores_comment_and_informational_entries(tmp_path, monkeypatch):
@@ -122,7 +194,7 @@ def test_discover_records_tools_assets_and_informational(fake_tools):
     entries = toolchain.discover()
     for name in ("rawtherapee", "magick", "img2pdf", "qpdf", "exiftool",
                  "pdfimages", "pdfinfo"):
-        assert entries[name]["path"] == str(fake_tools.binary)
+        assert entries[name]["path"] == str(fake_tools.binaries[name])
         assert entries[name]["version"] == "RawTherapee 5.12"
         assert len(entries[name]["sha256"]) == 64
     assert entries["font"] == {"path": str(fake_tools.font), "version": "asset",

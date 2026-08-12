@@ -29,6 +29,7 @@ _RT_VERSION = "5.12"
 # Informational only: recorded for reproducibility, in no tool class, so a
 # Python or test-dependency upgrade never invalidates rendered artifacts.
 _INFO_PACKAGES = ("pytest", "pyyaml")
+_INFORMATIONAL = {"python", *_INFO_PACKAGES}
 
 _COMMENT = (
     "RawTherapee is pinned to 5.12. The 5.13 cask requires macOS >= 26; "
@@ -85,27 +86,49 @@ def _package_version(name):
         return "not installed"
 
 
-def discover():
-    entries = {}
+def _tool_entry(name, args):
+    p = _tool_path(name)
+    if not p or not Path(p).exists():
+        raise RuntimeError(f"tool not found: {name}")
+    version = _version_output(p, args, name)
+    if name == "rawtherapee" and _RT_VERSION not in version:
+        raise RuntimeError(
+            f"rawtherapee is not {_RT_VERSION} (PATH shadowing?): {version}")
+    return {"path": p, "version": version, "sha256": _sha256(p)}
+
+
+def _asset_entry(name):
+    p = Path(_FONT) if name == "font" else _rt_icc_path()
+    if not p.exists():
+        raise RuntimeError(f"asset not found: {name} at {p}")
+    return {"path": str(p), "version": "asset", "sha256": _sha256(p)}
+
+
+def _probe_all():
+    """Discover everything, collecting per-name failures instead of raising."""
+    entries, failures = {}, {}
     for name, args in _VERSION_ARGS.items():
-        p = _tool_path(name)
-        if not p or not Path(p).exists():
-            raise RuntimeError(f"tool not found: {name}")
-        version = _version_output(p, args, name)
-        if name == "rawtherapee" and _RT_VERSION not in version:
-            raise RuntimeError(
-                f"rawtherapee is not {_RT_VERSION} (PATH shadowing?): {version}")
-        entries[name] = {"path": p, "version": version, "sha256": _sha256(p)}
-
-    for name, p in (("font", Path(_FONT)), ("rt_icc", _rt_icc_path())):
-        if not p.exists():
-            raise RuntimeError(f"asset not found: {name} at {p}")
-        entries[name] = {"path": str(p), "version": "asset", "sha256": _sha256(p)}
-
+        try:
+            entries[name] = _tool_entry(name, args)
+        except RuntimeError as e:
+            failures[name] = str(e)
+    for name in _ASSET_NAMES:
+        try:
+            entries[name] = _asset_entry(name)
+        except RuntimeError as e:
+            failures[name] = str(e)
     entries["python"] = {"path": sys.executable, "version": platform.python_version()}
     for name in _INFO_PACKAGES:
         entries[name] = {"version": _package_version(name)}
     entries["_comment"] = _COMMENT
+    return entries, failures
+
+
+def discover():
+    """Full discovery, raising on any failure. Used to generate the lock."""
+    entries, failures = _probe_all()
+    if failures:
+        raise RuntimeError("; ".join(failures.values()))
     return entries
 
 
@@ -115,18 +138,27 @@ def write_lock(entries, lock_path):
 
 def verify(lock_path):
     want = json.loads(Path(lock_path).read_text())
-    have = discover()
+    try:
+        # Honors a monkeypatched discover(); falls back to the tolerant probe so
+        # a broken tool becomes a structured problem naming it, letting the
+        # caller tell verify-tool drift from render-tool drift.
+        have, failures = discover(), {}
+    except RuntimeError:
+        have, failures = _probe_all()
     problems = []
     for name, entry in sorted(want.items()):
-        # Comments and informational entries carry no hash and never invalidate.
-        if name.startswith("_") or not isinstance(entry, dict) or "sha256" not in entry:
+        # Only the comment and the named informational entries are hashless.
+        if name.startswith("_") or name in _INFORMATIONAL:
             continue
-        h = have.get(name)
-        if h is None:
+        if not isinstance(entry, dict) or not entry.get("sha256"):
+            problems.append({"name": name, "problem": "malformed lock entry"})
+        elif name in failures:
+            problems.append({"name": name, "problem": f"missing: {failures[name]}"})
+        elif name not in have:
             problems.append({"name": name, "problem": "missing"})
-        elif h["sha256"] != entry["sha256"]:
-            problems.append({"name": name, "problem":
-                             f"hash mismatch ({entry['version']} -> {h['version']})"})
+        elif have[name]["sha256"] != entry["sha256"]:
+            problems.append({"name": name, "problem": "hash mismatch "
+                             f"({entry['version']} -> {have[name]['version']})"})
     return problems
 
 
