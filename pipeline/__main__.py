@@ -1,4 +1,4 @@
-import argparse, sys
+import argparse, json, sys
 
 def _wrap(fn):
     def inner(ns):
@@ -11,6 +11,7 @@ def _wrap(fn):
 
 def build_parser():
     from . import driver, manifest, ingest, render
+    from . import adjust as adjust_mod
     ap = argparse.ArgumentParser(prog="pipeline")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
@@ -30,7 +31,25 @@ def build_parser():
     p = sub.add_parser("verify"); p.add_argument("stem")
     p.set_defaults(fn=_wrap(lambda ns: _verify(ns.stem)))
     sub.add_parser("run").set_defaults(fn=_wrap(lambda ns: driver.process_all()))
+    p = sub.add_parser("adjust")
+    p.add_argument("--stem", required=True); p.add_argument("--style", required=True)
+    p.add_argument("--temperature", type=int); p.add_argument("--exposure", type=float)
+    p.add_argument("--reset", action="store_true"); p.add_argument("--json", action="store_true")
+    p.set_defaults(fn=lambda ns: _locked_json(ns, lambda: adjust_mod.apply(
+        ns.stem, ns.style, ns.temperature, ns.exposure, ns.reset)))
     return ap
+
+
+def _locked_json(ns, fn):
+    from . import jsonio, publish
+    def body():
+        with publish.acquire_lock():
+            return fn()
+    if getattr(ns, "json", False):
+        return jsonio.run_json(body)
+    result = body()
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
 
 def _resolve(name, flag_value, positional):
     from . import jsonio
