@@ -18,6 +18,9 @@ def build_parser():
     p = sub.add_parser("status"); p.add_argument("--json", action="store_true")
     p.set_defaults(fn=lambda ns: _dispatch(ns, _status_cmd, mutating=False))
     p = sub.add_parser("ingest"); p.add_argument("--json", action="store_true")
+    # `from` is a keyword, so the destination has to be named explicitly.
+    p.add_argument("--from", dest="sources", nargs="+")
+    p.add_argument("--delivery-id")
     p.set_defaults(fn=lambda ns: _dispatch(ns, _ingest_cmd, mutating=True))
     p = sub.add_parser("preview")
     p.add_argument("stem", nargs="?"); p.add_argument("style", nargs="?")
@@ -172,19 +175,48 @@ def _crops_cmd(ns):
         return
     return result
 
+def _ingest_result(ns):
+    """The staged copy-in (when --from) and the Input/ ingest as one body."""
+    from . import ingest
+    result = {"ingested": [], "skipped": [], "conflicts": [], "failed": []}
+    if ns.sources:
+        staged = ingest.stage_sources(ns.sources)
+        for key in ("skipped", "conflicts", "failed"):
+            result[key] += staged[key]
+    for stem, outcome in sorted(ingest.run(ns.delivery_id).items()):
+        if outcome == "ok":
+            result["ingested"].append(stem)
+        elif outcome.startswith("failed: "):
+            result["failed"].append({"file": stem, "code": "BAD_INPUT",
+                                     "message": outcome.removeprefix("failed: ")})
+        else:
+            # Today that is only "skipped (already ingested)"; unwrapping the
+            # text rather than matching it keeps a new outcome from vanishing.
+            result["skipped"].append(
+                {"file": stem,
+                 "reason": outcome.removeprefix("skipped (").removesuffix(")")})
+    return result
+
 def _ingest_cmd(ns):
-    from . import ingest, jsonio
-    if not ns.json:
+    from . import jsonio
+    if not ns.json and not ns.sources and ns.delivery_id is None:
         return _ingest()
     # Never the legacy _ingest here: it signals failure with SystemExit, a
     # BaseException run_json deliberately does not catch, which would exit
     # without ever writing an envelope.
-    results = ingest.run()
-    failed = [f"{stem}: {r}" for stem, r in sorted(results.items())
-              if "failed" in r]
-    if failed:
-        raise jsonio.CommandError("PARTIAL_FAILURE", "; ".join(failed))
-    return {}
+    result = _ingest_result(ns)
+    if not ns.json:
+        # No legacy output to preserve on the flag path — pretty-print the same
+        # body --json emits, and keep _ingest's exit code for failures.
+        print(json.dumps(result, indent=2, sort_keys=True))
+        if result["failed"]:
+            raise SystemExit(1)
+        return
+    if result["failed"]:
+        raise jsonio.CommandError(
+            "PARTIAL_FAILURE", f"{len(result['failed'])} file(s) failed",
+            result=result)
+    return result
 
 def _verify_cmd(ns):
     from . import driver, jsonio
