@@ -690,12 +690,19 @@ def test_crop_windows_suggests_with_basis(tmp_repo, monkeypatch):
     monkeypatch.setattr(subject, "group_bbox_detail",
                         lambda p: ({"x": 0.4, "y": 0.3, "w": 0.2, "h": 0.3},
                                    "faces"))
+    recipe_bytes = (tmp_repo / "recipes/P1.yaml").read_bytes()
+    state = _recipe_state(tmp_repo)
     result = driver.crop_windows("P1")
     assert result["basis"] == "faces"
     assert set(result["windows"]) == set(paths.CROPS)
     assert all(w["source"] == "suggested" for w in result["windows"].values())
     before = recipe.load("P1")
     assert before["crops"] == {"8x10": None, "5x7": None}   # nothing persisted
+    # Byte-identical, not merely equal once parsed — and unwritten, not merely
+    # unchanged: a re-save with the same content is still a write this command
+    # must never make.
+    assert (tmp_repo / "recipes/P1.yaml").read_bytes() == recipe_bytes
+    assert _recipe_state(tmp_repo) == state
 
 
 def test_crop_windows_detector_error_falls_back_centered(tmp_repo, monkeypatch):
@@ -721,6 +728,14 @@ def test_crop_windows_requires_dims(tmp_repo):
     assert e.value.code == "BAD_INPUT"
 
 
+def _recipe_state(tmp_repo, stem="P1"):
+    """Bytes plus identity: recipe.save() emits deterministic YAML, so a
+    content-identical re-save is invisible to a bytes comparison alone, while
+    its temp-file + os.replace always lands a new inode."""
+    path = tmp_repo / f"recipes/{stem}.yaml"
+    return path.read_bytes(), path.stat().st_ino
+
+
 def _crop_windows_repo(dims=(5784, 4344), crops=None):
     from pipeline import recipe
     recipe.save("P1", recipe.new("P1", "aa" * 32, 5776, 4336))
@@ -738,6 +753,8 @@ def test_crop_windows_all_persisted_reports_no_basis(tmp_repo, monkeypatch):
     _crop_windows_repo(crops={crop: dict(window) for crop in paths.CROPS})
     # Fully persisted means no suggestion runs at all — not even the detector.
     monkeypatch.setattr(subject, "group_bbox_detail", lambda p: 1 / 0)
+    recipe_bytes = (tmp_repo / "recipes/P1.yaml").read_bytes()
+    state = _recipe_state(tmp_repo)
 
     result = driver.crop_windows("P1")
 
@@ -746,6 +763,8 @@ def test_crop_windows_all_persisted_reports_no_basis(tmp_repo, monkeypatch):
         crop: dict(window, source="persisted") for crop in paths.CROPS}
     assert recipe.load("P1")["crops"] == {
         crop: window for crop in paths.CROPS}
+    assert (tmp_repo / "recipes/P1.yaml").read_bytes() == recipe_bytes
+    assert _recipe_state(tmp_repo) == state
 
 
 def test_crop_windows_mixes_persisted_and_suggested(tmp_repo, monkeypatch):
@@ -757,6 +776,8 @@ def test_crop_windows_mixes_persisted_and_suggested(tmp_repo, monkeypatch):
     preview.write_bytes(b"x")
     monkeypatch.setattr(subject, "group_bbox_detail",
                         lambda p: (None, "no_faces"))
+    recipe_bytes = (tmp_repo / "recipes/P1.yaml").read_bytes()
+    state = _recipe_state(tmp_repo)
 
     result = driver.crop_windows("P1")
 
@@ -764,6 +785,8 @@ def test_crop_windows_mixes_persisted_and_suggested(tmp_repo, monkeypatch):
     assert result["windows"]["8x10"] == dict(window, source="persisted")
     assert result["windows"]["5x7"]["source"] == "suggested"
     assert recipe.load("P1")["crops"] == {"8x10": window, "5x7": None}
+    assert (tmp_repo / "recipes/P1.yaml").read_bytes() == recipe_bytes
+    assert _recipe_state(tmp_repo) == state
 
 
 def test_crop_windows_requires_dims_when_one_window_persisted(tmp_repo):
