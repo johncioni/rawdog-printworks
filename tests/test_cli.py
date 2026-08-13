@@ -254,3 +254,88 @@ def test_approve_missing_review_file_is_not_found(
                      str(tmp_repo / "gone.json"), "--json"]) == 1
     assert _envelope(json_stream)["error"]["code"] == "NOT_FOUND"
     assert approve_calls["review"] == []
+
+
+class _Calls(list):
+    """A recording list that also carries the stub whose body tests set."""
+
+
+@pytest.fixture
+def run_calls(monkeypatch):
+    """Record process_all's arguments; the body is supplied per test."""
+    calls = _Calls()
+
+    def fake_process_all(stems=None, force=False, collect=None):
+        calls.append({"stems": stems, "force": force, "collect": collect})
+        body = getattr(fake_process_all, "body", None)
+        if body is not None:
+            body(collect)
+
+    monkeypatch.setattr(driver, "process_all", fake_process_all)
+    calls.fake = fake_process_all
+    return calls
+
+
+def test_run_json_reports_collect_as_the_result(tmp_repo, json_stream,
+                                                run_calls):
+    def body(collect):
+        collect["published"].append(
+            {"stem": "P1", "version": "v004", "artifact_count": 29})
+    run_calls.fake.body = body
+
+    assert cli.main(["run", "--json"]) == 0
+
+    assert _envelope(json_stream)["result"] == {
+        "published": [{"stem": "P1", "version": "v004", "artifact_count": 29}],
+        "advanced": [], "failed": []}
+
+
+def test_run_json_forwards_stem_and_force(tmp_repo, json_stream, run_calls):
+    assert cli.main(["run", "--stem", "P1", "--force", "--json"]) == 0
+    assert run_calls[0]["stems"] == {"P1"}
+    assert run_calls[0]["force"] is True
+    assert run_calls[0]["collect"] is not None
+
+
+def test_run_legacy_passes_no_scoping_and_no_collect(tmp_repo, run_calls):
+    assert cli.main(["run"]) == 0
+    assert run_calls == [{"stems": None, "force": False, "collect": None}]
+
+
+def test_run_json_partial_failure_carries_successes(tmp_repo, json_stream,
+                                                    run_calls):
+    def body(collect):
+        collect["published"].append(
+            {"stem": "P1", "version": "v004", "artifact_count": 29})
+        collect["failed"].append(
+            {"stem": "P2", "code": "VERIFY_FAILED", "message": "bad pixels"})
+    run_calls.fake.body = body
+
+    assert cli.main(["run", "--json"]) == 1
+
+    envelope = _envelope(json_stream)
+    assert envelope["error"] == {"code": "PARTIAL_FAILURE",
+                                 "message": "1 of 2 photos failed"}
+    assert envelope["result"]["published"][0]["stem"] == "P1"
+
+
+def test_run_json_toolchain_drift_is_toolchain_failed(tmp_repo, json_stream,
+                                                      run_calls):
+    def body(collect):
+        raise RuntimeError("toolchain drift, refusing to render: [{}]")
+    run_calls.fake.body = body
+
+    assert cli.main(["run", "--json"]) == 1
+
+    envelope = _envelope(json_stream)
+    assert envelope["error"]["code"] == "TOOLCHAIN_FAILED"
+    assert "toolchain drift" in envelope["error"]["message"]
+
+
+def test_run_json_reports_held_lock(tmp_repo):
+    # process_all takes the lock itself, so LOCK_HELD must survive the JSON
+    # path rather than being swallowed as a toolchain failure.
+    p = _run(["run", "--json"], env=_held_lock_env(tmp_repo))
+    assert p.returncode == 1
+    assert json.loads(p.stdout.strip().splitlines()[-1])["error"]["code"] == (
+        "LOCK_HELD")

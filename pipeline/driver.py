@@ -252,6 +252,25 @@ def _stage_published(stem):
     return staging
 
 
+def _stage_event(stem, stage):
+    jsonio.emit({"event": "stage", "stem": stem, "stage": stage})
+
+
+class _RenderProgress:
+    """1-based progress counter over the artifacts a render was asked for."""
+
+    def __init__(self, stem, total):
+        self.stem = stem
+        self.total = total
+        self.index = 0
+
+    def landed(self, name):
+        self.index += 1
+        jsonio.emit({"event": "progress", "stem": self.stem,
+                     "stage": "render", "index": self.index,
+                     "total": self.total, "detail": name})
+
+
 def render_photo(stem, only: set[str] | None = None):
     rec = recipe.load(stem)
     if rec.get("manual_assets"):
@@ -289,6 +308,7 @@ def render_photo(stem, only: set[str] | None = None):
             for name in requested
         )
     ]
+    progress = _RenderProgress(stem, len(requested))
     created_rasters = set()
     decoded_dims = None
     for style in rendered_styles:
@@ -311,6 +331,10 @@ def render_photo(stem, only: set[str] | None = None):
                 f"{decoded_dims[0]}x{decoded_dims[1]} vs {width}x{height}"
             )
         created_rasters.add(tif)
+        # A style TIF can be a dependency of a requested JPG without being
+        # requested itself, and only requested names are counted.
+        if tif.name in requested:
+            progress.landed(tif.name)
 
     width, height = decoded_dims or _render_dims(rec)
     landscape = width >= height
@@ -330,6 +354,7 @@ def render_photo(stem, only: set[str] | None = None):
                 lab["ppi"],
             )
             created_rasters.add(native)
+            progress.landed(native.name)
         for crop in paths.CROPS:
             output = staging / f"{stem}_{style}_{crop}.jpg"
             if output.name not in requested:
@@ -347,6 +372,7 @@ def render_photo(stem, only: set[str] | None = None):
                 lab["ppi"],
             )
             created_rasters.add(output)
+            progress.landed(output.name)
 
     for raster in sorted(created_rasters):
         ppi = lab["ppi"] if raster.suffix.lower() == ".jpg" else None
@@ -372,10 +398,12 @@ def render_photo(stem, only: set[str] | None = None):
                     crop, jpg_width, jpg_height, lab["ppi"], landscape
                 ),
             )
+            progress.landed(output.name)
 
     comparison = f"{stem}_comparison.pdf"
     if comparison in requested:
         pdfs.comparison_sheet(stem, native_jpgs, staging)
+        progress.landed(comparison)
     else:
         complete = all((staging / name).is_file() for name in all_names)
         source = staging / f"{stem}_comparison_src.jpg"
@@ -598,21 +626,82 @@ def _publish_photo(stem):
     return dependencies
 
 
-def _finish_verified(data, stem):
+def _published_version(stem):
+    """Version `current` points at, or None if nothing is published yet."""
+    current = _published_current(stem)
+    if not current.is_symlink():
+        return None
+    return os.path.basename(os.readlink(current))
+
+
+def _finish_verified(data, stem, collect=None):
+    _stage_event(stem, "verify")
     problems = verify_photo(stem)
     if problems:
         print(f"{stem}: VERIFY FAILED\n  " + "\n  ".join(problems))
+        if collect is not None:
+            collect.setdefault("failed", []).append(
+                {"stem": stem, "code": "VERIFY_FAILED",
+                 "message": "; ".join(problems)})
         return False
+    _stage_event(stem, "publish")
     dependencies = _publish_photo(stem)
     if isinstance(dependencies, dict):
         manifest.record_artifacts(data, stem, dependencies)
     manifest.set_state(data, stem, "verified")
     manifest.save(data)
     print(f"{stem}: verified and published")
+    if collect is not None:
+        collect.setdefault("published", []).append(
+            {"stem": stem, "version": _published_version(stem),
+             "artifact_count": len(dependencies or {})})
     return True
 
 
-def process_all():
+def _selected_stems(data, stems, collect):
+    if stems is None:
+        return sorted(data["photos"])
+    requested, known = set(stems), set(data["photos"])
+    if collect is not None:
+        for stem in sorted(requested - known):
+            collect["failed"].append(
+                {"stem": stem, "code": "NOT_FOUND",
+                 "message": f"no photo named {stem} in the manifest"})
+    return sorted(requested & known)
+
+
+_UNSET = object()
+
+
+def _force_downgrade(data, stem):
+    """Reset a stem to `approved` in memory so the normal flow re-renders it.
+
+    Nothing is saved here: the downgrade reaches the manifest only when
+    `_finish_verified` persists the new version, so a failed forced run leaves
+    the manifest describing the version still in the published tree.
+    """
+    photo = data["photos"][stem]
+    remembered = (photo["state"], photo.get("artifacts", _UNSET))
+    photo["artifacts"] = {}
+    photo["state"] = "approved"
+    return remembered
+
+
+def _restore_forced(data, stem, remembered):
+    state, artifacts = remembered
+    photo = data["photos"][stem]
+    photo["state"] = state
+    if artifacts is _UNSET:
+        photo.pop("artifacts", None)
+    else:
+        photo["artifacts"] = artifacts
+
+
+def process_all(stems: set[str] | None = None, force: bool = False,
+                collect: dict | None = None):
+    if collect is not None:
+        for key in ("published", "advanced", "failed"):
+            collect.setdefault(key, [])
     with publish.acquire_lock():
         tool_problems = toolchain.verify(paths.config_dir() / "toolchain.lock")
         publish.recover()
@@ -642,7 +731,9 @@ def process_all():
             if changed:
                 manifest.save(data)
 
-        for stem in sorted(data["photos"]):
+        for stem in _selected_stems(data, stems, collect):
+            remembered = None
+            persisted = False
             try:
                 fingerprint = _current_fingerprint(stem)
                 state = manifest.effective_state(data, stem, fingerprint)
@@ -650,18 +741,31 @@ def process_all():
                     manifest.set_state(data, stem, state)
                     manifest.save(data)
 
+                if force and state in ("rendered", "verified"):
+                    remembered = _force_downgrade(data, stem)
+                    state = "approved"
+
                 if state == "ingested":
+                    _stage_event(stem, "preview")
                     render.ensure_sidecar_all(stem)
-                    for style in paths.STYLES:
+                    for index, style in enumerate(paths.STYLES, start=1):
                         preview_photo(stem, style)
+                        jsonio.emit({"event": "progress", "stem": stem,
+                                     "stage": "preview", "index": index,
+                                     "total": len(paths.STYLES),
+                                     "detail": style})
                     manifest.set_state(data, stem, "preview_ready")
                     manifest.save(data)
                     print(f"{stem}: previews ready — visual review required")
+                    if collect is not None:
+                        collect["advanced"].append(
+                            {"stem": stem, "state": "preview_ready"})
                 elif state in ("preview_ready", "review_required"):
                     print(f"{stem}: awaiting visual review + approve")
                 elif state == "approved":
                     stored = data["photos"][stem].get("artifacts", {})
                     if not stored:
+                        _stage_event(stem, "render")
                         render_photo(stem)
                     else:
                         current = current_artifact_deps(stem)
@@ -669,24 +773,38 @@ def process_all():
                             data, stem, current
                         ))
                         if stale == set(current):
+                            _stage_event(stem, "render")
                             render_photo(stem)
                         elif stale:
+                            _stage_event(stem, "render")
                             render_photo(stem, only=stale)
-                    _finish_verified(data, stem)
+                    persisted = _finish_verified(data, stem, collect)
                 elif state == "rendered":
-                    _finish_verified(data, stem)
+                    persisted = _finish_verified(data, stem, collect)
                 elif state == "verified":
                     current = current_artifact_deps(stem)
                     stale = set(manifest.stale_artifacts(
                         data, stem, current
                     ))
                     if stale:
+                        _stage_event(stem, "render")
                         render_photo(stem, only=stale)
-                        _finish_verified(data, stem)
-            except RuntimeError as error:
-                if str(error) != MANUAL_ASSETS_ERROR:
+                        persisted = _finish_verified(data, stem, collect)
+            except (RuntimeError, render.RenderError) as error:
+                if isinstance(error, RuntimeError) and (
+                        str(error) == MANUAL_ASSETS_ERROR):
+                    print(f"{stem}: skipped — {error}")
+                elif collect is None:
+                    # Legacy runs still hard-stop on the first real failure;
+                    # per-stem isolation exists only for the aggregate result.
                     raise
-                print(f"{stem}: skipped — {error}")
+                else:
+                    collect["failed"].append(
+                        {"stem": stem, "code": "RENDER_FAILED",
+                         "message": str(error)})
+            finally:
+                if remembered is not None and not persisted:
+                    _restore_forced(data, stem, remembered)
 
 
 def crop_preview(stem, style, crop):

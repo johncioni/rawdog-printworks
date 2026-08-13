@@ -940,3 +940,433 @@ def test_approve_review_rejects_invalid_window_without_persisting(
     assert rec["crops"] == {"8x10": None, "5x7": None}
     assert rec["approval"]["fingerprint"] is None
     assert rec["expression_audit"] == []
+
+
+def test_process_all_stem_scoping(tmp_repo, monkeypatch):
+    from pipeline import driver, manifest
+    m = manifest.load()
+    for stem in ("P1", "P2"):
+        manifest.set_state(m, stem, "approved")
+        m["photos"][stem]["fingerprint"] = "fp"
+    manifest.save(m)
+    monkeypatch.setattr(driver, "_current_fingerprint", lambda stem: "fp")
+    rendered = []
+    monkeypatch.setattr(driver, "render_photo",
+                        lambda stem, only=None: rendered.append(stem))
+    monkeypatch.setattr(driver, "verify_photo", lambda stem: [])
+    monkeypatch.setattr(driver, "_publish_photo", lambda stem: {})
+    driver.process_all(stems={"P2"})
+    assert rendered == ["P2"]
+
+
+def test_process_all_force_rerenders_verified(tmp_repo, monkeypatch):
+    from pipeline import driver, manifest
+    m = manifest.load()
+    manifest.set_state(m, "P1", "verified")
+    m["photos"]["P1"]["fingerprint"] = "fp"
+    m["photos"]["P1"]["artifacts"] = {"P1_natural.tif": {"x": 1}}
+    manifest.save(m)
+    monkeypatch.setattr(driver, "_current_fingerprint", lambda stem: "fp")
+    rendered = []
+    monkeypatch.setattr(driver, "render_photo",
+                        lambda stem, only=None: rendered.append((stem, only)))
+    monkeypatch.setattr(driver, "verify_photo", lambda stem: [])
+    monkeypatch.setattr(driver, "_publish_photo", lambda stem: {})
+    driver.process_all(stems={"P1"}, force=True)
+    assert rendered == [("P1", None)]            # full re-render, not stale-only
+
+
+def test_process_all_collect_shapes(tmp_repo, monkeypatch):
+    from pipeline import driver, manifest
+    m = manifest.load()
+    manifest.set_state(m, "P1", "approved")
+    m["photos"]["P1"]["fingerprint"] = "fp"
+    manifest.save(m)
+    monkeypatch.setattr(driver, "_current_fingerprint", lambda stem: "fp")
+    monkeypatch.setattr(driver, "render_photo", lambda stem, only=None: None)
+    monkeypatch.setattr(driver, "verify_photo", lambda stem: ["bad pixels"])
+    collect = {}
+    driver.process_all(stems={"P1"}, collect=collect)
+    assert collect["failed"][0]["stem"] == "P1"
+    assert collect["failed"][0]["code"] == "VERIFY_FAILED"
+
+
+def test_render_photo_emits_progress_in_json_mode(tmp_repo, monkeypatch):
+    import json as _json
+    from pipeline import crops, driver, jsonio, metadata, paths, pdfs, recipe, render
+    for s in paths.STYLES:
+        (tmp_repo / "config/styles" / f"{s}.pp3").write_text(f"# {s}\n")
+    (tmp_repo / "config/toolchain.lock").write_text(_json.dumps({}))
+    import pathlib, shutil as _sh
+    _REPO = pathlib.Path(__file__).resolve().parent.parent
+    _sh.copy2(_REPO / "config/lab-profiles/generic-v1.yaml",
+              tmp_repo / "config/lab-profiles/generic-v1.yaml")
+    raw = tmp_repo / "Input/P1.RW2"
+    raw.write_bytes(b"rawbytes")
+    import hashlib as _hl
+    rec = recipe.new("P1", _hl.sha256(b"rawbytes").hexdigest(), 5776, 4336)
+    recipe.save("P1", rec)
+
+    def fake_rt(raw_path, style, out, fmt, quality, extra_profiles=()):
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(b"TIF")
+    monkeypatch.setattr(render, "rt_render", fake_rt)
+    monkeypatch.setattr(driver, "_dims", lambda p: (5784, 4344))
+    monkeypatch.setattr(crops, "jpg_from_tif",
+                        lambda tif, out, win, tgt, sh, q, ppi:
+                        out.write_bytes(b"JPG"))
+    monkeypatch.setattr(pdfs, "wrap",
+                        lambda jpg, out, inches: out.write_bytes(b"PDF"))
+    monkeypatch.setattr(pdfs, "comparison_sheet",
+                        lambda stem, jpgs, staging:
+                        (staging / f"{stem}_comparison.pdf").write_bytes(b"PDF"))
+    monkeypatch.setattr(metadata, "strip",
+                        lambda p, keep, ppi=None: None)
+
+    events = []
+    monkeypatch.setattr(jsonio, "emit", lambda e: events.append(e))
+    driver.render_photo("P1")
+
+    render_events = [e for e in events
+                     if e.get("event") == "progress" and e["stage"] == "render"]
+    assert render_events, "no render progress events emitted"
+    assert render_events[0]["index"] == 1                 # 1-based
+    assert all(e["stem"] == "P1" for e in render_events)
+    assert all(e["total"] == render_events[0]["total"] for e in render_events)
+    assert len(render_events) == render_events[0]["total"]
+
+
+def test_render_photo_progress_names_every_requested_artifact(
+        tmp_repo, monkeypatch):
+    """One event per requested artifact, indexes 1..total, no duplicates."""
+    import json as _json
+    from pipeline import crops, driver, jsonio, metadata, paths, pdfs, recipe, render
+    for s in paths.STYLES:
+        (tmp_repo / "config/styles" / f"{s}.pp3").write_text(f"# {s}\n")
+    (tmp_repo / "config/toolchain.lock").write_text(_json.dumps({}))
+    import pathlib, shutil as _sh
+    _REPO = pathlib.Path(__file__).resolve().parent.parent
+    _sh.copy2(_REPO / "config/lab-profiles/generic-v1.yaml",
+              tmp_repo / "config/lab-profiles/generic-v1.yaml")
+    (tmp_repo / "Input/P1.RW2").write_bytes(b"rawbytes")
+    recipe.save("P1", recipe.new(
+        "P1", hashlib.sha256(b"rawbytes").hexdigest(), 5776, 4336))
+
+    monkeypatch.setattr(render, "rt_render",
+                        lambda raw, style, out, fmt, quality,
+                        extra_profiles=(): (out.parent.mkdir(
+                            parents=True, exist_ok=True),
+                            out.write_bytes(b"TIF")))
+    monkeypatch.setattr(driver, "_dims", lambda p: (5784, 4344))
+    monkeypatch.setattr(crops, "jpg_from_tif",
+                        lambda tif, out, win, tgt, sh, q, ppi:
+                        out.write_bytes(b"JPG"))
+    monkeypatch.setattr(pdfs, "wrap",
+                        lambda jpg, out, inches: out.write_bytes(b"PDF"))
+    monkeypatch.setattr(pdfs, "comparison_sheet",
+                        lambda stem, jpgs, staging:
+                        (staging / f"{stem}_comparison.pdf").write_bytes(b"PDF"))
+    monkeypatch.setattr(metadata, "strip", lambda p, keep, ppi=None: None)
+
+    events = []
+    monkeypatch.setattr(jsonio, "emit", lambda e: events.append(e))
+    driver.render_photo("P1")
+
+    progress = [e for e in events if e.get("event") == "progress"]
+    names = [e["detail"] for e in progress]
+    assert sorted(names) == sorted(manifest.artifact_names("P1"))
+    assert [e["index"] for e in progress] == list(range(1, len(names) + 1))
+    assert all(e["total"] == len(names) for e in progress)
+
+
+def test_render_photo_progress_counts_only_requested_artifacts(
+        tmp_repo, monkeypatch):
+    """`only=` renders a whole style TIF but must not count unrequested names."""
+    import json as _json
+    from pipeline import crops, driver, jsonio, metadata, paths, pdfs, recipe, render
+    for s in paths.STYLES:
+        (tmp_repo / "config/styles" / f"{s}.pp3").write_text(f"# {s}\n")
+    (tmp_repo / "config/toolchain.lock").write_text(_json.dumps({}))
+    import pathlib, shutil as _sh
+    _REPO = pathlib.Path(__file__).resolve().parent.parent
+    _sh.copy2(_REPO / "config/lab-profiles/generic-v1.yaml",
+              tmp_repo / "config/lab-profiles/generic-v1.yaml")
+    (tmp_repo / "Input/P1.RW2").write_bytes(b"rawbytes")
+    rec = recipe.new("P1", hashlib.sha256(b"rawbytes").hexdigest(), 5776, 4336)
+    rec.update(render_width=5784, render_height=4344)
+    recipe.save("P1", rec)
+
+    monkeypatch.setattr(render, "rt_render",
+                        lambda raw, style, out, fmt, quality,
+                        extra_profiles=(): (out.parent.mkdir(
+                            parents=True, exist_ok=True),
+                            out.write_bytes(b"TIF")))
+    monkeypatch.setattr(driver, "_dims", lambda p: (5784, 4344))
+    monkeypatch.setattr(crops, "jpg_from_tif",
+                        lambda tif, out, win, tgt, sh, q, ppi:
+                        out.write_bytes(b"JPG"))
+    monkeypatch.setattr(metadata, "strip", lambda p, keep, ppi=None: None)
+
+    events = []
+    monkeypatch.setattr(jsonio, "emit", lambda e: events.append(e))
+    driver.render_photo("P1", only={"P1_natural.jpg"})
+
+    progress = [e for e in events if e.get("event") == "progress"]
+    assert [(e["index"], e["total"], e["detail"]) for e in progress] == [
+        (1, 1, "P1_natural.jpg")]
+
+
+def test_process_all_no_args_matches_legacy_flow(tmp_repo, monkeypatch):
+    # Same scenario as test_approved_photo_flows_to_verified but through the
+    # new signature with no arguments — states and calls must be identical.
+    from pipeline import driver, manifest
+    m = manifest.load()
+    manifest.set_state(m, "P1", "approved")
+    m["photos"]["P1"]["fingerprint"] = "fp"
+    manifest.save(m)
+    monkeypatch.setattr(driver, "_current_fingerprint", lambda stem: "fp")
+    monkeypatch.setattr(driver, "render_photo", lambda stem, only=None: None)
+    monkeypatch.setattr(driver, "verify_photo", lambda stem: [])
+    monkeypatch.setattr(driver, "_publish_photo", lambda stem: {})
+    driver.process_all()
+    assert manifest.load()["photos"]["P1"]["state"] == "verified"
+
+
+def test_process_all_without_collect_still_reraises(tmp_repo, monkeypatch):
+    """Failure isolation is collect-mode only; legacy runs still hard-stop."""
+    m = manifest.load()
+    for stem in ("P1", "P2"):
+        manifest.set_state(m, stem, "approved")
+        m["photos"][stem]["fingerprint"] = "fp"
+    manifest.save(m)
+    monkeypatch.setattr(driver, "_current_fingerprint", lambda stem: "fp")
+    calls = []
+
+    def render_one(stem, only=None):
+        calls.append(stem)
+        raise RuntimeError("rawtherapee exploded")
+
+    monkeypatch.setattr(driver, "render_photo", render_one)
+
+    with pytest.raises(RuntimeError, match="rawtherapee exploded"):
+        driver.process_all()
+
+    assert calls == ["P1"]
+
+
+def test_process_all_collect_isolates_failures_and_continues(
+        tmp_repo, monkeypatch):
+    m = manifest.load()
+    for stem in ("P1", "P2", "P3"):
+        manifest.set_state(m, stem, "approved")
+        m["photos"][stem]["fingerprint"] = "fp"
+    manifest.save(m)
+    monkeypatch.setattr(driver, "_current_fingerprint", lambda stem: "fp")
+    rendered = []
+
+    def render_one(stem, only=None):
+        rendered.append(stem)
+        if stem == "P1":
+            raise render.RenderError("rawtherapee failed for P1")
+
+    monkeypatch.setattr(driver, "render_photo", render_one)
+    monkeypatch.setattr(driver, "verify_photo",
+                        lambda stem: ["bad pixels"] if stem == "P2" else [])
+    monkeypatch.setattr(driver, "_publish_photo",
+                        lambda stem: {"a": {}, "b": {}})
+    collect = {}
+
+    driver.process_all(collect=collect)
+
+    assert rendered == ["P1", "P2", "P3"]        # the batch reached every stem
+    assert collect["failed"] == [
+        {"stem": "P1", "code": "RENDER_FAILED",
+         "message": "rawtherapee failed for P1"},
+        {"stem": "P2", "code": "VERIFY_FAILED", "message": "bad pixels"},
+    ]
+    # _publish_photo is stubbed, so no `current` symlink exists to read.
+    assert collect["published"] == [
+        {"stem": "P3", "version": None, "artifact_count": 2}]
+    assert collect["advanced"] == []
+    saved = manifest.load()["photos"]
+    assert saved["P3"]["state"] == "verified"
+    assert saved["P1"]["state"] == "approved"
+
+
+def test_process_all_collect_keeps_legacy_manual_assets_skip(
+        tmp_repo, monkeypatch, capsys):
+    m = manifest.load()
+    manifest.set_state(m, "P1", "approved")
+    m["photos"]["P1"]["fingerprint"] = "fp"
+    manifest.save(m)
+    monkeypatch.setattr(driver, "_current_fingerprint", lambda stem: "fp")
+
+    def render_one(stem, only=None):
+        raise RuntimeError(driver.MANUAL_ASSETS_ERROR)
+
+    monkeypatch.setattr(driver, "render_photo", render_one)
+    collect = {}
+
+    driver.process_all(collect=collect)
+
+    assert collect["failed"] == []               # a skip is not a failure
+    assert driver.MANUAL_ASSETS_ERROR in capsys.readouterr().out
+
+
+def test_process_all_unknown_requested_stem_is_not_found(
+        tmp_repo, monkeypatch):
+    m = manifest.load()
+    manifest.set_state(m, "P1", "approved")
+    m["photos"]["P1"]["fingerprint"] = "fp"
+    manifest.save(m)
+    monkeypatch.setattr(driver, "_current_fingerprint", lambda stem: "fp")
+    monkeypatch.setattr(driver, "render_photo", lambda stem, only=None: None)
+    monkeypatch.setattr(driver, "verify_photo", lambda stem: [])
+    monkeypatch.setattr(driver, "_publish_photo", lambda stem: {})
+    collect = {}
+
+    driver.process_all(stems={"P1", "NOPE"}, collect=collect)
+
+    assert [f["stem"] for f in collect["failed"]] == ["NOPE"]
+    assert collect["failed"][0]["code"] == "NOT_FOUND"
+    assert [p["stem"] for p in collect["published"]] == ["P1"]
+
+
+def test_process_all_force_failure_keeps_published_version(
+        tmp_repo, monkeypatch):
+    """A forced stem that fails must not have its downgrade persisted — not
+    even as a side effect of a later stem's successful manifest.save."""
+    m = manifest.load()
+    for stem in ("P1", "P2"):
+        manifest.set_state(m, stem, "verified")
+        m["photos"][stem]["fingerprint"] = "fp"
+        m["photos"][stem]["artifacts"] = {f"{stem}_natural.tif": {"dep": stem}}
+    manifest.save(m)
+    monkeypatch.setattr(driver, "_current_fingerprint", lambda stem: "fp")
+
+    def render_one(stem, only=None):
+        if stem == "P1":
+            raise RuntimeError("rawtherapee exploded")
+
+    monkeypatch.setattr(driver, "render_photo", render_one)
+    monkeypatch.setattr(driver, "verify_photo", lambda stem: [])
+    monkeypatch.setattr(driver, "_publish_photo",
+                        lambda stem: {f"{stem}_natural.tif": {"dep": "new"}})
+    collect = {}
+
+    driver.process_all(force=True, collect=collect)
+
+    saved = manifest.load()["photos"]
+    assert saved["P1"]["state"] == "verified"
+    assert saved["P1"]["artifacts"] == {"P1_natural.tif": {"dep": "P1"}}
+    assert saved["P2"]["state"] == "verified"
+    assert saved["P2"]["artifacts"] == {"P2_natural.tif": {"dep": "new"}}
+    assert collect["failed"] == [
+        {"stem": "P1", "code": "RENDER_FAILED",
+         "message": "rawtherapee exploded"}]
+
+
+def test_process_all_force_verify_failure_keeps_published_version(
+        tmp_repo, monkeypatch):
+    """The restore covers a failed verify, not just a raising render."""
+    m = manifest.load()
+    for stem in ("P1", "P2"):
+        manifest.set_state(m, stem, "verified")
+        m["photos"][stem]["fingerprint"] = "fp"
+        m["photos"][stem]["artifacts"] = {f"{stem}_natural.tif": {"dep": stem}}
+    manifest.save(m)
+    monkeypatch.setattr(driver, "_current_fingerprint", lambda stem: "fp")
+    monkeypatch.setattr(driver, "render_photo", lambda stem, only=None: None)
+    monkeypatch.setattr(driver, "verify_photo",
+                        lambda stem: ["bad pixels"] if stem == "P1" else [])
+    monkeypatch.setattr(driver, "_publish_photo",
+                        lambda stem: {f"{stem}_natural.tif": {"dep": "new"}})
+    collect = {}
+
+    driver.process_all(force=True, collect=collect)
+
+    saved = manifest.load()["photos"]
+    assert saved["P1"]["state"] == "verified"
+    assert saved["P1"]["artifacts"] == {"P1_natural.tif": {"dep": "P1"}}
+    assert saved["P2"]["artifacts"] == {"P2_natural.tif": {"dep": "new"}}
+    assert collect["failed"][0]["code"] == "VERIFY_FAILED"
+
+
+def test_process_all_force_leaves_pre_approval_states_alone(
+        tmp_repo, monkeypatch):
+    m = manifest.load()
+    manifest.set_state(m, "P1", "preview_ready")
+    manifest.save(m)
+    monkeypatch.setattr(driver, "_current_fingerprint", lambda stem: "fp")
+    monkeypatch.setattr(
+        driver, "render_photo",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError))
+
+    driver.process_all(force=True)
+
+    assert manifest.load()["photos"]["P1"]["state"] == "preview_ready"
+
+
+def test_process_all_emits_render_verify_publish_stages(tmp_repo, monkeypatch):
+    from pipeline import jsonio
+    m = manifest.load()
+    manifest.set_state(m, "P1", "approved")
+    m["photos"]["P1"]["fingerprint"] = "fp"
+    manifest.save(m)
+    monkeypatch.setattr(driver, "_current_fingerprint", lambda stem: "fp")
+    monkeypatch.setattr(driver, "render_photo", lambda stem, only=None: None)
+    monkeypatch.setattr(driver, "verify_photo", lambda stem: [])
+    monkeypatch.setattr(driver, "_publish_photo", lambda stem: {})
+    events = []
+    monkeypatch.setattr(jsonio, "emit", lambda e: events.append(e))
+
+    driver.process_all()
+
+    assert [e for e in events if e["event"] == "stage"] == [
+        {"event": "stage", "stem": "P1", "stage": "render"},
+        {"event": "stage", "stem": "P1", "stage": "verify"},
+        {"event": "stage", "stem": "P1", "stage": "publish"},
+    ]
+
+
+def test_process_all_emits_preview_stage_and_per_style_progress(
+        tmp_repo, monkeypatch):
+    from pipeline import jsonio
+    m = manifest.load()
+    manifest.set_state(m, "P1", "ingested")
+    manifest.save(m)
+    monkeypatch.setattr(driver, "_current_fingerprint", lambda stem: "fp")
+    monkeypatch.setattr(render, "ensure_sidecar_all", lambda stem: None)
+    monkeypatch.setattr(driver, "preview_photo", lambda stem, style: None)
+    events = []
+    monkeypatch.setattr(jsonio, "emit", lambda e: events.append(e))
+    collect = {}
+
+    driver.process_all(collect=collect)
+
+    assert events[0] == {"event": "stage", "stem": "P1", "stage": "preview"}
+    assert events[1:] == [
+        {"event": "progress", "stem": "P1", "stage": "preview",
+         "index": index, "total": len(paths.STYLES), "detail": style}
+        for index, style in enumerate(paths.STYLES, start=1)
+    ]
+    assert collect["advanced"] == [{"stem": "P1", "state": "preview_ready"}]
+
+
+def test_finish_verified_reports_published_version_from_symlink(
+        tmp_repo, monkeypatch):
+    photo = tmp_repo / "Output/photos/P1"
+    (photo / "v004").mkdir(parents=True)
+    (photo / "current").symlink_to("v004")
+    m = manifest.load()
+    manifest.set_state(m, "P1", "rendered")
+    manifest.save(m)
+    monkeypatch.setattr(driver, "verify_photo", lambda stem: [])
+    monkeypatch.setattr(driver, "_publish_photo",
+                        lambda stem: {"a": {}, "b": {}, "c": {}})
+    collect = {}
+
+    assert driver._finish_verified(m, "P1", collect) is True
+
+    assert collect["published"] == [
+        {"stem": "P1", "version": "v004", "artifact_count": 3}]

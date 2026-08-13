@@ -50,10 +50,10 @@ def build_parser():
     p.add_argument("--json", action="store_true")
     p.set_defaults(fn=lambda ns: _dispatch(ns, _verify_cmd, mutating=True))
     p = sub.add_parser("run"); p.add_argument("--json", action="store_true")
+    p.add_argument("--stem"); p.add_argument("--force", action="store_true")
     # NOT mutating at dispatch: process_all takes the lock itself, and the
     # O_EXCL lock is not reentrant — wrapping it here would deadlock.
-    p.set_defaults(fn=lambda ns: _dispatch(
-        ns, lambda n: driver.process_all(), mutating=False))
+    p.set_defaults(fn=lambda ns: _dispatch(ns, _run_cmd, mutating=False))
     p = sub.add_parser("adjust")
     p.add_argument("--stem", required=True); p.add_argument("--style", required=True)
     p.add_argument("--temperature", type=int); p.add_argument("--exposure", type=float)
@@ -147,6 +147,30 @@ def _approve_cmd(ns):
         print(json.dumps(result, indent=2, sort_keys=True))
         return
     return result
+
+def _run_cmd(ns):
+    from . import driver, jsonio
+    stems = {ns.stem} if ns.stem else None
+    if not ns.json:
+        # With neither flag this is process_all()'s own signature default, so
+        # the legacy invocation stays byte-for-byte what it was.
+        return driver.process_all(stems=stems, force=ns.force)
+    result = {"published": [], "advanced": [], "failed": []}
+    try:
+        driver.process_all(stems=stems, force=ns.force, collect=result)
+    except RuntimeError as error:
+        # Per-stem failures are collected, so a RuntimeError reaching here is
+        # the toolchain-drift refusal that stops the whole batch.
+        raise jsonio.CommandError("TOOLCHAIN_FAILED", str(error)) from error
+    failed = result["failed"]
+    if failed:
+        total = sum(len(result[key])
+                    for key in ("published", "advanced", "failed"))
+        raise jsonio.CommandError(
+            "PARTIAL_FAILURE", f"{len(failed)} of {total} photos failed",
+            result=result)
+    return result
+
 
 def _status_cmd(ns):
     if not ns.json:
