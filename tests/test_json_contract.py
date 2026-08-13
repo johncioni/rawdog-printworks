@@ -21,8 +21,8 @@ from pathlib import Path
 
 import pytest
 
-from pipeline import (driver, ingest as ingest_mod, jsonio, manifest, paths,
-                      provenance, recipe, subject, toolchain)
+from pipeline import (driver, geometry, ingest as ingest_mod, jsonio, manifest,
+                      paths, provenance, recipe, subject, toolchain)
 from pipeline.__main__ import main
 
 FIXTURES = Path(__file__).parent / "fixtures" / "json_contract"
@@ -217,6 +217,37 @@ def test_crops_suggested(ingested_repo, monkeypatch):
     assert sorted(result["windows"]) == ["5x7", "8x10"]
     assert all(window["source"] == "suggested"
                for window in result["windows"].values())
+
+
+def test_approve_ok(ingested_repo, monkeypatch):
+    # The success half of spec §4.2. `ingested_repo` seeds recorded render dims
+    # and fresh previews, so submitting the CURRENT revision pins the happy
+    # path of the staleness check that test_approve_stale_review only fails.
+    rec = recipe.load("P1")
+    width, height = rec["render_width"], rec["render_height"]
+    review = ingested_repo / "review.json"
+    review.write_text(json.dumps({
+        "expected_review_revision": provenance.review_revision("P1", rec),
+        "expression_audit": ["eyes open - all: pass"],
+        # Derived from the seeded dims rather than hard-coded: hand-written
+        # windows are validated against the render size, not the raw size.
+        "crops": {crop: geometry.centered_crop_norm(width, height, crop,
+                                                    width >= height)
+                  for crop in paths.CROPS},
+    }))
+    exit_code, envelope, lines, _ = run_scenario(
+        monkeypatch, ingested_repo,
+        ["approve", "--stem", "P1", "--review-file", str(review), "--json"],
+        "approve_ok.json")
+    assert exit_code == 0
+    assert envelope["ok"] is True
+    assert envelope["result"] == {"stem": "P1", "state": "approved",
+                                  "fingerprint": "<SHA256>"}
+    assert len(lines) == 1                   # approve emits no progress events
+    # The envelope's fingerprint is the one actually persisted, not a fresh
+    # recompute — normalization would hide a mismatch between the two.
+    assert (manifest.load_readonly()["photos"]["P1"]["fingerprint"]
+            == recipe.load("P1")["approval"]["fingerprint"])
 
 
 def test_approve_stale_review(ingested_repo, monkeypatch):

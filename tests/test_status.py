@@ -80,3 +80,16 @@ def test_sidecar_exposure_only_reports_mixed_sources(repo):
     assert photo["adjustments"]["bw"]["exposure"] == {
         "value": 0.15, "source": "sidecar"}
     assert photo["adjustments"]["bw"]["temperature"]["source"] == "camera"
+
+
+def test_float_valued_temperature_sidecar_still_snapshots(repo):
+    """status is the app's refresh loop: a hand-edited `Temperature=5650.0`
+    must not fail the whole snapshot on an int() cast."""
+    recipe.save("P1", recipe.new("P1", "aa" * 32, 5776, 4336))
+    manifest.save({"photos": {"P1": {"state": "ingested", "fingerprint": None}}})
+    (paths.sidecars_dir() / "P1_bw.pp3").write_text(
+        "[White Balance]\nSetting=Custom\nTemperature=5650.0\n")
+    snap = status.snapshot()
+    (photo,) = snap["photos"]
+    assert photo["adjustments"]["bw"]["temperature"] == {
+        "value": 5650, "source": "sidecar"}

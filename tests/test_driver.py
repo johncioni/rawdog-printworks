@@ -1232,6 +1232,17 @@ def test_process_all_unknown_requested_stem_is_not_found(
     assert [p["stem"] for p in collect["published"]] == ["P1"]
 
 
+def test_process_all_unknown_requested_stem_warns_on_legacy_path(
+        tmp_repo, capsys):
+    """Without `collect` there is nowhere to record NOT_FOUND, so the typo has
+    to reach stdout — otherwise `run --stem TYPO` exits 0 in silence."""
+    driver.process_all(stems={"NOPE"})
+
+    captured = capsys.readouterr()
+    assert "WARNING: unknown stem NOPE — skipped" in captured.out
+    assert captured.err == ""
+
+
 def test_process_all_force_failure_keeps_published_version(
         tmp_repo, monkeypatch):
     """A forced stem that fails must not have its downgrade persisted — not

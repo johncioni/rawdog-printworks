@@ -59,8 +59,11 @@ def _photo(stem, m):
         "stale_previews": provenance.stale_styles(stem, rec, material),
         "adjustments": {
             style: {
+                # A hand-edited sidecar may carry `Temperature=5650.0`; bare
+                # int() would raise and fail the whole status snapshot.
                 "temperature": _control(stem, style, "White Balance",
-                                        "Temperature", int),
+                                        "Temperature",
+                                        lambda value: int(float(value))),
                 "exposure": _control(stem, style, "Exposure",
                                      "Compensation", float),
             }

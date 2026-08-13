@@ -667,6 +667,11 @@ def _selected_stems(data, stems, collect):
             collect["failed"].append(
                 {"stem": stem, "code": "NOT_FOUND",
                  "message": f"no photo named {stem} in the manifest"})
+    else:
+        # Legacy `run` has no failure contract for an unknown stem, so a typo
+        # must still be visible rather than exiting 0 having done nothing.
+        for stem in sorted(requested - known):
+            print(f"WARNING: unknown stem {stem} — skipped")
     return sorted(requested & known)
 
 
