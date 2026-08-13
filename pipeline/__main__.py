@@ -14,7 +14,8 @@ def build_parser():
     ap = argparse.ArgumentParser(prog="pipeline")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
-    sub.add_parser("status").set_defaults(fn=_wrap(lambda ns: _status()))
+    p = sub.add_parser("status"); p.add_argument("--json", action="store_true")
+    p.set_defaults(fn=_wrap(lambda ns: _status_cmd(ns)))
     sub.add_parser("ingest").set_defaults(fn=_wrap(lambda ns: _ingest()))
     p = sub.add_parser("preview")
     p.add_argument("stem", nargs="?"); p.add_argument("style", nargs="?")
@@ -44,6 +45,12 @@ def _resolve(name, flag_value, positional):
 def _preview_target(ns):
     return (_resolve("stem", ns.stem_flag, ns.stem),
             _resolve("style", ns.style_flag, ns.style))
+
+def _status_cmd(ns):
+    if not ns.json:
+        return _status()
+    from . import jsonio, status
+    return jsonio.run_json(lambda: status.snapshot())
 
 def _status():
     from . import driver, manifest
