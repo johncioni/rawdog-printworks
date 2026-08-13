@@ -437,6 +437,92 @@ def crop_windows(stem):
     return {"stem": stem, "basis": basis, "windows": windows}
 
 
+def _review_windows(windows):
+    """Normalize submitted crop windows down to geometry alone.
+
+    The app echoes back the windows `crops` reported, which carry a `source`
+    tag; persisting that would make recipe.fingerprint reject the recipe as
+    non-numeric geometry long after the input was accepted.
+    """
+    if not isinstance(windows, dict):
+        raise jsonio.CommandError("BAD_INPUT", "crops must be an object")
+    keys = ("x", "y", "w", "h")
+    normalized = {}
+    for crop, window in windows.items():
+        if not isinstance(window, dict):
+            raise jsonio.CommandError(
+                "BAD_INPUT", f"invalid {crop} window: expected an object")
+        fields = {k: v for k, v in window.items() if k in keys}
+        for k, v in fields.items():
+            if isinstance(v, bool) or not isinstance(v, (int, float)):
+                raise jsonio.CommandError(
+                    "BAD_INPUT", f"invalid {crop} window: {k} is not a number")
+        normalized[crop] = fields
+    return normalized
+
+
+def approve_review(stem, review):
+    audit = review.get("expression_audit")
+    if (not isinstance(audit, list) or not audit
+            or not all(isinstance(item, str) for item in audit)):
+        raise jsonio.CommandError(
+            "BAD_INPUT", "expression_audit must be a non-empty list of strings")
+    windows = _review_windows(review.get("crops") or {})
+    missing = [c for c in paths.CROPS if c not in windows]
+    if missing:
+        raise jsonio.CommandError(
+            "BAD_INPUT", f"crops missing windows: {missing}")
+
+    # THE single snapshot: one recipe load + one material gather; revision,
+    # staleness, and the final fingerprint all derive from these same reads,
+    # so an edit between "check" and "persist" cannot enter the fingerprint
+    # without having entered the checked revision.
+    rec = recipe.load(stem)
+    material = provenance.gather_material(stem)
+    expected = review.get("expected_review_revision")
+    if expected is not None:
+        current = provenance.review_revision(stem, rec, material)
+        if expected != current:
+            raise jsonio.CommandError(
+                "STALE_REVIEW",
+                "review inputs changed since the reviewed snapshot")
+        stale = provenance.stale_styles(stem, rec, material)
+        if stale:
+            raise jsonio.CommandError(
+                "STALE_REVIEW", f"previews stale for styles: {stale}")
+
+    try:
+        width, height = _render_dims(rec)
+    except ValueError as error:
+        raise jsonio.CommandError("BAD_INPUT", str(error)) from error
+    landscape = width >= height
+    lab = material["lab"]
+    for crop, window in windows.items():
+        try:
+            geometry.validate_crop(window, width, height, crop, landscape,
+                                   lab["ppi"])
+        except Exception as error:
+            raise jsonio.CommandError(
+                "BAD_INPUT", f"invalid {crop} window: {error}") from error
+
+    rec["crops"] = {c: dict(windows[c]) for c in paths.CROPS}
+    rec["expression_audit"] = list(audit)
+    fingerprint = recipe.fingerprint(stem, rec, material["style_hashes"],
+                                     material["seed_hash"], material["lock"],
+                                     material["lab"])
+    rec["approval"] = {
+        "fingerprint": fingerprint,
+        "approved_at": datetime.datetime.now().astimezone().isoformat(
+            timespec="seconds"),
+    }
+    recipe.save(stem, rec)
+    data = manifest.load()
+    manifest.set_state(data, stem, "approved")
+    data["photos"][stem]["fingerprint"] = fingerprint
+    manifest.save(data)
+    return {"stem": stem, "state": "approved", "fingerprint": fingerprint}
+
+
 def approve(stem):
     rec = recipe.load(stem)
     if not rec.get("expression_audit"):

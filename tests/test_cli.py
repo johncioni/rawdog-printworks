@@ -187,3 +187,70 @@ def test_crops_never_locks(tmp_repo):
     p = _run(["crops", "--stem", "P1", "--json"], env=_held_lock_env(tmp_repo))
     envelope = json.loads(p.stdout.strip().splitlines()[-1])
     assert envelope["error"]["code"] == "NOT_FOUND"   # missing recipe, not lock
+
+
+@pytest.fixture
+def approve_calls(monkeypatch):
+    calls = {"legacy": [], "review": []}
+    monkeypatch.setattr(driver, "approve",
+                        lambda stem: calls["legacy"].append(stem))
+    monkeypatch.setattr(
+        driver, "approve_review",
+        lambda stem, review: calls["review"].append((stem, review))
+        or {"stem": stem, "state": "approved", "fingerprint": "fp"})
+    return calls
+
+
+def _review_file(tmp_repo, body):
+    path = tmp_repo / "review.json"
+    path.write_text(body)
+    return str(path)
+
+
+def test_approve_review_file_json_is_the_canonical_spelling(
+        tmp_repo, json_stream, approve_calls):
+    review = {"expression_audit": ["ok"], "crops": {}}
+    path = _review_file(tmp_repo, json.dumps(review))
+    assert cli.main(["approve", "--stem", "P1", "--review-file", path,
+                     "--json"]) == 0
+    assert approve_calls["review"] == [("P1", review)]
+    assert approve_calls["legacy"] == []
+    assert _envelope(json_stream)["result"] == {
+        "stem": "P1", "state": "approved", "fingerprint": "fp"}
+
+
+def test_approve_without_review_file_stays_on_the_legacy_path(
+        tmp_repo, approve_calls):
+    assert cli.main(["approve", "P1"]) == 0
+    assert approve_calls["legacy"] == ["P1"]
+    assert approve_calls["review"] == []
+
+
+def test_approve_review_file_legacy_mode_pretty_prints(
+        tmp_repo, approve_calls, capsys):
+    path = _review_file(tmp_repo, json.dumps({"expression_audit": ["ok"]}))
+    assert cli.main(["approve", "P1", "--review-file", path]) == 0
+    assert json.loads(capsys.readouterr().out)["state"] == "approved"
+
+
+def test_approve_rejects_stem_given_twice(tmp_repo, approve_calls, capsys):
+    assert cli.main(["approve", "P1", "--stem", "P1"]) == 1
+    assert approve_calls["legacy"] == []
+    assert "error:" in capsys.readouterr().err
+
+
+def test_approve_malformed_review_file_is_bad_input(
+        tmp_repo, json_stream, approve_calls):
+    path = _review_file(tmp_repo, "{not json")
+    assert cli.main(["approve", "--stem", "P1", "--review-file", path,
+                     "--json"]) == 1
+    assert _envelope(json_stream)["error"]["code"] == "BAD_INPUT"
+    assert approve_calls["review"] == []
+
+
+def test_approve_missing_review_file_is_not_found(
+        tmp_repo, json_stream, approve_calls):
+    assert cli.main(["approve", "--stem", "P1", "--review-file",
+                     str(tmp_repo / "gone.json"), "--json"]) == 1
+    assert _envelope(json_stream)["error"]["code"] == "NOT_FOUND"
+    assert approve_calls["review"] == []

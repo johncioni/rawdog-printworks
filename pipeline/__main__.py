@@ -34,10 +34,12 @@ def build_parser():
     # Read-only: it reports what approve would bind and persists nothing, so
     # it must not contend for the driver lock.
     p.set_defaults(fn=lambda ns: _dispatch(ns, _crops_cmd, mutating=False))
-    p = sub.add_parser("approve"); p.add_argument("stem")
+    p = sub.add_parser("approve")
+    p.add_argument("stem", nargs="?"); p.add_argument("--stem", dest="stem_flag")
+    p.add_argument("--review-file")
     p.add_argument("--json", action="store_true")
-    p.set_defaults(fn=lambda ns: _dispatch(
-        ns, lambda n: driver.approve(n.stem), mutating=True))
+    p.set_defaults(fn=lambda ns: _dispatch(ns, _approve_cmd, mutating=True,
+                                           precheck=_approve_target))
     p = sub.add_parser("render"); p.add_argument("stem")
     p.set_defaults(fn=lambda ns: _dispatch(
         ns, lambda n: driver.render_photo(n.stem), mutating=True))
@@ -109,6 +111,39 @@ def _resolve(name, flag_value, positional):
 def _preview_target(ns):
     return (_resolve("stem", ns.stem_flag, ns.stem),
             _resolve("style", ns.style_flag, ns.style))
+
+def _approve_target(ns):
+    return _resolve("stem", ns.stem_flag, ns.stem)
+
+def _read_review(path):
+    from pathlib import Path
+    from . import jsonio
+    try:
+        text = Path(path).read_text()
+    except OSError as error:
+        raise jsonio.CommandError(
+            "NOT_FOUND", f"review file unreadable: {error}") from error
+    try:
+        review = json.loads(text)
+    except ValueError as error:
+        raise jsonio.CommandError(
+            "BAD_INPUT", f"review file is not valid JSON: {error}") from error
+    if not isinstance(review, dict):
+        raise jsonio.CommandError(
+            "BAD_INPUT", "review file must contain a JSON object")
+    return review
+
+def _approve_cmd(ns):
+    from . import driver
+    stem = _approve_target(ns)
+    if ns.review_file is None:
+        return driver.approve(stem)
+    result = driver.approve_review(stem, _read_review(ns.review_file))
+    if not ns.json:
+        # No legacy output to preserve — pretty-print the same body --json emits.
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return
+    return result
 
 def _status_cmd(ns):
     if not ns.json:

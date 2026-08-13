@@ -812,3 +812,131 @@ def test_crop_windows_without_preview_is_centered(tmp_repo, monkeypatch):
     for crop in paths.CROPS:
         expected = geometry.centered_crop_norm(5784, 4344, crop, True)
         assert result["windows"][crop] == dict(expected, source="suggested")
+
+
+def _seed_approvable(tmp_repo, monkeypatch):
+    import json as _json
+    from pipeline import paths, recipe, toolchain
+    for s in paths.STYLES:
+        (tmp_repo / "config/styles" / f"{s}.pp3").write_text(f"# {s}\n")
+    (tmp_repo / "config/toolchain.lock").write_text(_json.dumps({}))
+    import pathlib, shutil as _sh
+    _REPO = pathlib.Path(__file__).resolve().parent.parent
+    _sh.copy2(_REPO / "config/lab-profiles/generic-v1.yaml",
+              tmp_repo / "config/lab-profiles/generic-v1.yaml")
+    # labprofile.load validates the exact field set — always copy the real
+    # profile; hand-written minimal YAML fails its schema check.
+    monkeypatch.setattr(toolchain, "entries_for", lambda lock, names: {})
+    rec = recipe.new("P1", "aa" * 32, 5776, 4336)
+    rec["render_width"], rec["render_height"] = 5784, 4344
+    recipe.save("P1", rec)
+    # Valid geometry for a landscape 5784x4344 render at 300 PPI, deliberately
+    # offset from centered_crop_norm so the tests can tell a persisted
+    # submission apart from a recomputed default.
+    return {
+        "expression_audit": ["eyes open — all: pass"],
+        "crops": {
+            "8x10": {"x": 0.05, "y": 0.0, "w": 0.9388, "h": 1.0},
+            "5x7": {"x": 0.0, "y": 0.04, "w": 1.0, "h": 0.951},
+        },
+    }
+
+
+def test_approve_review_happy_path(tmp_repo, monkeypatch):
+    from pipeline import driver, manifest, recipe
+    review = _seed_approvable(tmp_repo, monkeypatch)
+    result = driver.approve_review("P1", review)
+    assert result["state"] == "approved"
+    rec = recipe.load("P1")
+    assert rec["approval"]["fingerprint"] == result["fingerprint"]
+    assert rec["crops"] == review["crops"]
+    assert rec["expression_audit"] == ["eyes open — all: pass"]
+    m = manifest.load_readonly()
+    assert m["photos"]["P1"]["state"] == "approved"
+    assert m["photos"]["P1"]["fingerprint"] == result["fingerprint"]
+
+
+def test_approve_review_stale_revision_changes_nothing(tmp_repo, monkeypatch):
+    from pipeline import driver, jsonio, recipe
+    import pytest as _pytest
+    review = _seed_approvable(tmp_repo, monkeypatch)
+    review["expected_review_revision"] = "sha256:not-the-current-one"
+    with _pytest.raises(jsonio.CommandError) as e:
+        driver.approve_review("P1", review)
+    assert e.value.code == "STALE_REVIEW"
+    assert recipe.load("P1")["approval"]["fingerprint"] is None
+
+
+def test_approve_review_requires_both_crops_and_audit(tmp_repo, monkeypatch):
+    from pipeline import driver, jsonio
+    import pytest as _pytest
+    review = _seed_approvable(tmp_repo, monkeypatch)
+    del review["crops"]["5x7"]
+    with _pytest.raises(jsonio.CommandError) as e:
+        driver.approve_review("P1", review)
+    assert e.value.code == "BAD_INPUT"
+    review = _seed_approvable(tmp_repo, monkeypatch)
+    review["expression_audit"] = []
+    with _pytest.raises(jsonio.CommandError) as e:
+        driver.approve_review("P1", review)
+    assert e.value.code == "BAD_INPUT"
+    # Shapes that would otherwise blow up as AttributeError → INTERNAL.
+    review = _seed_approvable(tmp_repo, monkeypatch)
+    review["crops"] = [{"x": 0.05, "y": 0.0, "w": 0.9388, "h": 1.0}]
+    with _pytest.raises(jsonio.CommandError) as e:
+        driver.approve_review("P1", review)
+    assert e.value.code == "BAD_INPUT"
+    review = _seed_approvable(tmp_repo, monkeypatch)
+    review["crops"]["8x10"] = [0.05, 0.0, 0.9388, 1.0]
+    with _pytest.raises(jsonio.CommandError) as e:
+        driver.approve_review("P1", review)
+    assert e.value.code == "BAD_INPUT"
+    review = _seed_approvable(tmp_repo, monkeypatch)
+    review["expression_audit"] = "eyes open — all: pass"
+    with _pytest.raises(jsonio.CommandError) as e:
+        driver.approve_review("P1", review)
+    assert e.value.code == "BAD_INPUT"
+
+
+def test_approve_review_with_matching_revision_requires_fresh_previews(
+        tmp_repo, monkeypatch):
+    from pipeline import driver, jsonio, provenance, recipe
+    import pytest as _pytest
+    review = _seed_approvable(tmp_repo, monkeypatch)
+    rec = recipe.load("P1")
+    review["expected_review_revision"] = provenance.review_revision("P1", rec)
+    # No previews rendered → every style is stale → STALE_REVIEW
+    with _pytest.raises(jsonio.CommandError) as e:
+        driver.approve_review("P1", review)
+    assert e.value.code == "STALE_REVIEW"
+
+
+def test_approve_review_strips_echoed_source_tag(tmp_repo, monkeypatch):
+    from pipeline import driver, recipe
+    review = _seed_approvable(tmp_repo, monkeypatch)
+    geometry_only = {c: dict(w) for c, w in review["crops"].items()}
+    for window in review["crops"].values():
+        window["source"] = "suggested"
+
+    driver.approve_review("P1", review)
+
+    # The recipe stores geometry alone; a stray tag would later fail
+    # recipe.fingerprint's numeric check on a recipe already on disk.
+    assert recipe.load("P1")["crops"] == geometry_only
+
+
+def test_approve_review_rejects_invalid_window_without_persisting(
+        tmp_repo, monkeypatch):
+    from pipeline import driver, jsonio, recipe
+    import pytest as _pytest
+    review = _seed_approvable(tmp_repo, monkeypatch)
+    review["crops"]["5x7"]["h"] = 0.5  # aspect no longer matches 5x7
+
+    with _pytest.raises(jsonio.CommandError) as e:
+        driver.approve_review("P1", review)
+
+    assert e.value.code == "BAD_INPUT"
+    rec = recipe.load("P1")
+    assert rec["crops"] == {"8x10": None, "5x7": None}
+    assert rec["approval"]["fingerprint"] is None
+    assert rec["expression_audit"] == []
