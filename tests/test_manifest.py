@@ -171,3 +171,21 @@ def test_rebuild_from_recipes_and_provenance(tmp_repo):
     m = manifest.rebuild()
     assert m["photos"]["P1"]["state"] == "verified"
     assert m["photos"]["P1"]["artifacts"]["P1_natural.tif"] == {"d": 1}
+
+
+def test_load_readonly_never_writes_manifest(tmp_repo):
+    from pipeline import manifest, paths, recipe
+    recipe.save("P1", recipe.new("P1", "aa" * 32, 5776, 4336))
+    assert not paths.manifest_path().exists()
+    m = manifest.load_readonly()
+    assert "P1" in m["photos"]
+    assert not paths.manifest_path().exists()          # the point
+
+
+def test_save_is_atomic_no_partial_file_on_same_name(tmp_repo):
+    from pipeline import manifest, paths
+    manifest.save({"photos": {}})
+    # os.replace leaves no sibling temp files behind
+    leftovers = [p for p in paths.root().iterdir()
+                 if p.name.startswith(".manifest.") ]
+    assert leftovers == []

@@ -1,6 +1,8 @@
 import hashlib
 import json
 import math
+import os
+import tempfile
 
 import yaml
 
@@ -31,9 +33,18 @@ def _path(stem):
 
 
 def save(stem, data):
+    # Write-temp + replace: a reader never sees a half-written recipe, and a
+    # crash mid-write leaves the previous recipe intact rather than truncated.
     p = _path(stem)
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(yaml.safe_dump(data, sort_keys=True))
+    fd, tmp = tempfile.mkstemp(dir=p.parent, prefix=f".{p.name}.")
+    try:
+        with os.fdopen(fd, "w") as handle:
+            handle.write(yaml.safe_dump(data, sort_keys=True))
+        os.replace(tmp, p)
+    except BaseException:
+        os.unlink(tmp)
+        raise
 
 
 def load(stem):
