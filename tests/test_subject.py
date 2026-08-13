@@ -38,12 +38,23 @@ requires_vision = pytest.mark.skipif(
 )
 
 
+def test_group_bbox_is_thin_wrapper_over_detail(monkeypatch):
+    sentinel = {"x": 0.1, "y": 0.2, "w": 0.3, "h": 0.4}
+    monkeypatch.setattr(subject, "group_bbox_detail",
+                        lambda path: (sentinel, "faces"))
+    assert subject.group_bbox("whatever.jpg") is sentinel
+    monkeypatch.setattr(subject, "group_bbox_detail",
+                        lambda path: (None, "detector_error"))
+    assert subject.group_bbox("whatever.jpg") is None
+
+
 @requires_vision
-def test_group_bbox_detects_real_group():
+def test_group_bbox_detail_detects_real_group():
     preview = paths.previews_dir() / "P1036163_natural_preview.jpg"
 
-    bbox = subject.group_bbox(preview)
+    bbox, basis = subject.group_bbox_detail(preview)
 
+    assert basis == "faces"
     assert bbox is not None
     assert all(0.0 <= bbox[key] <= 1.0 for key in ("x", "y", "w", "h"))
     assert bbox["x"] + bbox["w"] <= 1.0

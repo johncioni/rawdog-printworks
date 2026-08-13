@@ -10,27 +10,40 @@ def _wrap(fn):
     return inner
 
 def build_parser():
-    from . import driver, manifest, ingest, render
+    from . import driver
     from . import adjust as adjust_mod
     ap = argparse.ArgumentParser(prog="pipeline")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     p = sub.add_parser("status"); p.add_argument("--json", action="store_true")
-    p.set_defaults(fn=_wrap(lambda ns: _status_cmd(ns)))
-    sub.add_parser("ingest").set_defaults(fn=_wrap(lambda ns: _ingest()))
+    p.set_defaults(fn=lambda ns: _dispatch(ns, _status_cmd, mutating=False))
+    p = sub.add_parser("ingest"); p.add_argument("--json", action="store_true")
+    p.set_defaults(fn=lambda ns: _dispatch(ns, _ingest_cmd, mutating=True))
     p = sub.add_parser("preview")
     p.add_argument("stem", nargs="?"); p.add_argument("style", nargs="?")
     p.add_argument("--stem", dest="stem_flag"); p.add_argument("--style", dest="style_flag")
-    p.set_defaults(fn=_wrap(lambda ns: print(driver.preview_photo(*_preview_target(ns)))))
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(fn=lambda ns: _dispatch(ns, _preview_cmd, mutating=True,
+                                           precheck=_preview_target))
     p = sub.add_parser("croppreview"); p.add_argument("stem"); p.add_argument("style"); p.add_argument("crop")
-    p.set_defaults(fn=_wrap(lambda ns: print(driver.crop_preview(ns.stem, ns.style, ns.crop))))
+    p.set_defaults(fn=lambda ns: _dispatch(
+        ns, lambda n: print(driver.crop_preview(n.stem, n.style, n.crop)),
+        mutating=True))
     p = sub.add_parser("approve"); p.add_argument("stem")
-    p.set_defaults(fn=_wrap(lambda ns: driver.approve(ns.stem)))
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(fn=lambda ns: _dispatch(
+        ns, lambda n: driver.approve(n.stem), mutating=True))
     p = sub.add_parser("render"); p.add_argument("stem")
-    p.set_defaults(fn=_wrap(lambda ns: driver.render_photo(ns.stem)))
+    p.set_defaults(fn=lambda ns: _dispatch(
+        ns, lambda n: driver.render_photo(n.stem), mutating=True))
     p = sub.add_parser("verify"); p.add_argument("stem")
-    p.set_defaults(fn=_wrap(lambda ns: _verify(ns.stem)))
-    sub.add_parser("run").set_defaults(fn=_wrap(lambda ns: driver.process_all()))
+    p.add_argument("--json", action="store_true")
+    p.set_defaults(fn=lambda ns: _dispatch(ns, _verify_cmd, mutating=True))
+    p = sub.add_parser("run"); p.add_argument("--json", action="store_true")
+    # NOT mutating at dispatch: process_all takes the lock itself, and the
+    # O_EXCL lock is not reentrant — wrapping it here would deadlock.
+    p.set_defaults(fn=lambda ns: _dispatch(
+        ns, lambda n: driver.process_all(), mutating=False))
     p = sub.add_parser("adjust")
     p.add_argument("--stem", required=True); p.add_argument("--style", required=True)
     p.add_argument("--temperature", type=int); p.add_argument("--exposure", type=float)
@@ -40,15 +53,42 @@ def build_parser():
     return ap
 
 
-def _locked_json(ns, fn):
-    from . import jsonio, publish
+def _locked(fn, mutating):
+    """Mutating commands take the driver lock exactly once, here at dispatch."""
+    from . import publish
     def body():
-        with publish.acquire_lock():
-            return fn()
+        if mutating:
+            with publish.acquire_lock():
+                return fn()
+        return fn()
+    return body
+
+
+def _dispatch(ns, fn, mutating, precheck=None):
+    """Run one subcommand: `precheck` validates argument shape before the lock
+    is taken (a typo should not contend for the driver mutex), then the body
+    runs and its failure becomes either an `error:` line or a JSON envelope."""
+    from . import jsonio
+    def run():
+        if precheck is not None:
+            precheck(ns)
+        return _locked(lambda: fn(ns), mutating)()
+    if getattr(ns, "json", False):
+        from . import ingest, render
+        return jsonio.run_json(lambda: run() or {}, adapters={
+            render.RenderError: "RENDER_FAILED",
+            ingest.IngestError: "BAD_INPUT",
+            FileNotFoundError: "NOT_FOUND"})
+    return _wrap(lambda _ns: run())(ns)
+
+
+def _locked_json(ns, fn):
+    # adjust: the legacy path pretty-prints the same result body --json emits.
+    from . import jsonio
+    body = _locked(fn, mutating=True)
     if getattr(ns, "json", False):
         return jsonio.run_json(body)
-    result = body()
-    print(json.dumps(result, indent=2, sort_keys=True))
+    print(json.dumps(body(), indent=2, sort_keys=True))
     return 0
 
 def _resolve(name, flag_value, positional):
@@ -68,8 +108,45 @@ def _preview_target(ns):
 def _status_cmd(ns):
     if not ns.json:
         return _status()
-    from . import jsonio, status
-    return jsonio.run_json(lambda: status.snapshot())
+    from . import status
+    return status.snapshot()
+
+def _preview_cmd(ns):
+    from . import driver, provenance, recipe
+    from . import adjust as adjust_mod
+    stem, style = _preview_target(ns)
+    if not ns.json:
+        print(driver.preview_photo(stem, style))
+        return
+    # Sampled before the render: the render is what moves the revision.
+    revision_before = provenance.review_revision(stem, recipe.load(stem))
+    driver.preview_photo(stem, style)
+    return adjust_mod.preview_result(stem, style, revision_before)
+
+def _ingest_cmd(ns):
+    from . import ingest, jsonio
+    if not ns.json:
+        return _ingest()
+    # Never the legacy _ingest here: it signals failure with SystemExit, a
+    # BaseException run_json deliberately does not catch, which would exit
+    # without ever writing an envelope.
+    results = ingest.run()
+    failed = [f"{stem}: {r}" for stem, r in sorted(results.items())
+              if "failed" in r]
+    if failed:
+        raise jsonio.CommandError("PARTIAL_FAILURE", "; ".join(failed))
+    return {}
+
+def _verify_cmd(ns):
+    from . import driver, jsonio
+    if not ns.json:
+        return _verify(ns.stem)
+    # Same SystemExit hazard as ingest — the JSON path reports problems as an
+    # error envelope instead of exiting out from under run_json.
+    problems = driver.verify_photo(ns.stem)
+    if problems:
+        raise jsonio.CommandError("VERIFY_FAILED", "; ".join(problems))
+    return {"stem": ns.stem, "verify": "clean"}
 
 def _status():
     from . import driver, manifest

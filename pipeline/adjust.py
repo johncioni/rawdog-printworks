@@ -88,6 +88,25 @@ def _semantically_empty(doc):
     return doc.dump().strip() == ""
 
 
+def preview_result(stem, style, revision_before):
+    """The result body shared by `adjust` and `preview` — both report the
+    preview they just produced plus the revision it moved from and to.
+    Reads the recipe back from disk: a render records preview provenance."""
+    from . import status as status_mod
+    rec = recipe.load(stem)
+    return {
+        "stem": stem,
+        "style": style,
+        "preview": f"previews/{stem}_{style}_preview.jpg",
+        "temperature": status_mod._control(stem, style, "White Balance",
+                                           "Temperature", int),
+        "exposure": status_mod._control(stem, style, "Exposure",
+                                        "Compensation", float),
+        "review_revision_before": revision_before,
+        "review_revision_after": provenance.review_revision(stem, rec),
+    }
+
+
 def apply(stem, style, temperature=None, exposure=None, reset=False):
     _validate(style, temperature, exposure, reset)
     rec = _load_recipe(stem)
@@ -125,17 +144,4 @@ def apply(stem, style, temperature=None, exposure=None, reset=False):
             driver.preview_photo(stem, style)
         except render.RenderError as error:
             raise jsonio.CommandError("RENDER_FAILED", str(error)) from error
-        rec = recipe.load(stem)
-    from . import status as status_mod
-    result = {
-        "stem": stem,
-        "style": style,
-        "preview": f"previews/{stem}_{style}_preview.jpg",
-        "temperature": status_mod._control(stem, style, "White Balance",
-                                           "Temperature", int),
-        "exposure": status_mod._control(stem, style, "Exposure",
-                                        "Compensation", float),
-        "review_revision_before": revision_before,
-        "review_revision_after": provenance.review_revision(stem, rec),
-    }
-    return result
+    return preview_result(stem, style, revision_before)
