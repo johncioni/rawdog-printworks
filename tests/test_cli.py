@@ -163,3 +163,27 @@ def test_preview_json_returns_adjust_shaped_result(preview_repo, json_stream):
 def test_preview_json_unknown_stem_is_not_found(preview_repo, json_stream):
     assert cli.main(["preview", "NOPE", "natural", "--json"]) == 1
     assert _envelope(json_stream)["error"]["code"] == "NOT_FOUND"
+
+
+def test_crops_json_returns_windows(tmp_repo, json_stream, monkeypatch):
+    monkeypatch.setattr(driver, "crop_windows", lambda stem: {
+        "stem": stem, "basis": "faces", "windows": {}})
+    assert cli.main(["crops", "--stem", "P1", "--json"]) == 0
+    assert _envelope(json_stream) == {
+        "ok": True,
+        "result": {"stem": "P1", "basis": "faces", "windows": {}}}
+
+
+def test_crops_legacy_pretty_prints_result(tmp_repo, monkeypatch, capsys):
+    monkeypatch.setattr(driver, "crop_windows", lambda stem: {
+        "stem": stem, "basis": None, "windows": {}})
+    assert cli.main(["crops", "--stem", "P1"]) == 0
+    assert json.loads(capsys.readouterr().out) == {
+        "stem": "P1", "basis": None, "windows": {}}
+
+
+def test_crops_never_locks(tmp_repo):
+    # Read-only: reporting crop windows must not contend for the driver mutex.
+    p = _run(["crops", "--stem", "P1", "--json"], env=_held_lock_env(tmp_repo))
+    envelope = json.loads(p.stdout.strip().splitlines()[-1])
+    assert envelope["error"]["code"] == "NOT_FOUND"   # missing recipe, not lock

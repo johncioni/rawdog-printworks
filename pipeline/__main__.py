@@ -29,6 +29,11 @@ def build_parser():
     p.set_defaults(fn=lambda ns: _dispatch(
         ns, lambda n: print(driver.crop_preview(n.stem, n.style, n.crop)),
         mutating=True))
+    p = sub.add_parser("crops"); p.add_argument("--stem", required=True)
+    p.add_argument("--json", action="store_true")
+    # Read-only: it reports what approve would bind and persists nothing, so
+    # it must not contend for the driver lock.
+    p.set_defaults(fn=lambda ns: _dispatch(ns, _crops_cmd, mutating=False))
     p = sub.add_parser("approve"); p.add_argument("stem")
     p.add_argument("--json", action="store_true")
     p.set_defaults(fn=lambda ns: _dispatch(
@@ -122,6 +127,15 @@ def _preview_cmd(ns):
     revision_before = provenance.review_revision(stem, recipe.load(stem))
     driver.preview_photo(stem, style)
     return adjust_mod.preview_result(stem, style, revision_before)
+
+def _crops_cmd(ns):
+    from . import driver
+    result = driver.crop_windows(ns.stem)
+    if not ns.json:
+        # No legacy output to preserve — pretty-print the same body --json emits.
+        print(json.dumps(result, indent=2, sort_keys=True))
+        return
+    return result
 
 def _ingest_cmd(ns):
     from . import ingest, jsonio

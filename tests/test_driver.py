@@ -676,3 +676,116 @@ def test_preview_photo_dims_failure_leaves_preview_and_recipe(
         driver.preview_photo("P1", "natural")
     assert prior.read_bytes() == b"OLD"
     assert (tmp_repo / "recipes/P1.yaml").read_bytes() == before
+
+
+def test_crop_windows_suggests_with_basis(tmp_repo, monkeypatch):
+    from pipeline import driver, paths, recipe, subject
+    recipe.save("P1", recipe.new("P1", "aa" * 32, 5776, 4336))
+    rec = recipe.load("P1")
+    rec["render_width"], rec["render_height"] = 5784, 4344
+    recipe.save("P1", rec)
+    preview = paths.previews_dir() / "P1_natural_preview.jpg"
+    preview.parent.mkdir(parents=True, exist_ok=True)
+    preview.write_bytes(b"x")
+    monkeypatch.setattr(subject, "group_bbox_detail",
+                        lambda p: ({"x": 0.4, "y": 0.3, "w": 0.2, "h": 0.3},
+                                   "faces"))
+    result = driver.crop_windows("P1")
+    assert result["basis"] == "faces"
+    assert set(result["windows"]) == set(paths.CROPS)
+    assert all(w["source"] == "suggested" for w in result["windows"].values())
+    before = recipe.load("P1")
+    assert before["crops"] == {"8x10": None, "5x7": None}   # nothing persisted
+
+
+def test_crop_windows_detector_error_falls_back_centered(tmp_repo, monkeypatch):
+    from pipeline import driver, paths, recipe, subject
+    recipe.save("P1", recipe.new("P1", "aa" * 32, 5776, 4336))
+    rec = recipe.load("P1")
+    rec["render_width"], rec["render_height"] = 5784, 4344
+    recipe.save("P1", rec)
+    p = paths.previews_dir() / "P1_natural_preview.jpg"
+    p.parent.mkdir(parents=True, exist_ok=True); p.write_bytes(b"x")
+    monkeypatch.setattr(subject, "group_bbox_detail",
+                        lambda path: (None, "detector_error"))
+    result = driver.crop_windows("P1")
+    assert result["basis"] == "detector_error"
+
+
+def test_crop_windows_requires_dims(tmp_repo):
+    from pipeline import driver, jsonio, recipe
+    import pytest as _pytest
+    recipe.save("P1", recipe.new("P1", "aa" * 32, 5776, 4336))
+    with _pytest.raises(jsonio.CommandError) as e:
+        driver.crop_windows("P1")
+    assert e.value.code == "BAD_INPUT"
+
+
+def _crop_windows_repo(dims=(5784, 4344), crops=None):
+    from pipeline import recipe
+    recipe.save("P1", recipe.new("P1", "aa" * 32, 5776, 4336))
+    rec = recipe.load("P1")
+    rec["render_width"], rec["render_height"] = dims
+    if crops:
+        rec["crops"].update(crops)
+    recipe.save("P1", rec)
+    return rec
+
+
+def test_crop_windows_all_persisted_reports_no_basis(tmp_repo, monkeypatch):
+    from pipeline import driver, paths, recipe, subject
+    window = {"x": 0.1, "y": 0.2, "w": 0.5, "h": 0.6}
+    _crop_windows_repo(crops={crop: dict(window) for crop in paths.CROPS})
+    # Fully persisted means no suggestion runs at all — not even the detector.
+    monkeypatch.setattr(subject, "group_bbox_detail", lambda p: 1 / 0)
+
+    result = driver.crop_windows("P1")
+
+    assert result["basis"] is None
+    assert result["windows"] == {
+        crop: dict(window, source="persisted") for crop in paths.CROPS}
+    assert recipe.load("P1")["crops"] == {
+        crop: window for crop in paths.CROPS}
+
+
+def test_crop_windows_mixes_persisted_and_suggested(tmp_repo, monkeypatch):
+    from pipeline import driver, paths, recipe, subject
+    window = {"x": 0.1, "y": 0.2, "w": 0.5, "h": 0.6}
+    _crop_windows_repo(crops={"8x10": dict(window)})
+    preview = paths.previews_dir() / "P1_natural_preview.jpg"
+    preview.parent.mkdir(parents=True, exist_ok=True)
+    preview.write_bytes(b"x")
+    monkeypatch.setattr(subject, "group_bbox_detail",
+                        lambda p: (None, "no_faces"))
+
+    result = driver.crop_windows("P1")
+
+    assert result["basis"] == "center"
+    assert result["windows"]["8x10"] == dict(window, source="persisted")
+    assert result["windows"]["5x7"]["source"] == "suggested"
+    assert recipe.load("P1")["crops"] == {"8x10": window, "5x7": None}
+
+
+def test_crop_windows_requires_dims_when_one_window_persisted(tmp_repo):
+    from pipeline import driver, jsonio, recipe
+    import pytest as _pytest
+    recipe.save("P1", recipe.new("P1", "aa" * 32, 5776, 4336))
+    rec = recipe.load("P1")
+    rec["crops"]["8x10"] = {"x": 0.1, "y": 0.2, "w": 0.5, "h": 0.6}
+    recipe.save("P1", rec)
+    with _pytest.raises(jsonio.CommandError) as e:
+        driver.crop_windows("P1")
+    assert e.value.code == "BAD_INPUT"
+
+
+def test_crop_windows_without_preview_is_centered(tmp_repo, monkeypatch):
+    from pipeline import driver, geometry, paths, subject
+    _crop_windows_repo()
+    monkeypatch.setattr(subject, "group_bbox_detail", lambda p: 1 / 0)
+
+    result = driver.crop_windows("P1")
+
+    assert result["basis"] == "center"
+    for crop in paths.CROPS:
+        expected = geometry.centered_crop_norm(5784, 4344, crop, True)
+        assert result["windows"][crop] == dict(expected, source="suggested")

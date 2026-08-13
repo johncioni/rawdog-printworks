@@ -6,8 +6,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from . import (crops, geometry, labprofile, manifest, metadata, paths, pdfs,
-               provenance, publish, recipe, render, subject, toolchain,
+from . import (crops, geometry, jsonio, labprofile, manifest, metadata, paths,
+               pdfs, provenance, publish, recipe, render, subject, toolchain,
                verify as verify_mod)
 
 
@@ -395,6 +395,46 @@ def verify_photo(stem):
             _extract_comparison_source(stem, staging)
     rec = recipe.load(stem)
     return verify_mod.photo(stem, staging, rec, _lab())
+
+
+def crop_windows(stem):
+    """Report the crop windows `approve` would bind, without binding them.
+
+    `basis` describes the suggestion path only; a fully persisted recipe
+    suggests nothing, so its basis is None and each window says so itself.
+    """
+    rec = recipe.load(stem)
+    persisted = {c: w for c, w in rec["crops"].items() if w is not None}
+    if len(persisted) == len(paths.CROPS):
+        return {"stem": stem, "basis": None,
+                "windows": {c: dict(w, source="persisted")
+                            for c, w in persisted.items()}}
+    try:
+        width, height = _render_dims(rec)
+    except ValueError as error:
+        raise jsonio.CommandError(
+            "BAD_INPUT", "render dims not recorded; generate previews first"
+        ) from error
+    landscape = width >= height
+    preview = paths.previews_dir() / f"{stem}_natural_preview.jpg"
+    if preview.is_file():
+        bbox, basis = subject.group_bbox_detail(preview)
+        if basis == "no_faces":
+            basis = "center"
+    else:
+        bbox, basis = None, "center"
+    windows = {}
+    for crop in paths.CROPS:
+        if crop in persisted:
+            windows[crop] = dict(persisted[crop], source="persisted")
+            continue
+        if bbox is None:
+            window = geometry.centered_crop_norm(width, height, crop, landscape)
+        else:
+            window = geometry.subject_crop_norm(width, height, crop,
+                                                landscape, bbox)
+        windows[crop] = dict(window, source="suggested")
+    return {"stem": stem, "basis": basis, "windows": windows}
 
 
 def approve(stem):
