@@ -1,0 +1,1 @@
+{"error":{"code":"PARTIAL_FAILURE","message":"1 of 3 photos failed"},"ok":false,"result":{"advanced":[{"state":"preview_ready","stem":"P0"}],"failed":[{"code":"VERIFY_FAILED","message":"dpi 240 != 300","stem":"P2"}],"published":[{"artifact_count":2,"stem":"P1","version":"v001"}]}}
