@@ -1,12 +1,13 @@
 import datetime
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
 
 from . import (crops, geometry, labprofile, manifest, metadata, paths, pdfs,
-               publish, recipe, render, subject, toolchain,
+               provenance, publish, recipe, render, subject, toolchain,
                verify as verify_mod)
 
 
@@ -83,6 +84,59 @@ def _record_render_dims(stem, rec, width, height):
     rec["render_width"] = width
     rec["render_height"] = height
     recipe.save(stem, rec)
+
+
+def preview_photo(stem, style):
+    if style not in paths.STYLES:
+        raise ValueError(f"unknown style: {style}")
+    rec = recipe.load(stem)
+    raw = render.resolve_raw(stem)
+    actual_hash = _sha256(raw)
+    if actual_hash != rec["raw_sha256"]:
+        raise RuntimeError(
+            f"archived RAW hash mismatch for {stem}: "
+            f"expected {rec['raw_sha256']}, got {actual_hash}")
+    material = provenance.gather_material(stem)
+    inputs_hash = provenance.style_input_hash(stem, style, rec, material)
+
+    final = paths.previews_dir() / f"{stem}_{style}_preview.jpg"
+    tmp = paths.run_dir() / f"preview-{stem}-{style}.tmp.jpg"
+    tmp.parent.mkdir(parents=True, exist_ok=True)
+    tmp.unlink(missing_ok=True)
+    extra = ((render.denoise_profile(),)
+             if rec["overrides"].get("denoise") else ())
+    render.rt_render(raw, style, tmp, "jpg", 92, extra_profiles=extra)
+
+    # Inputs must be identical before AND after the render, or the recorded
+    # provenance would describe profiles that weren't the ones rendered.
+    post_hash = provenance.style_input_hash(
+        stem, style, rec, provenance.gather_material(stem))
+    if post_hash != inputs_hash:
+        tmp.unlink(missing_ok=True)
+        raise RuntimeError(
+            f"render inputs changed during preview render for {stem} "
+            f"[{style}]; re-run")
+
+    # Validate the temp ALWAYS; a failure here leaves preview + recipe alone.
+    width, height = _dims(tmp)
+    if (abs(width - int(rec["width"])) > 16
+            or abs(height - int(rec["height"])) > 16):
+        raise RuntimeError(
+            f"render dimensions {width}x{height} differ from declared "
+            f"{rec['width']}x{rec['height']} by more than 16 pixels")
+    try:
+        _render_dims(rec)
+    except ValueError:
+        rec["render_width"], rec["render_height"] = width, height
+    provenance.record_preview(rec, stem, style, tmp, inputs_hash)
+
+    # Recipe first, swap second: a save failure changes nothing on disk; a
+    # crash between the two leaves a hash mismatch that reads as STALE, not
+    # as falsely fresh.
+    recipe.save(stem, rec)
+    final.parent.mkdir(parents=True, exist_ok=True)
+    os.replace(tmp, final)
+    return final
 
 
 def _crop_for(rec, crop, width, height, landscape, ppi):
@@ -473,7 +527,7 @@ def process_all():
                 if state == "ingested":
                     render.ensure_sidecar_all(stem)
                     for style in paths.STYLES:
-                        render.preview(stem, style)
+                        preview_photo(stem, style)
                     manifest.set_state(data, stem, "preview_ready")
                     manifest.save(data)
                     print(f"{stem}: previews ready — visual review required")

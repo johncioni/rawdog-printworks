@@ -543,3 +543,136 @@ def test_crop_preview_uses_recipe_window_and_lab_ppi(tmp_repo, monkeypatch):
     ]
     assert strip_calls == [(output, True, 300)]
     assert output.read_bytes() == b"preview"
+
+
+def _seed_preview_repo(tmp_repo, monkeypatch):
+    """Styles + lock + lab profile + a REAL raw file whose hash matches the
+    recipe (preview_photo verifies it — a fabricated hash fails)."""
+    import hashlib as _hl
+    import json as _json
+    import pathlib, shutil as _sh
+    from pipeline import recipe, toolchain
+    from pipeline.paths import STYLES
+    for s in STYLES:
+        (tmp_repo / "config/styles" / f"{s}.pp3").write_text(f"# {s}\n")
+    (tmp_repo / "config/toolchain.lock").write_text(_json.dumps({}))
+    _REPO = pathlib.Path(__file__).resolve().parent.parent
+    _sh.copy2(_REPO / "config/lab-profiles/generic-v1.yaml",
+              tmp_repo / "config/lab-profiles/generic-v1.yaml")
+    monkeypatch.setattr(toolchain, "entries_for", lambda lock, names: {})
+    raw = tmp_repo / "Input/P1.RW2"
+    raw.write_bytes(b"raw-bytes")
+    recipe.save("P1", recipe.new(
+        "P1", _hl.sha256(b"raw-bytes").hexdigest(), 5776, 4336))
+    return raw
+
+
+def test_preview_photo_atomic_and_records(tmp_repo, monkeypatch):
+    from pipeline import driver, paths, provenance, recipe, render
+    _seed_preview_repo(tmp_repo, monkeypatch)
+
+    def fake_rt(raw, style, out, fmt, quality, extra_profiles=()):
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(b"JPG:" + style.encode())
+    monkeypatch.setattr(render, "rt_render", fake_rt)
+    monkeypatch.setattr(driver, "_dims", lambda p: (5784, 4344))
+
+    out = driver.preview_photo("P1", "natural")
+    assert out == paths.previews_dir() / "P1_natural_preview.jpg"
+    assert out.read_bytes() == b"JPG:natural"
+    rec = recipe.load("P1")
+    assert rec["render_width"] == 5784
+    assert rec["previews"]["natural"]["content"] == provenance.content_hash(out)
+
+
+def test_preview_photo_refuses_raw_hash_mismatch(tmp_repo, monkeypatch):
+    from pipeline import driver, render
+    raw = _seed_preview_repo(tmp_repo, monkeypatch)
+    raw.write_bytes(b"DIFFERENT raw bytes")
+    monkeypatch.setattr(render, "rt_render",
+                        lambda *a, **k: (_ for _ in ()).throw(
+                            AssertionError("must not render")))
+    import pytest as _pytest
+    with _pytest.raises(RuntimeError, match="hash mismatch"):
+        driver.preview_photo("P1", "natural")
+
+
+def test_preview_photo_failure_keeps_previous_jpg(tmp_repo, monkeypatch):
+    from pipeline import driver, paths, render
+    _seed_preview_repo(tmp_repo, monkeypatch)
+    prior = paths.previews_dir() / "P1_natural_preview.jpg"
+    prior.parent.mkdir(parents=True, exist_ok=True)
+    prior.write_bytes(b"OLD")
+
+    def boom(raw, style, out, fmt, quality, extra_profiles=()):
+        raise render.RenderError("rt exploded")
+    monkeypatch.setattr(render, "rt_render", boom)
+
+    import pytest as _pytest
+    with _pytest.raises(render.RenderError):
+        driver.preview_photo("P1", "natural")
+    assert prior.read_bytes() == b"OLD"
+
+
+def test_preview_photo_detects_mid_render_input_edit(tmp_repo, monkeypatch):
+    from pipeline import driver, paths, recipe, render
+    _seed_preview_repo(tmp_repo, monkeypatch)
+    before = (tmp_repo / "recipes/P1.yaml").read_bytes()
+
+    def rt_that_edits_inputs(raw, style, out, fmt, quality, extra_profiles=()):
+        (paths.sidecars_dir() / "P1_natural.pp3").write_text(
+            "[Exposure]\nCompensation=0.5\n")     # edit lands mid-render
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(b"JPG")
+    monkeypatch.setattr(render, "rt_render", rt_that_edits_inputs)
+    monkeypatch.setattr(driver, "_dims", lambda p: (5784, 4344))
+
+    import pytest as _pytest
+    with _pytest.raises(RuntimeError, match="inputs changed"):
+        driver.preview_photo("P1", "natural")
+    assert (tmp_repo / "recipes/P1.yaml").read_bytes() == before
+    assert not (paths.previews_dir() / "P1_natural_preview.jpg").exists()
+
+
+def test_preview_photo_passes_denoise_profile_when_overridden(
+        tmp_repo, monkeypatch):
+    from pipeline import driver, recipe, render
+    _seed_preview_repo(tmp_repo, monkeypatch)
+    rec = recipe.load("P1")
+    rec["overrides"]["denoise"] = True
+    recipe.save("P1", rec)
+    calls = []
+
+    def fake_rt(raw, style, out, fmt, quality, extra_profiles=()):
+        calls.append(extra_profiles)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(b"JPG")
+    monkeypatch.setattr(render, "rt_render", fake_rt)
+    monkeypatch.setattr(driver, "_dims", lambda p: (5784, 4344))
+
+    driver.preview_photo("P1", "natural")
+
+    assert calls == [(render.denoise_profile(),)]
+
+
+def test_preview_photo_dims_failure_leaves_preview_and_recipe(
+        tmp_repo, monkeypatch):
+    from pipeline import driver, paths, render
+    _seed_preview_repo(tmp_repo, monkeypatch)
+    prior = paths.previews_dir() / "P1_natural_preview.jpg"
+    prior.parent.mkdir(parents=True, exist_ok=True)
+    prior.write_bytes(b"OLD")
+    before = (tmp_repo / "recipes/P1.yaml").read_bytes()
+
+    def fake_rt(raw, style, out, fmt, quality, extra_profiles=()):
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(b"JPG")
+    monkeypatch.setattr(render, "rt_render", fake_rt)
+    monkeypatch.setattr(driver, "_dims", lambda p: (_ for _ in ()).throw(
+        RuntimeError(f"could not identify dimensions for {p}: boom")))
+
+    import pytest as _pytest
+    with _pytest.raises(RuntimeError, match="could not identify dimensions"):
+        driver.preview_photo("P1", "natural")
+    assert prior.read_bytes() == b"OLD"
+    assert (tmp_repo / "recipes/P1.yaml").read_bytes() == before
