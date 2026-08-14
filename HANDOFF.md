@@ -13,15 +13,13 @@ Linear (RAW) + CodeRabbit, CI per PR. main = fba61d4, clean, CI green.
   different photo's RAW on case-insensitive volumes.
 - Plan 2 set up: the Orca worktree provisioned itself via the setup hook
   (295 pass / 1 skip, no manual steps). Ledger + pre-flight scan written.
-- PRE-FLIGHT RULING (carried into every dispatch from Task 4 on): the plan
-  mixes two path conventions — bare `Sources/…`/`Tests/…` are relative to
-  `app/PrintworksCore/`; app-target files live under
-  `app/RAWdogPrintworks/Sources/`. Without it, package files land at the repo
-  root and the build breaks.
+- PRE-FLIGHT RULING (in every dispatch from Task 4 on): bare `Sources/…`/
+  `Tests/…` are relative to `app/PrintworksCore/`; app-target files live under
+  `app/RAWdogPrintworks/Sources/`. Else package files land at the repo root.
 - RAW-10 complete (a3e8363): run_partial_failure now shows RENDER_FAILED beside
   VERIFY_FAILED, so the decoder can't be modelled from a one-value fixture.
-- Task 1 complete (0bff85d): PrintworksCore package + XcodeGen app target.
-  Committed `.xcodeproj` is spec-mandated (spec §9), not a slip.
+- Task 1 complete (0bff85d): package + XcodeGen app target; the committed
+  `.xcodeproj` is spec-mandated (spec §9), not a slip.
 - Task 2 complete (3378ea9): contract models decoding the real fixtures.
   RULING: error `code` fields stay `String`, never a closed enum — that is what
   lets all ten codes plus unknown ones decode; the tests fail to COMPILE if
@@ -41,8 +39,11 @@ Linear (RAW) + CodeRabbit, CI per PR. main = fba61d4, clean, CI green.
 - WT=~/orca/workspaces/rawdog-printworks/plan2-printworks-app (branch
   johncioni/plan2-printworks-app). Ledger + all 11 briefs:
   $WT/.superpowers/sdd/2026-08-12-printworks-app/
-- Tasks 1-2 COMPLETE (0bff85d, 3378ea9). Task 3 implemented (243f154, swift
-  test 17/17); its REVIEWER is running. `git -C $WT log --oneline -3`.
+- Tasks 1-2 COMPLETE (0bff85d, 3378ea9). TASK 3 IN FIX ROUND 1/5: review found
+  a CRITICAL silent progress-event loss (concurrent readabilityHandler reads
+  outside the lock → out-of-order appends → spliced JSON → `try?` drops events;
+  112-263 of 400 delivered). Present verbatim in the brief's mandated code;
+  ruled to fix anyway. `git -C $WT log --oneline -3`.
   Deferred minor from Task 2 in the ledger: optional contract fields are not
   drift-tested — the final whole-branch review must triage it.
 - Carried rules (also in ledger): editing `project.yml` requires regenerating
