@@ -37,10 +37,10 @@ done. main = a20cdfc, clean, CI green.
 - TASK 5 SCOPED RE-REVIEW running (opus) on review-532c311..7e19bee.diff. It
   verdicts F1-F6 ADDRESSED/NOT. If it is gone when you resume, re-dispatch it
   from that diff file — it is the last step before Task 5 closes.
-- Codex job task-mssl68qs-lmks2k still shows `running` at ~18m; its edits are
-  already committed (7e19bee) and independently verified, so cancel it:
-  `cd $WT && node <plugin>/scripts/codex-companion.mjs cancel task-mssl68qs-lmks2k`.
-  Its remaining work was only writing its own report file.
+- Codex job task-mssl68qs-lmks2k COMPLETED (20m21s), corroborating my own
+  verification: 25/25 suite runs, and its rewritten race test failed pre-fix
+  and passes post-fix. NOTE: it also rewrote the worktree's HANDOFF.md with a
+  task-scoped summary — reverted; forbid that in future Codex prompts.
 
 ## Next
 1. Read the re-review verdict; if all six ADDRESSED, append to the ledger
