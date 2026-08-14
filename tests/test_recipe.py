@@ -129,3 +129,10 @@ def test_save_load_roundtrip(tmp_repo):
     rec["manual_assets"].append({"file": "P1036163_retouch.tif", "sha256": "mm"})
     recipe.save("P1036163", rec)
     assert recipe.load("P1036163") == rec
+
+
+def test_recipe_save_atomic_leaves_no_temp(tmp_repo):
+    from pipeline import paths, recipe
+    recipe.save("P1", recipe.new("P1", "aa" * 32, 100, 80))
+    assert (paths.recipes_dir() / "P1.yaml").exists()
+    assert [p.name for p in paths.recipes_dir().iterdir()] == ["P1.yaml"]

@@ -1,7 +1,10 @@
+import datetime
 import hashlib
 import json
+import os
 import shutil
 import subprocess
+import uuid
 from pathlib import Path
 
 from . import manifest, paths, recipe
@@ -139,19 +142,85 @@ def _archived_hashes():
             if line.strip()}
 
 
-def run():
+def _raw_files(directory):
+    return (path for path in sorted(directory.iterdir())
+            if path.is_file() and path.suffix.lower() == ".rw2")
+
+
+def _iter_sources(sources):
+    # One level of recursion only: a dropped folder is a delivery, not a tree.
+    for source in map(Path, sources):
+        if source.is_dir():
+            yield from _raw_files(source)
+        elif source.suffix.lower() == ".rw2":
+            yield source
+
+
+def stage_sources(sources):
+    """Copy external RAWs into Input/ via a private staging dir.
+
+    Every decision is made from the hash of the *staged* copy, never the live
+    source: a source rewritten mid-copy cannot make a stale hash decide what
+    lands in Input/, and the final move is an atomic rename, so a concurrent
+    reader never sees a half-copied RAW.
+    """
+    result = {"placed": [], "skipped": [], "conflicts": [], "failed": []}
+    staging = paths.input_dir() / f".staging-{uuid.uuid4().hex}"
+    staging.mkdir(parents=True)
+    known_hashes = _archived_hashes()
+    known_hashes |= {_sha256(p) for p in _raw_files(paths.input_dir())}
+    manifest_stems = set(manifest.load()["photos"])
+    input_stems = {p.stem for p in _raw_files(paths.input_dir())}
+    try:
+        for source in _iter_sources(sources):
+            try:
+                temp = staging / source.name
+                shutil.copy2(source, temp)
+                digest = _sha256(temp)           # hash the staged copy
+            except OSError as error:
+                result["failed"].append({"file": source.name,
+                                         "code": "BAD_INPUT",
+                                         "message": str(error)})
+                continue
+            if digest in known_hashes:
+                temp.unlink()
+                result["skipped"].append({"file": source.name,
+                                          "reason": "duplicate content"})
+                continue
+            destination = paths.input_dir() / source.name
+            # The stem comparison is case-sensitive, but macOS volumes are
+            # case-insensitive by default: source "p9.rw2" has stem "p9",
+            # misses an existing "P9.RW2", and then resolves to that very
+            # file — so the rename below would destroy a different photo's
+            # RAW. Content differs by construction (equal content was
+            # skipped above), so an existing destination is always a
+            # conflict, never a no-op.
+            if (source.stem in manifest_stems | input_stems
+                    or destination.exists()):
+                temp.unlink()
+                result["conflicts"].append(
+                    {"file": source.name,
+                     "reason": "stem exists with different content"})
+                continue
+            os.replace(temp, destination)
+            known_hashes.add(digest)
+            input_stems.add(source.stem)
+            result["placed"].append(source.name)
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+    return result
+
+
+def _now_utc():
+    return (datetime.datetime.now(datetime.timezone.utc)
+            .isoformat(timespec="microseconds").replace("+00:00", "Z"))
+
+
+def run(delivery_id=None):
     manifest_data = manifest.load()
     results = {}
     existing_hashes = _archived_hashes()
-    raw_files = sorted(
-        {
-            path
-            for path in paths.input_dir().iterdir()
-            if path.is_file() and path.suffix.lower() == ".rw2"
-        },
-        key=lambda path: path.name,
-    )
-    for raw in raw_files:
+    for raw in list(_raw_files(paths.input_dir())):
         stem = raw.stem
         try:
             if stem in manifest_data["photos"]:
@@ -165,7 +234,9 @@ def run():
             archive(raw, src_sha)
             existing_hashes.add(src_sha)
             recipe.save(stem, recipe.new(
-                stem, src_sha, meta["ImageWidth"], meta["ImageHeight"]))
+                stem, src_sha, meta["ImageWidth"], meta["ImageHeight"],
+                delivery_id=delivery_id,
+                ingested_at=_now_utc() if delivery_id is not None else None))
             manifest.set_state(manifest_data, stem, "ingested")
             results[stem] = "ok"
         except (IngestError, OSError) as error:

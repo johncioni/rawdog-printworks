@@ -275,23 +275,38 @@ final class ContractTests: XCTestCase {
     }
 
     func testAdjustStreamFixtureDecodesLineByLine() throws {
-        // The NDJSON fixture is the contract for PipelineClient's streaming
-        // parser: every non-final line is a ProgressEvent, the final line is
-        // the envelope, and the envelope equals adjust_ok.json.
+        // adjust emits NO progress events (verified in Plan 1 Task 13):
+        // its stream fixture is the single envelope line, equal to
+        // adjust_ok.json. The multi-event stream contract lives in
+        // run_stream.ndjson (next test).
         let lines = String(decoding: try fixture("adjust_stream.ndjson"),
                            as: UTF8.self)
             .split(separator: "\n").map(String.init)
         XCTAssertFalse(lines.isEmpty)
         let decoder = ContractDecoder.make()
-        for line in lines.dropLast() {
-            XCTAssertNoThrow(try decoder.decode(ProgressEvent.self,
-                                                from: Data(line.utf8)), line)
-        }
         let final = try decoder.decode(Envelope<AdjustResult>.self,
                                        from: Data(lines.last!.utf8))
         let canonical = try decoder.decode(Envelope<AdjustResult>.self,
                                            from: fixture("adjust_ok.json"))
         XCTAssertEqual(final, canonical)
+    }
+
+    func testRunStreamFixtureIsTheStreamingContract() throws {
+        // run_stream.ndjson (Plan 1 Task 13, additive) carries the real
+        // multi-event stream: stage + progress event lines, then the final
+        // envelope — this is the fixture PipelineClient's streaming parser
+        // is validated against.
+        let lines = String(decoding: try fixture("run_stream.ndjson"),
+                           as: UTF8.self)
+            .split(separator: "\n").map(String.init)
+        XCTAssertGreaterThan(lines.count, 1, "must contain events + envelope")
+        let decoder = ContractDecoder.make()
+        for line in lines.dropLast() {
+            XCTAssertNoThrow(try decoder.decode(ProgressEvent.self,
+                                                from: Data(line.utf8)), line)
+        }
+        XCTAssertNoThrow(try decoder.decode(Envelope<RunResult>.self,
+                                            from: Data(lines.last!.utf8)))
     }
 }
 ```

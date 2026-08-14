@@ -9,6 +9,13 @@ def _warn(image_path, error):
 
 
 def group_bbox(image_path):
+    return group_bbox_detail(image_path)[0]
+
+
+def group_bbox_detail(image_path):
+    """Return (bbox, basis) where basis is "faces", "no_faces", or
+    "detector_error" — callers that must distinguish "the detector found
+    nobody" from "the detector broke" need the second element."""
     try:
         image_path = os.path.abspath(os.fspath(image_path))
         image_url = Quartz.CFURLCreateWithFileSystemPath(
@@ -24,11 +31,11 @@ def group_bbox(image_path):
         succeeded, error = handler.performRequests_error_([request], None)
         if not succeeded:
             _warn(image_path, error)
-            return None
+            return None, "detector_error"
 
         faces = request.results() or ()
         if not faces:
-            return None
+            return None, "no_faces"
 
         boxes = []
         for face in faces:
@@ -60,7 +67,7 @@ def group_bbox(image_path):
             "y": top,
             "w": right - left,
             "h": bottom - top,
-        }
+        }, "faces"
     except Exception as error:
         _warn(image_path, error)
-        return None
+        return None, "detector_error"

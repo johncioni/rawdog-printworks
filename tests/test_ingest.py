@@ -174,3 +174,134 @@ def test_preflight_flags_unrecognized_orientation(monkeypatch):
                         lambda p: dict(GOOD, Orientation="sideways"))
     warnings, _ = ingest.preflight("Input/P9.rw2", set(), set())
     assert any("Orientation" in warning for warning in warnings)
+
+
+def test_recipe_new_without_flags_is_legacy_bytes(tmp_repo):
+    from pipeline import recipe
+    legacy = recipe.new("P1", "aa" * 32, 100, 80)
+    assert "delivery_id" not in legacy and "ingested_at" not in legacy
+    tagged = recipe.new("P1", "aa" * 32, 100, 80,
+                        delivery_id="u-1", ingested_at="2026-08-12T00:00:00Z")
+    assert tagged["delivery_id"] == "u-1"
+
+
+def test_stage_sources_hashes_temp_and_places(tmp_repo):
+    from pipeline import ingest, paths
+    src = tmp_repo / "elsewhere"
+    src.mkdir()
+    f = src / "P9.RW2"
+    f.write_bytes(b"raw-bytes")
+    result = ingest.stage_sources([f])
+    assert result["placed"] == ["P9.RW2"]
+    assert (paths.input_dir() / "P9.RW2").read_bytes() == b"raw-bytes"
+    assert not any(p.name.startswith(".staging-")
+                   for p in paths.input_dir().iterdir())
+
+
+def test_stage_sources_conflict_and_duplicate(tmp_repo):
+    from pipeline import ingest, paths
+    (paths.input_dir() / "P9.RW2").write_bytes(b"original")
+    src = tmp_repo / "elsewhere"
+    src.mkdir()
+    # Same CONTENT under a new stem is still a content duplicate → skipped
+    # (spec §4.2/§5.4: content-hash dedup), never placed.
+    dup = src / "P8.RW2"
+    dup.write_bytes(b"original")
+    # Same stem, new content → conflict.
+    clash = src / "P9.RW2"
+    clash.write_bytes(b"DIFFERENT")
+    result = ingest.stage_sources([dup, clash])
+    assert result["placed"] == []
+    assert result["skipped"][0]["file"] == "P8.RW2"
+    assert result["conflicts"][0]["file"] == "P9.RW2"
+    assert (paths.input_dir() / "P9.RW2").read_bytes() == b"original"
+    assert not (paths.input_dir() / "P8.RW2").exists()
+
+
+def test_stage_sources_rejects_a_case_only_stem_collision(tmp_repo):
+    # macOS volumes are case-insensitive by default, so "p9.rw2" resolves to
+    # an existing "P9.RW2" even though the stems compare unequal. Without a
+    # destination check the rename would overwrite a different photo's RAW —
+    # unrecoverable when that RAW has not been archived yet.
+    from pipeline import ingest, paths
+    (paths.input_dir() / "P9.RW2").write_bytes(b"original")
+    if not (paths.input_dir() / "p9.rw2").exists():
+        pytest.skip("case-sensitive filesystem: no collision to reject")
+    src = tmp_repo / "elsewhere"
+    src.mkdir()
+    lower = src / "p9.rw2"
+    lower.write_bytes(b"DIFFERENT")
+
+    result = ingest.stage_sources([lower])
+
+    assert result["placed"] == []
+    assert result["conflicts"][0]["file"] == "p9.rw2"
+    assert (paths.input_dir() / "P9.RW2").read_bytes() == b"original"
+
+
+def test_stage_sources_hashes_the_staged_temp_not_the_live_source(
+        tmp_repo, monkeypatch):
+    from pathlib import Path
+    from pipeline import ingest, paths
+    src = tmp_repo / "elsewhere"
+    src.mkdir()
+    f = src / "P9.RW2"
+    f.write_bytes(b"first-bytes")
+
+    # Capture the ORIGINAL function before patching — patching the module
+    # attribute and calling through the module would recurse.
+    original_copy2 = ingest.shutil.copy2
+
+    def mutating_copy(source, dest):
+        original_copy2(source, dest)
+        Path(source).write_bytes(b"MUTATED-AFTER-COPY")   # source changes mid-flight
+    monkeypatch.setattr(ingest.shutil, "copy2", mutating_copy)
+
+    result = ingest.stage_sources([f])
+    # Decision and placement reflect the STAGED bytes; the mutated live
+    # source never influences the outcome or lands in Input/.
+    assert result["placed"] == ["P9.RW2"]
+    assert (paths.input_dir() / "P9.RW2").read_bytes() == b"first-bytes"
+
+
+def test_stage_sources_dedup_decision_uses_the_staged_bytes(
+        tmp_repo, monkeypatch):
+    # Placement alone cannot catch a live-source hash bug: the placed file is
+    # copied from the staged temp either way. Pre-seeding Input/ under a
+    # different stem with the pre-mutation content makes the DECISION
+    # observable — hashing the staged copy sees a content duplicate and skips,
+    # while hashing the mutated source would see new content and place it.
+    from pathlib import Path
+    from pipeline import ingest, paths
+    (paths.input_dir() / "P0.RW2").write_bytes(b"first-bytes")
+    src = tmp_repo / "elsewhere"
+    src.mkdir()
+    f = src / "P9.RW2"
+    f.write_bytes(b"first-bytes")
+
+    original_copy2 = ingest.shutil.copy2
+
+    def mutating_copy(source, dest):
+        original_copy2(source, dest)
+        Path(source).write_bytes(b"MUTATED-AFTER-COPY")
+    monkeypatch.setattr(ingest.shutil, "copy2", mutating_copy)
+
+    result = ingest.stage_sources([f])
+
+    assert result["placed"] == []
+    assert result["skipped"][0]["reason"] == "duplicate content"
+    assert not (paths.input_dir() / "P9.RW2").exists()
+
+
+def test_run_records_delivery_metadata_only_when_given(tmp_repo, monkeypatch):
+    from pipeline import ingest, recipe
+    monkeypatch.setattr(ingest, "exif_summary", lambda p: {
+        "Make": "Panasonic", "Model": "DC-GH7", "ImageWidth": 5776,
+        "ImageHeight": 4336, "Orientation": "Horizontal (normal)",
+        "LensModel": "L", "ISO": 200, "ExposureTime": "1/100",
+        "AspectRatio": "4:3"})
+    (tmp_repo / "Input/P7.rw2").write_bytes(b"bytes-7")
+    ingest.run(delivery_id="uuid-7")
+    rec = recipe.load("P7")
+    assert rec["delivery_id"] == "uuid-7"
+    assert rec["ingested_at"].endswith("Z")

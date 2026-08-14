@@ -1,4 +1,6 @@
 import json
+import os
+import tempfile
 
 import yaml
 
@@ -23,8 +25,32 @@ def load():
     return {"photos": {}}
 
 
+def load_readonly():
+    """load() for callers that must not touch the repo (e.g. status).
+
+    Identical results, but the recovery branch computes the manifest without
+    persisting it, so reading state can never be a write.
+    """
+    p = paths.manifest_path()
+    if p.exists():
+        return json.loads(p.read_text())
+    if any(paths.recipes_dir().glob("*.yaml")):
+        return rebuild(persist=False)
+    return {"photos": {}}
+
+
 def save(m):
-    paths.manifest_path().write_text(json.dumps(m, indent=2, sort_keys=True))
+    # Write-temp + replace: the manifest is the whole repo's state, so a
+    # partially written one is worse than an out-of-date one.
+    p = paths.manifest_path()
+    fd, tmp = tempfile.mkstemp(dir=paths.root(), prefix=f"{p.name}.")
+    try:
+        with os.fdopen(fd, "w") as handle:
+            handle.write(json.dumps(m, indent=2, sort_keys=True))
+        os.replace(tmp, p)
+    except BaseException:
+        os.unlink(tmp)
+        raise
 
 
 def set_state(m, stem, state):
@@ -110,7 +136,7 @@ def stale_artifacts(m, stem, current):
     return sorted(n for n, d in current.items() if stored.get(n) != d)
 
 
-def rebuild():
+def rebuild(persist=True):
     """Reconstruct .manifest from recipes and published provenance only."""
     m = {"photos": {}}
     for rp in sorted(paths.recipes_dir().glob("*.yaml")):
@@ -128,5 +154,6 @@ def rebuild():
                 continue
         if fp:
             m["photos"][stem]["state"] = "approved"
-    save(m)
+    if persist:
+        save(m)
     return m

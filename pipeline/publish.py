@@ -32,6 +32,18 @@ def _lock_is_stale(lock):
     return False
 
 
+def lock_status():
+    lock = paths.run_dir() / "driver.lock"
+    if not lock.exists():
+        return {"held": False, "stale": False, "pid": None}
+    try:
+        pid = int(lock.read_text().strip())
+    except (OSError, ValueError):
+        pid = None
+    stale = _lock_is_stale(lock)
+    return {"held": not stale, "stale": stale, "pid": pid}
+
+
 @contextmanager
 def acquire_lock():
     paths.run_dir().mkdir(parents=True, exist_ok=True)

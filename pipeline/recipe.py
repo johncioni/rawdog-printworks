@@ -1,6 +1,8 @@
 import hashlib
 import json
 import math
+import os
+import tempfile
 
 import yaml
 
@@ -11,8 +13,9 @@ DEFAULT_SHARPEN = {"native": "0x0.8+0.6+0.008",
                    "5x7": "0x0.9+0.9+0.01"}
 
 
-def new(stem, raw_sha256, width, height):
-    return {"raw_sha256": raw_sha256,
+def new(stem, raw_sha256, width, height, *, delivery_id=None,
+        ingested_at=None):
+    data = {"raw_sha256": raw_sha256,
             "width": width,
             "height": height,
             # Normalized 0..1 windows (geometry.centered_crop_norm) or None, so
@@ -24,6 +27,13 @@ def new(stem, raw_sha256, width, height):
             # Non-empty puts the photo outside automated re-render.
             "manual_assets": [],
             "approval": {"fingerprint": None, "approved_at": None}}
+    # Set only when supplied, so a flag-less ingest still writes byte-identical
+    # legacy recipes.
+    if delivery_id is not None:
+        data["delivery_id"] = delivery_id
+    if ingested_at is not None:
+        data["ingested_at"] = ingested_at
+    return data
 
 
 def _path(stem):
@@ -31,9 +41,18 @@ def _path(stem):
 
 
 def save(stem, data):
+    # Write-temp + replace: a reader never sees a half-written recipe, and a
+    # crash mid-write leaves the previous recipe intact rather than truncated.
     p = _path(stem)
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(yaml.safe_dump(data, sort_keys=True))
+    fd, tmp = tempfile.mkstemp(dir=p.parent, prefix=f".{p.name}.")
+    try:
+        with os.fdopen(fd, "w") as handle:
+            handle.write(yaml.safe_dump(data, sort_keys=True))
+        os.replace(tmp, p)
+    except BaseException:
+        os.unlink(tmp)
+        raise
 
 
 def load(stem):
