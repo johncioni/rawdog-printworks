@@ -9,11 +9,12 @@ done. main = a20cdfc, clean, CI green.
 ## Done
 - Plan 2 Tasks 1-4 complete, reviews clean: 0bff85d scaffold, 3378ea9 contract
   models, e47ad9c PipelineClient, 3dc7904 CropMath+Debouncer.
-- Task 5 (AppModel) implemented 532c311; review returned spec ❌ with 1 Critical
-  + 5 Important, all probe-reproduced. Fix round 1 committed as 7e19bee —
-  Codex implemented, I committed (its sandbox mounts .git read-only).
-  Controller-verified: xcodebuild SUCCEEDED, `swift test` 15/15 consecutive
-  runs green at 45 tests (was ~14% flaky before), pytest 295/1 skipped.
+- Task 5 (AppModel) COMPLETE: implemented 532c311, review returned spec ❌
+  (1 Critical + 5 Important), fix round 1 committed 7e19bee (Codex implemented,
+  I committed — its sandbox mounts .git read-only), re-review CLEAN: all six
+  ADDRESSED, no new breakage, "ship it". Verified by reverting individual
+  fixes and reproducing each bug. 30 consecutive green suite runs across two
+  parties, 45 tests; xcodebuild SUCCEEDED; pytest 295/1.
 - MODEL POLICY (in memory): Codex Sol 5.6 xhigh IMPLEMENTS, Opus 5 xhigh
   REVIEWS. Fable exhausted — never route to it. Codex's writable root is the
   CWD THAT LAUNCHES IT, so always `cd $WT` first; job state is keyed the same
@@ -34,18 +35,16 @@ done. main = a20cdfc, clean, CI green.
 - WT=~/orca/workspaces/rawdog-printworks/plan2-printworks-app (branch
   johncioni/plan2-printworks-app, HEAD 7e19bee). Ledger + 11 briefs + reports:
   $WT/.superpowers/sdd/2026-08-12-printworks-app/progress.md
-- TASK 5 SCOPED RE-REVIEW running (opus) on review-532c311..7e19bee.diff. It
-  verdicts F1-F6 ADDRESSED/NOT. If it is gone when you resume, re-dispatch it
-  from that diff file — it is the last step before Task 5 closes.
-- Codex job task-mssl68qs-lmks2k COMPLETED (20m21s), corroborating my own
-  verification: 25/25 suite runs, and its rewritten race test failed pre-fix
-  and passes post-fix. NOTE: it also rewrote the worktree's HANDOFF.md with a
-  task-scoped summary — reverted; forbid that in future Codex prompts.
+- Nothing running. Tasks 1-5 done and reviewed; Task 6 is next.
+- NOTE for future Codex dispatches: it rewrote the worktree's HANDOFF.md with a
+  task-scoped summary (reverted). Forbid that explicitly in the prompt.
 
 ## Next
-1. Read the re-review verdict; if all six ADDRESSED, append to the ledger
-   `Task 5: complete (commits 3dc7904..7e19bee, 1 fix round)` and start Task 6.
-   Any NOT ADDRESSED → fix round 2 (max 5), same Codex recipe.
+1. START WITH THE F2-MIRROR FIX, as part of Task 6 and before its poll lands:
+   a status dispatched while IDLE that lands after an adjust rebased the draft
+   falsely marks it PERMANENTLY stale. Pre-existing, but Task 6's 5s poll makes
+   it everyday. One line — the field already exists: in `reconcileDrafts` also
+   skip when `capture.commandGeneration != commandGeneration`. Ledger has it.
 2. Dispatch Task 6 (RepoWatcher) to Codex:
    `cd $WT && node ~/.claude/plugins/cache/openai-codex/codex/1.0.6/scripts/
    codex-companion.mjs task --background --write --fresh --model gpt-5.6-sol
