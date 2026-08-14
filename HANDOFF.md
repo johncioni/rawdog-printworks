@@ -27,6 +27,12 @@ gate on every PR. main = 31bb770, tree clean, CI green, gate = 295 passing.
 - Docs: CLAUDE.md refreshed for the landed interface (295-test gate, new
   subcommands, fixtures-are-authority note); Plan 1's approve-gate
   scoping wording made precise (20f79c2).
+- Golden-fixture drift ruled out for both shipped error-path changes: no
+  adjust *error* fixture exists (only adjust_ok/adjust_stream), and
+  run_partial_failure's VERIFY_FAILED entry comes from driver.py:644, not
+  the handler that changed. `CommandError` subclasses `Exception` only, so
+  it was previously not caught at all (batch aborted) — the widening adds
+  per-stem capture rather than re-labelling anything.
 - Linear: RAW-1, RAW-5 Done. Open: RAW-2, RAW-4, RAW-6, RAW-7, RAW-8.
 
 ## Ruled out
