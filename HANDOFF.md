@@ -22,9 +22,10 @@ Linear (RAW) + CodeRabbit, CI per PR. main = fba61d4, clean, CI green.
   VERIFY_FAILED, so the decoder can't be modelled from a one-value fixture.
 - Task 1 complete (0bff85d): PrintworksCore package + XcodeGen app target.
   Committed `.xcodeproj` is spec-mandated (spec §9), not a slip.
-- Task 2 implemented (3378ea9): contract models decoding the real fixtures.
+- Task 2 complete (3378ea9): contract models decoding the real fixtures.
   RULING: error `code` fields stay `String`, never a closed enum — that is what
-  lets all ten codes plus unknown future ones decode without a crash.
+  lets all ten codes plus unknown ones decode; the tests fail to COMPILE if
+  someone narrows it.
 - Linear: RAW-1, RAW-5, RAW-10 Done. Open: RAW-2 (running), RAW-4, RAW-6..9.
 
 ## Ruled out
@@ -48,8 +49,7 @@ Linear (RAW) + CodeRabbit, CI per PR. main = fba61d4, clean, CI green.
   + committing the `.xcodeproj` in the SAME commit; Task 11 should pin an
   xcodebuild `-destination`; Tasks 8/9/10 briefs are thin — dispatches need
   spec §5-§8 pointers from me.
-- NOTE: this hook fires every turn while an implementer writes in that
-  worktree (same repo → HANDOFF is never the newest change).
+- NOTE: hook fires every turn while an implementer writes in that worktree.
 
 ## Next
 1. Continue the loop for Tasks 3-11: implementer → review-package → task
