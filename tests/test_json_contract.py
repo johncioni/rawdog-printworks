@@ -22,7 +22,7 @@ from pathlib import Path
 import pytest
 
 from pipeline import (driver, geometry, ingest as ingest_mod, jsonio, manifest,
-                      paths, provenance, recipe, subject, toolchain)
+                      paths, provenance, recipe, render, subject, toolchain)
 from pipeline.__main__ import main
 
 FIXTURES = Path(__file__).parent / "fixtures" / "json_contract"
@@ -315,18 +315,24 @@ def _fake_publish_photo(stem):
 
 def test_run_partial_failure(seeded_repo, monkeypatch):
     # P0 is `ingested`, so one run fills all three result buckets and emits
-    # both event types; P1 publishes, P2 fails verification.
+    # both event types; P1 publishes, P2 fails verification, P3 fails render
+    # — two different failed[].code values, pinning that the field varies
+    # (RAW-10) rather than always reading VERIFY_FAILED.
     _seed_photo("P0")
-    for stem in ("P1", "P2"):
+    for stem in ("P1", "P2", "P3"):
         _seed_photo(stem, bind_crops=True, audit=True)
     # The fingerprint has to be taken AFTER every seeding write: previews and
     # sidecars feed it, and a stale one downgrades the stem to review_required.
     states = {"P0": ("ingested", None)}
     states.update({stem: ("approved", driver._current_fingerprint(stem))
-                   for stem in ("P1", "P2")})
+                   for stem in ("P1", "P2", "P3")})
     _seed_manifest(states)
-    monkeypatch.setattr(driver, "render_photo",
-                        lambda stem, only=None: None)
+
+    def _fake_render_photo(stem, only=None):
+        if stem == "P3":
+            raise render.RenderError("simulated render failure")
+
+    monkeypatch.setattr(driver, "render_photo", _fake_render_photo)
     monkeypatch.setattr(
         driver, "verify_photo",
         lambda stem: [] if stem == "P1" else ["dpi 240 != 300"])
@@ -338,13 +344,15 @@ def test_run_partial_failure(seeded_repo, monkeypatch):
 
     assert exit_code == 1
     assert envelope["error"] == {"code": "PARTIAL_FAILURE",
-                                 "message": "1 of 3 photos failed"}
+                                 "message": "2 of 4 photos failed"}
     assert envelope["result"]["advanced"] == [
         {"stem": "P0", "state": "preview_ready"}]
     assert envelope["result"]["published"] == [
         {"stem": "P1", "version": "v001", "artifact_count": 2}]
     assert envelope["result"]["failed"] == [
-        {"stem": "P2", "code": "VERIFY_FAILED", "message": "dpi 240 != 300"}]
+        {"stem": "P2", "code": "VERIFY_FAILED", "message": "dpi 240 != 300"},
+        {"stem": "P3", "code": "RENDER_FAILED",
+         "message": "simulated render failure"}]
     # Events precede the envelope, per stem, and the envelope is always last.
     assert [(json.loads(line)["stem"], json.loads(line)["event"],
              json.loads(line)["stage"]) for line in lines[:-1]] == [
@@ -352,7 +360,8 @@ def test_run_partial_failure(seeded_repo, monkeypatch):
         *[("P0", "progress", "preview")] * 4,
         ("P1", "stage", "render"), ("P1", "stage", "verify"),
         ("P1", "stage", "publish"),
-        ("P2", "stage", "render"), ("P2", "stage", "verify")]
+        ("P2", "stage", "render"), ("P2", "stage", "verify"),
+        ("P3", "stage", "render")]
     assert "ok" not in json.loads(lines[0])          # events are not envelopes
 
 

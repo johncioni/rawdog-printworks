@@ -8,4 +8,5 @@
 {"event":"stage","stage":"publish","stem":"P1"}
 {"event":"stage","stage":"render","stem":"P2"}
 {"event":"stage","stage":"verify","stem":"P2"}
-{"error":{"code":"PARTIAL_FAILURE","message":"1 of 3 photos failed"},"ok":false,"result":{"advanced":[{"state":"preview_ready","stem":"P0"}],"failed":[{"code":"VERIFY_FAILED","message":"dpi 240 != 300","stem":"P2"}],"published":[{"artifact_count":2,"stem":"P1","version":"v001"}]}}
+{"event":"stage","stage":"render","stem":"P3"}
+{"error":{"code":"PARTIAL_FAILURE","message":"2 of 4 photos failed"},"ok":false,"result":{"advanced":[{"state":"preview_ready","stem":"P0"}],"failed":[{"code":"VERIFY_FAILED","message":"dpi 240 != 300","stem":"P2"},{"code":"RENDER_FAILED","message":"simulated render failure","stem":"P3"}],"published":[{"artifact_count":2,"stem":"P1","version":"v001"}]}}
