@@ -20,7 +20,7 @@ scripts/process.sh <cmd>              # wraps .venv/bin/python -m pipeline
 # most commands also take --json (NDJSON on stdout, envelope last) —
 #   see docs/superpowers/specs/2026-08-12-macos-app-design.md §4.2-4.3
 
-.venv/bin/python -m pytest tests/ -q                    # full quality gate (290 tests)
+.venv/bin/python -m pytest tests/ -q                    # full quality gate (295 tests)
 .venv/bin/python -m pytest tests/test_render.py -q      # one module
 .venv/bin/python -m pytest tests/ -q -k <pattern>       # one test
 ```
