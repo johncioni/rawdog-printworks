@@ -131,4 +131,41 @@ final class PipelineClientTests: XCTestCase {
                            "executions overlapped: \(log)")
         }
     }
+
+    func testHighVolumeBurstDeliversEveryEventInOrder() async throws {
+        // Regression guard for the readabilityHandler race (Finding 1,
+        // review round 1): Foundation's FileHandle.readabilityHandler runs
+        // on a global, non-serial dispatch queue and can be invoked again
+        // for the SAME pipe before a prior invocation returns. A fast,
+        // high-volume burst — progress lines interleaved with stderr noise,
+        // spanning many separate read()s since the total payload is far
+        // larger than one pipe buffer — is what reproduces the race
+        // (confirmed against the pre-fix code: this test failed the
+        // count assertion below in every run, delivering well under 800
+        // of 800 events; see task-3-report.md for the exact numbers).
+        let total = 800
+        let body = """
+        i=1
+        while [ $i -le \(total) ]; do
+          echo "{\\"event\\":\\"progress\\",\\"stem\\":\\"P1\\",\\"stage\\":\\"render\\",\\"index\\":$i,\\"total\\":\(total),\\"detail\\":\\"x\\"}"
+          echo "noise-$i" 1>&2
+          i=$((i+1))
+        done
+        echo '{"ok":true,"result":{"stem":"P1","state":"approved","fingerprint":"f"}}'
+        """
+        let (client, _) = try makeStub(body)
+
+        nonisolated(unsafe) var events: [ProgressEvent] = []
+        let result = await client.run(ApproveResult.self, args: ["x"]) {
+            events.append($0)
+        }
+
+        XCTAssertTrue(result.envelope.ok)
+        XCTAssertEqual(events.count, total,
+            "expected every one of \(total) progress events to arrive; got " +
+            "\(events.count) — a shortfall means the readabilityHandler race " +
+            "dropped events again")
+        XCTAssertEqual(events.compactMap(\.index), Array(1...total),
+            "events must arrive in emission order, not just in full count")
+    }
 }

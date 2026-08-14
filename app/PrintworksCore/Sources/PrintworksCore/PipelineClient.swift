@@ -52,7 +52,6 @@ public actor PipelineClient {
         onEvent: (@Sendable (ProgressEvent) -> Void)?
     ) async -> CommandResult<R> {
         let process = Process()
-        var launchError: Error?
         if let override = executableOverride {
             process.executableURL = override
             process.arguments = args
@@ -72,45 +71,70 @@ public actor PipelineClient {
         process.standardOutput = out
         process.standardError = err
 
-        // Live line-parsing: events reach onEvent while the process runs
-        // (renders take minutes; progress buffered until exit is useless).
-        let decoder = ContractDecoder.make()
-        let collector = LineCollector()   // @unchecked Sendable, lock-guarded
-        out.fileHandleForReading.readabilityHandler = { handle in
-            let chunk = handle.availableData
-            for line in collector.completeLines(appending: chunk) {
-                if line.contains("\"event\""),
-                   let event = try? decoder.decode(ProgressEvent.self,
-                                                   from: Data(line.utf8)) {
-                    onEvent?(event)
-                }
-            }
-        }
-        let errCollector = LineCollector()
-        err.fileHandleForReading.readabilityHandler = { handle in
-            _ = errCollector.completeLines(appending: handle.availableData)
-        }
-
-        // terminationHandler is set BEFORE run(): Foundation invokes it
-        // exactly once on termination, so no isRunning fallback is needed —
-        // a fallback could double-resume the continuation.
-        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
-            process.terminationHandler = { _ in c.resume() }
-            do { try process.run() } catch {
-                process.terminationHandler = nil
-                c.resume()
-                launchError = error          // declared `var launchError: Error?` above
-            }
-        }
-        if let launchError {
+        // Termination signal: a single-shot event, safe regardless of
+        // whether the process terminates before or after `wait()` below
+        // starts observing it. terminationHandler is attached BEFORE
+        // run() so a very short-lived process can't fire it before
+        // anything is listening.
+        let termination = TerminationSignal()
+        process.terminationHandler = { _ in termination.markTerminated() }
+        do {
+            try process.run()
+        } catch {
+            process.terminationHandler = nil
             return CommandResult(
-                envelope: synthetic("could not launch: \(launchError.localizedDescription)"),
+                envelope: synthetic("could not launch: \(error.localizedDescription)"),
                 stderrTail: "")
         }
-        out.fileHandleForReading.readabilityHandler = nil
-        err.fileHandleForReading.readabilityHandler = nil
-        collector.finish(out.fileHandleForReading)   // drain any remainder
-        errCollector.finish(err.fileHandleForReading)
+
+        // Live line-parsing: events reach onEvent while the process runs
+        // (renders take minutes; progress buffered until exit is useless).
+        //
+        // Concurrency history (review round 1, Finding 1 — CRITICAL):
+        // the original implementation used Foundation's
+        // `FileHandle.readabilityHandler`, which runs on a global,
+        // non-serial dispatch queue and — confirmed by a stress test
+        // (hundreds of rapid progress lines) and by ThreadSanitizer, not
+        // a hypothetical — CAN invoke the SAME pipe's handler concurrently
+        // on two threads. Reading `availableData` outside a lock and only
+        // appending it under one meant two racing invocations could
+        // append their chunks in whichever order won the lock rather than
+        // the order the bytes were actually read, splicing a line's JSON
+        // mid-string; `try? decoder.decode` then silently swallowed the
+        // parse failure and the event vanished with no signal.
+        //
+        // A first fix wrapped each handler firing in `DispatchQueue.sync`
+        // on a dedicated serial queue per pipe. That closed most of the
+        // loss but not all of it under sustained stress: a residual
+        // shortfall (about 1 run in 8, concentrated in the last few lines
+        // near process exit) persisted. That residual is a shutdown-window
+        // race — an already in-flight handler invocation racing the final
+        // drain against Foundation's own internal source-cancellation
+        // timing — that synchronizing the *handler* alone cannot fully
+        // close, because `readabilityHandler`'s concurrent-invocation
+        // behavior is undocumented and not fully under our control.
+        //
+        // This version removes `readabilityHandler` entirely. Each pipe
+        // gets exactly ONE reader: `drain` below, a single background loop
+        // that blocks on `availableData` until EOF. With only one caller
+        // ever touching a given pipe's `LineCollector`, concurrent access
+        // isn't merely synchronized — it's structurally impossible, so
+        // there is nothing left to race, no matter how Foundation
+        // internally schedules anything.
+        let decoder = ContractDecoder.make()
+        let collector = LineCollector()
+        let errCollector = LineCollector()
+
+        async let stdoutDone: Void = drain(out.fileHandleForReading, into: collector) { line in
+            if line.contains("\"event\""),
+               let event = try? decoder.decode(ProgressEvent.self,
+                                               from: Data(line.utf8)) {
+                onEvent?(event)
+            }
+        }
+        async let stderrDone: Void = drain(err.fileHandleForReading, into: errCollector, onLine: nil)
+        async let terminated: Void = termination.wait()
+        _ = await (stdoutDone, stderrDone, terminated)
 
         let stderrTail = errCollector.allLines.suffix(50).joined(separator: "\n")
         // Contract: the final envelope is the LAST non-empty stdout line.
@@ -129,29 +153,92 @@ public actor PipelineClient {
         return CommandResult(envelope: envelope, stderrTail: stderrTail)
     }
 
+    /// Reads `handle` to EOF on a dedicated background thread, one blocking
+    /// `availableData` call at a time, feeding each newly-completed line to
+    /// `onLine` as soon as it is split off. This is the pipe's ONLY reader —
+    /// never raced by a second concurrent invocation the way
+    /// `FileHandle.readabilityHandler` could be — so `collector` needs no
+    /// synchronization of its own beyond what one sequential caller
+    /// requires. `availableData` returning empty `Data` is EOF (the writer
+    /// closed its end, which happens at/after process exit since we hold
+    /// no duplicate write descriptor of our own).
+    private func drain(
+        _ handle: FileHandle, into collector: LineCollector,
+        onLine: (@Sendable (String) -> Void)?
+    ) async {
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+            DispatchQueue.global(qos: .utility).async {
+                while true {
+                    let chunk = handle.availableData
+                    if chunk.isEmpty { break }
+                    for line in collector.completeLines(appending: chunk) {
+                        onLine?(line)
+                    }
+                }
+                collector.flushRemainder()
+                c.resume()
+            }
+        }
+    }
+
     private func synthetic<R>(_ message: String) -> Envelope<R> {
         Envelope(ok: false, result: nil,
                  error: PipelineErrorInfo(code: "INTERNAL", message: message))
     }
 }
 
-/// Lock-guarded incremental line splitter shared by the readability handlers
-/// (they run on non-actor threads). `completeLines(appending:)` returns newly
-/// completed lines and retains the unterminated remainder; `allLines` is the
-/// full ordered history; `finish(_:)` reads any remaining data and flushes
-/// the final partial line.
-final class LineCollector: @unchecked Sendable {
+/// Single-shot "has X happened yet" signal, safe regardless of whether
+/// `markTerminated()` or `wait()` happens first. Needed because
+/// `Process.terminationHandler` can fire before our code gets around to
+/// awaiting it (very short-lived stub scripts race this in practice); firing
+/// into a not-yet-created continuation would otherwise be lost, hanging
+/// `wait()` forever.
+final class TerminationSignal: @unchecked Sendable {
     private let lock = NSLock()
+    private var alreadyTerminated = false
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    func markTerminated() {
+        lock.lock()
+        if let continuation {
+            self.continuation = nil
+            lock.unlock()
+            continuation.resume()
+        } else {
+            alreadyTerminated = true
+            lock.unlock()
+        }
+    }
+
+    func wait() async {
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+            lock.lock()
+            if alreadyTerminated {
+                lock.unlock()
+                c.resume()
+            } else {
+                continuation = c
+                lock.unlock()
+            }
+        }
+    }
+}
+
+/// Incremental line splitter for one pipe's stdout/stderr stream, driven by
+/// exactly one sequential reader (`PipelineClient.drain`) — see that
+/// function's doc comment for why a single-reader design, not a lock, is
+/// what keeps this type's mutable state safe. `completeLines(appending:)`
+/// returns newly completed lines and retains the unterminated remainder;
+/// `allLines` is the full ordered history; `flushRemainder()` moves
+/// whatever's left in the buffer (a final line with no trailing newline)
+/// into `allLines` — call it once, after the reader sees EOF.
+final class LineCollector: @unchecked Sendable {
     private var buffer = ""
     private var lines: [String] = []
 
-    var allLines: [String] {
-        lock.lock(); defer { lock.unlock() }
-        return lines
-    }
+    var allLines: [String] { lines }
 
     func completeLines(appending data: Data) -> [String] {
-        lock.lock(); defer { lock.unlock() }
         buffer += String(decoding: data, as: UTF8.self)
         var completed: [String] = []
         while let newline = buffer.firstIndex(of: "\n") {
@@ -162,9 +249,7 @@ final class LineCollector: @unchecked Sendable {
         return completed
     }
 
-    func finish(_ handle: FileHandle) {
-        _ = completeLines(appending: handle.readDataToEndOfFile())
-        lock.lock(); defer { lock.unlock() }
+    func flushRemainder() {
         if !buffer.isEmpty {
             lines.append(buffer)
             buffer = ""
