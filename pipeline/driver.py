@@ -810,11 +810,18 @@ def process_all(stems: set[str] | None = None, force: bool = False,
                     # per-stem isolation exists only for the aggregate result.
                     raise
                 else:
+                    # A CommandError already carries a contract code; anything
+                    # else — including an object with an out-of-contract .code
+                    # — is reported as a render failure. Clamped rather than
+                    # passed through, because this dict is hand-built and so
+                    # never sees CommandError.__init__'s ERROR_CODES check:
+                    # without this, failed[].code could leave the closed set
+                    # that Plan 2's decoder is built against.
+                    code = getattr(error, "code", None)
                     collect["failed"].append(
                         {"stem": stem,
-                         # A CommandError already carries a contract code;
-                         # anything else is reported as a render failure.
-                         "code": getattr(error, "code", "RENDER_FAILED"),
+                         "code": (code if code in jsonio.ERROR_CODES
+                                  else "RENDER_FAILED"),
                          "message": str(error)})
             finally:
                 if remembered is not None and not persisted:

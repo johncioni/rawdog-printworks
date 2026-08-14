@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from pipeline import (crops, driver, geometry, manifest, metadata, paths, pdfs,
-                      publish, recipe, render, subject, toolchain)
+from pipeline import (crops, driver, geometry, jsonio, manifest, metadata,
+                      paths, pdfs, publish, recipe, render, subject, toolchain)
 
 
 @pytest.fixture(autouse=True)
@@ -1195,6 +1195,41 @@ def test_process_all_collect_isolates_failures_and_continues(
     saved = manifest.load()["photos"]
     assert saved["P3"]["state"] == "verified"
     assert saved["P1"]["state"] == "approved"
+
+
+def test_process_all_collect_clamps_per_stem_codes_to_the_contract(
+        tmp_repo, monkeypatch):
+    # failed[] is hand-built, so it never passes through
+    # CommandError.__init__'s ERROR_CODES check. A contract code carried by a
+    # CommandError must survive; anything else — including an exception that
+    # happens to expose an out-of-contract .code — must be reported as a
+    # render failure, so the set Plan 2 decodes stays closed.
+    class Bogus(Exception):
+        code = "NOT_A_CONTRACT_CODE"
+
+    m = manifest.load()
+    for stem in ("P1", "P2"):
+        manifest.set_state(m, stem, "approved")
+        m["photos"][stem]["fingerprint"] = "fp"
+    manifest.save(m)
+    monkeypatch.setattr(driver, "_current_fingerprint", lambda stem: "fp")
+
+    def render_one(stem, only=None):
+        if stem == "P1":
+            raise Bogus("exposes a code outside the contract")
+        raise jsonio.CommandError("INVALID_STATE", "a real contract code")
+
+    monkeypatch.setattr(driver, "render_photo", render_one)
+    monkeypatch.setattr(driver, "verify_photo", lambda stem: [])
+    monkeypatch.setattr(driver, "_publish_photo", lambda stem: {})
+    collect = {}
+
+    driver.process_all(collect=collect)
+
+    by_stem = {entry["stem"]: entry["code"] for entry in collect["failed"]}
+    assert by_stem == {"P1": "RENDER_FAILED", "P2": "INVALID_STATE"}
+    assert all(entry["code"] in jsonio.ERROR_CODES
+               for entry in collect["failed"])
 
 
 def test_process_all_collect_keeps_legacy_manual_assets_skip(
