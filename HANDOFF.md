@@ -4,7 +4,7 @@
 RAWdog Printworks. Plan 1 (pipeline `--json` interface) is MERGED to main; its
 golden fixtures are the binding contract. NOW EXECUTING Plan 2 — the macOS
 SwiftUI app (RAW-2) — subagent-driven in an Orca worktree. Tasks 1-5 of 11 are
-done. main = a20cdfc, clean, CI green.
+done. main = e193a22, clean, CI green.
 
 ## Done
 - Plan 2 Tasks 1-4 complete, reviews clean: 0bff85d scaffold, 3378ea9 contract
@@ -51,8 +51,8 @@ done. main = a20cdfc, clean, CI green.
    --effort xhigh "<prompt>"` — then stage/commit for it, and run xcodebuild
    yourself. Brief: $WT/.superpowers/sdd/.../task-6-brief.md
 3. CARRY: Task 6 must NOT duplicate the refresh gate (already in AppModel).
-   Task 7 needs a `RunResult.failed` field for spec §7's badge — F5 may have
-   added it; check before briefing. Tasks 8/9/10 briefs are 23-25 lines and
-   need fuller dispatches. Task 11 must pin an xcodebuild `-destination`.
+   Task 7's spec §7 badge is UNBLOCKED — F5 added lastFailures/lastAdvanced/
+   lastIngestFailures, single write site. Tasks 8/9/10 briefs are 23-25 lines
+   and need fuller dispatches. Task 11 must pin an xcodebuild `-destination`.
 4. Deferred minors are in the ledger — point the final whole-branch review at
    them. USER: enable swift-lsp.
