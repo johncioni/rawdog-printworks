@@ -1209,8 +1209,11 @@ def test_process_all_collect_clamps_per_stem_codes_to_the_contract(
 
     class Unhashable(Exception):
         # ERROR_CODES is a frozenset; a membership test on this would raise
-        # TypeError inside the handler and abort the batch.
-        code = ["not", "a", "string"]
+        # TypeError inside the handler and abort the batch. Set per instance,
+        # mirroring how CommandError actually carries its code.
+        def __init__(self, message):
+            super().__init__(message)
+            self.code = ["not", "a", "string"]
 
     m = manifest.load()
     for stem in ("P1", "P2", "P3"):
