@@ -7,16 +7,15 @@ SwiftUI app (RAW-2) — subagent-driven in an Orca worktree. Orca + GitHub +
 Linear (RAW) + CodeRabbit, CI per PR. main = fba61d4, clean, CI green.
 
 ## Done
-- Plan 1 merged (PR #3, merge commit, 16 task commits kept) + PR #4 clamping
-  `failed[].code` to ERROR_CODES with an `isinstance` guard. CodeRabbit: 17
-  findings, all answered; the serious one was `ingest --from` overwriting a
-  different photo's RAW on case-insensitive volumes.
+- Plan 1 merged (PR #3, merge commit) + PR #4 clamping `failed[].code` to
+  ERROR_CODES. CodeRabbit: 17 findings, all answered; the serious one was
+  `ingest --from` overwriting a different photo's RAW on case-insensitive vols.
 - Plan 2 set up: the Orca worktree self-provisioned via the setup hook.
 - PRE-FLIGHT RULING (in every dispatch from Task 4 on): bare `Sources/…`/
   `Tests/…` are relative to `app/PrintworksCore/`; app-target files live under
   `app/RAWdogPrintworks/Sources/`. Else package files land at the repo root.
-- RAW-10 complete (a3e8363): run_partial_failure now shows RENDER_FAILED beside
-  VERIFY_FAILED, so the decoder can't be modelled from a one-value fixture.
+- RAW-10 complete (a3e8363): run_partial_failure shows RENDER_FAILED beside
+  VERIFY_FAILED, so the decoder can't be built from a one-value fixture.
 - Task 1 complete (0bff85d): package + XcodeGen app target; the committed
   `.xcodeproj` is spec-mandated (spec §9), not a slip.
 - Task 2 complete (3378ea9): contract models decoding the real fixtures.
@@ -37,12 +36,14 @@ Linear (RAW) + CodeRabbit, CI per PR. main = fba61d4, clean, CI green.
 - WT=~/orca/workspaces/rawdog-printworks/plan2-printworks-app (branch
   johncioni/plan2-printworks-app). Ledger + all 11 briefs:
   $WT/.superpowers/sdd/2026-08-12-printworks-app/
-- Tasks 1-2 COMPLETE (0bff85d, 3378ea9). TASK 3 fix round 1 done (e47ad9c),
-  SCOPED RE-REVIEW running. Review had found CRITICAL silent progress-event
-  loss in the brief's own mandated code (concurrent readabilityHandler read
-  outside the lock → out-of-order appends → spliced JSON → dropped events,
-  112-263 of 400). Fixed by replacing readabilityHandler with a dedicated
-  blocking-read loop per pipe. `git -C $WT log --oneline -3`.
+- Tasks 1-3 COMPLETE (0bff85d, 3378ea9, e47ad9c). TASK 4 implementer RUNNING
+  (CropMath + Debouncer). `git -C $WT log --oneline -3`.
+- Task 3 needed 1 fix round: a CRITICAL silent progress-event loss lived in the
+  brief's OWN mandated code (concurrent readabilityHandler read outside the
+  lock → out-of-order appends → spliced JSON → events dropped, 112-263 of 400).
+  Ruled to fix despite being plan-mandated; readabilityHandler replaced by a
+  dedicated blocking-read loop per pipe. Re-reviewer reproduced the bug against
+  pre-fix source, then 0/150 after.
   Deferred minor from Task 2 in the ledger: optional contract fields are not
   drift-tested — the final whole-branch review must triage it.
 - Carried rules (in ledger): editing `project.yml` requires regenerating +
