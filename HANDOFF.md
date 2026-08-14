@@ -35,7 +35,13 @@ CodeRabbit, CI per PR. main = 0e3749b, CI green, 296 tests pass.
   there is no Ruff config, so ANN/TRY rules are advisory not policy).
 
 ## In flight
-- Nothing running. Bots quiet, no background builds or tasks outstanding.
+- PLAN 2 RUN STARTED (subagent-driven). Orca worktree
+  ~/orca/workspaces/rawdog-printworks/plan2-printworks-app, branch
+  johncioni/plan2-printworks-app from 60facc9, venv provisioned by the setup
+  hook (295 pass / 1 skip). Ledger + pre-flight scan:
+  <worktree>/.superpowers/sdd/2026-08-12-printworks-app/progress.md.
+  RAW-10 implementer dispatched and mid-flight (3 expected files dirty, not
+  yet committed). Check: `git -C <worktree> log --oneline -3`.
 
 ## Next
 1. RAW-2 / Plan 2 (macOS app). Enable swift-lsp; `brew install xcodegen`
@@ -47,10 +53,9 @@ CodeRabbit, CI per PR. main = 0e3749b, CI green, 296 tests pass.
 3. RAW-9 (low): typed exceptions for operational RuntimeErrors, starting
    at driver.py:277 — MANUAL_ASSETS_ERROR is matched by string equality in
    the collect handler, so editing that message silently breaks the skip.
-4. RAW-7 (low) `.casefold()` stems (ingest.py:70/124/172-173/190/198,
-   render.py:91) — its "colliding Output trees" claim is UNVERIFIED.
-   RAW-8 (low): hoist pp3 parses into `gather_material` when status.py is
-   next touched. RAW-6 (low): committed fixture for face detection.
+4. Low, unscheduled: RAW-7 (`.casefold()` stems; its "colliding Output
+   trees" claim is UNVERIFIED), RAW-8 (hoist pp3 parses into
+   `gather_material`), RAW-6 (committed face-detection fixture).
 5. USER DECISION (non-urgent): json-interface worktree + branch remain at
    e7afc61. `git worktree remove --force .claude/worktrees/json-interface`
    && `git branch -D worktree-json-interface` && `git push origin --delete
