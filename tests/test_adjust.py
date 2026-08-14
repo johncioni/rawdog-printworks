@@ -102,6 +102,21 @@ def test_reset_keeps_comment_only_sidecar(repo):
     assert "[White Balance]" not in side.read_text()   # no stranded header
 
 
+def test_reset_deletes_a_sidecar_holding_only_app_owned_keys(repo):
+    # The other side of _semantically_empty. Adjusting a style that had no
+    # sidecar creates one with no comment header, so undoing the adjustment
+    # leaves a truly empty document and the file itself goes away. Sidecar
+    # existence feeds style_hashes, so this branch moves the fingerprint.
+    side = paths.sidecars_dir() / "P1_bw.pp3"
+    assert not side.exists()
+
+    adjust.apply("P1", "bw", temperature=5600)
+    assert side.exists()
+
+    adjust.apply("P1", "bw", reset=True)
+    assert not side.exists()
+
+
 def test_adjust_validation(repo):
     with pytest.raises(jsonio.CommandError) as e:
         adjust.apply("P1", "natural", temperature=12000)

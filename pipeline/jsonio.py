@@ -12,6 +12,9 @@ ERROR_CODES = frozenset({
 # Saved NDJSON stream while JSON mode is active; None otherwise.
 _out = None
 
+# The interpreter's stdout as it was before activate() redirected it.
+_saved_stdout = None
+
 
 class CommandError(Exception):
     def __init__(self, code, message, result=None):
@@ -29,12 +32,23 @@ def _real_stdout():
 
 
 def activate():
-    global _out
+    global _out, _saved_stdout
     if _out is None:
         _out = _real_stdout()
         # Legacy print() calls throughout driver/ingest must not corrupt the
         # NDJSON stream; sending them to stderr changes no internal code.
+        _saved_stdout = sys.stdout
         sys.stdout = sys.stderr
+
+
+def deactivate():
+    """Undo activate(). The redirect is process-global, so the module owns
+    putting it back rather than leaving callers (and tests) to compensate."""
+    global _out, _saved_stdout
+    if _out is not None:
+        sys.stdout = _saved_stdout
+        _out = None
+        _saved_stdout = None
 
 
 def active():
@@ -77,3 +91,7 @@ def run_json(fn, adapters=None):
             if isinstance(error, exc_type):
                 return finish_error(code, str(error))
         return finish_error("INTERNAL", f"{type(error).__name__}: {error}")
+    finally:
+        # The envelope is already written; restore the interpreter's stdout so
+        # JSON mode leaves no process-global state behind.
+        deactivate()

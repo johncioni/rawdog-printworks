@@ -752,7 +752,9 @@ def test_crop_windows_all_persisted_reports_no_basis(tmp_repo, monkeypatch):
     window = {"x": 0.1, "y": 0.2, "w": 0.5, "h": 0.6}
     _crop_windows_repo(crops={crop: dict(window) for crop in paths.CROPS})
     # Fully persisted means no suggestion runs at all — not even the detector.
-    monkeypatch.setattr(subject, "group_bbox_detail", lambda p: 1 / 0)
+    monkeypatch.setattr(subject, "group_bbox_detail",
+                        lambda p: (_ for _ in ()).throw(
+                            AssertionError("detector must not run")))
     recipe_bytes = (tmp_repo / "recipes/P1.yaml").read_bytes()
     state = _recipe_state(tmp_repo)
 
@@ -804,7 +806,9 @@ def test_crop_windows_requires_dims_when_one_window_persisted(tmp_repo):
 def test_crop_windows_without_preview_is_centered(tmp_repo, monkeypatch):
     from pipeline import driver, geometry, paths, subject
     _crop_windows_repo()
-    monkeypatch.setattr(subject, "group_bbox_detail", lambda p: 1 / 0)
+    monkeypatch.setattr(subject, "group_bbox_detail",
+                        lambda p: (_ for _ in ()).throw(
+                            AssertionError("detector must not run")))
 
     result = driver.crop_windows("P1")
 

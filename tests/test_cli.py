@@ -9,9 +9,13 @@ from pipeline import __main__ as cli
 from pipeline import driver, jsonio
 
 
-def test_cli_status_runs():
+def test_cli_status_runs(tmp_repo):
+    # Scoped to tmp_repo: without PIPELINE_ROOT the subprocess inherits the
+    # developer environment and reads the live .manifest, archive/ and
+    # recipes, making the result depend on gitignored photo data.
     p = subprocess.run([sys.executable, "-m", "pipeline", "status"],
-                       capture_output=True, text=True)
+                       capture_output=True, text=True,
+                       env=dict(os.environ, PIPELINE_ROOT=str(tmp_repo)))
     assert p.returncode == 0
     assert p.stdout.strip()
 
@@ -84,12 +88,12 @@ def test_legacy_status_output_unchanged(tmp_repo):
 
 @pytest.fixture
 def json_stream(monkeypatch):
-    """Capture the NDJSON stream of an in-process --json run and undo the
-    process-global stdout redirection jsonio.activate() installs."""
+    """Capture the NDJSON stream of an in-process --json run. run_json now
+    restores the stdout redirection itself, so this only has to reset the
+    module state a prior test may have left."""
     buf = io.StringIO()
     monkeypatch.setattr(jsonio, "_out", None)
     monkeypatch.setattr(jsonio, "_real_stdout", lambda: buf)
-    monkeypatch.setattr(sys, "stdout", sys.stdout)
     return buf
 
 

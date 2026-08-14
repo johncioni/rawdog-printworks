@@ -23,7 +23,10 @@ class Pp3:
         path = Path(path)
         if not path.exists():
             return cls([])
-        return cls(path.read_text().splitlines(keepends=True))
+        # newline="" disables universal-newline translation: a CRLF sidecar
+        # must round-trip byte-for-byte, which is this class's whole purpose.
+        with open(path, newline="") as fh:
+            return cls(fh.read().splitlines(keepends=True))
 
     def _section_span(self, section):
         start = None

@@ -27,10 +27,38 @@ def test_emit_is_noop_when_inactive(monkeypatch):
 
 def test_activate_redirects_legacy_prints_to_stderr(monkeypatch, capsys):
     _capture(monkeypatch)
+    before = sys.stdout
     jsonio.activate()
     print("legacy chatter")
     captured = capsys.readouterr()
     assert "legacy chatter" in captured.err
+
+    # Containment is the module's job, not the fixture teardown's.
+    jsonio.deactivate()
+    assert sys.stdout is before
+    assert not jsonio.active()
+
+
+def test_run_json_restores_stdout_even_when_the_command_raises(monkeypatch):
+    _capture(monkeypatch)
+    before = sys.stdout
+
+    def cmd():
+        raise RuntimeError("boom")
+
+    assert jsonio.run_json(cmd) == 1
+    assert sys.stdout is before
+    assert not jsonio.active()
+
+
+def test_command_error_rejects_a_code_outside_the_contract():
+    # The guard is what keeps the error-code set closed; a typo at a call site
+    # would otherwise surface as an INTERNAL envelope.
+    with pytest.raises(ValueError):
+        jsonio.CommandError("NOT_A_REAL_CODE", "nope")
+
+    for code in jsonio.ERROR_CODES:
+        assert jsonio.CommandError(code, "fine").code == code
 
 
 def test_run_json_success_envelope_last_line_and_exit_zero(monkeypatch):

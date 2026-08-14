@@ -187,8 +187,10 @@ def test_recipe_new_without_flags_is_legacy_bytes(tmp_repo):
 
 def test_stage_sources_hashes_temp_and_places(tmp_repo):
     from pipeline import ingest, paths
-    src = tmp_repo / "elsewhere"; src.mkdir()
-    f = src / "P9.RW2"; f.write_bytes(b"raw-bytes")
+    src = tmp_repo / "elsewhere"
+    src.mkdir()
+    f = src / "P9.RW2"
+    f.write_bytes(b"raw-bytes")
     result = ingest.stage_sources([f])
     assert result["placed"] == ["P9.RW2"]
     assert (paths.input_dir() / "P9.RW2").read_bytes() == b"raw-bytes"
@@ -199,11 +201,15 @@ def test_stage_sources_hashes_temp_and_places(tmp_repo):
 def test_stage_sources_conflict_and_duplicate(tmp_repo):
     from pipeline import ingest, paths
     (paths.input_dir() / "P9.RW2").write_bytes(b"original")
-    src = tmp_repo / "elsewhere"; src.mkdir()
+    src = tmp_repo / "elsewhere"
+    src.mkdir()
     # Same CONTENT under a new stem is still a content duplicate → skipped
     # (spec §4.2/§5.4: content-hash dedup), never placed.
-    dup = src / "P8.RW2"; dup.write_bytes(b"original")
-    clash = src / "P9.RW2"; clash.write_bytes(b"DIFFERENT") # same stem, new content → conflict
+    dup = src / "P8.RW2"
+    dup.write_bytes(b"original")
+    # Same stem, new content → conflict.
+    clash = src / "P9.RW2"
+    clash.write_bytes(b"DIFFERENT")
     result = ingest.stage_sources([dup, clash])
     assert result["placed"] == []
     assert result["skipped"][0]["file"] == "P8.RW2"
@@ -216,8 +222,10 @@ def test_stage_sources_hashes_the_staged_temp_not_the_live_source(
         tmp_repo, monkeypatch):
     from pathlib import Path
     from pipeline import ingest, paths
-    src = tmp_repo / "elsewhere"; src.mkdir()
-    f = src / "P9.RW2"; f.write_bytes(b"first-bytes")
+    src = tmp_repo / "elsewhere"
+    src.mkdir()
+    f = src / "P9.RW2"
+    f.write_bytes(b"first-bytes")
 
     # Capture the ORIGINAL function before patching — patching the module
     # attribute and calling through the module would recurse.
