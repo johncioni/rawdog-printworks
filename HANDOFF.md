@@ -1,60 +1,80 @@
 # HANDOFF
 
 ## Goal
-RAWdog Printworks: BOTH implementation plans COMPLETE at rev 3.2
-(b55aec8), Codex review loop CLOSED. AWAITING USER at the execution
-gate: subagent-driven (recommended) vs inline; Plan 1 executes first
-(its Task 13 fixtures gate Plan 2 Task 2). This session: /init only —
-created repo CLAUDE.md.
+RAWdog Printworks. Plan 1 (pipeline JSON interface) is MERGED to main —
+the pipeline exposes the additive `--json` NDJSON contract and its golden
+fixtures. Next substantive work is Plan 2 (macOS SwiftUI app) = RAW-2.
+Repo is wired to Orca + GitHub + Linear (team RAW) + CodeRabbit, with a
+CI gate on every PR.
 
 ## Done
-- Orca ADE setup: wrote scripts/orca-setup.sh (idempotent worktree
-  bootstrap: rebuilds stale/broken .venv, installs requirements-dev,
-  collect-only smoke, warn-only tool checks); ran it here — it caught
-  and fixed the main .venv's dead shebangs (venv was built at old
-  path; 171 tests pass, pytest entry point works again). Also created
-  .venv in the json-interface worktree (290 tests collect). Set Orca
-  worktreeBaseRef=main (repo id b389b548-...). REMAINING (user, app
-  UI): Orca repo settings → hooks → setup = "bash
-  scripts/orca-setup.sh" (no CLI for hookSettings; UI drive attempt
-  via orca computer didn't open settings, abandoned).
-- Repo-move path fixes (~/photo-edits → ~/Projects/rawdog-printworks):
-  repaired both git worktree gitdir pointers (worktree list now clean),
-  updated python path in config/toolchain.lock (main + worktree;
-  informational entry, not fingerprinted — approvals stand), updated
-  app-default paths in Plan 2 + macOS app spec, fixed cd paths in
-  worktree HANDOFF.md. Left alone: historical provenance.json,
-  /Users/x placeholder in plan test example, worktree's committed doc
-  copies (merge carries the fix). Verified: 171 tests pass, status OK.
-- This session: created /Users/john/Projects/rawdog-printworks/CLAUDE.md
-  (commands, state machine + fingerprint invariant, atomic publish,
-  committed-vs-gitignored state, pointer to the two plans). Uncommitted.
-- Offered /import of ~/.codex/config.toml and ~/.gemini/settings.json
-  (user has not responded).
-- Prior sessions: Plans docs/superpowers/plans/
-  2026-08-12-pipeline-json-interface.md (13 tasks) +
-  2026-08-12-printworks-app.md (11 tasks); review loop closed at rev
-  3.2 (dispositions logged in Plan 1 "Review-round decisions").
+- PR #3 merged as 356115c with a MERGE COMMIT (16 task commits kept).
+  CodeRabbit APPROVED, 0 unresolved threads, CI green. main = 37a9b4d,
+  gate = 295 passing.
+- CodeRabbit review: 15 findings, all answered. Fixed 10 — case-only RAW
+  overwrite in ingest (the serious one), shared error adapters for
+  `adjust`, collect-mode isolation widened to Exception (keeping legacy
+  hard-stop + CommandError codes), jsonio.deactivate() teardown, pp3
+  newline='' byte preservation, test_cli scoped to tmp_repo, staged-hash
+  dedup decision test, ERROR_CODES + sidecar-deletion coverage,
+  AssertionError stubs, E702 splits.
+- Dismissed 5 with citations: optional `expected_review_revision` (spec
+  §4.2 compatibility scoping), status stamp breadth (spec rounds 2+3 chose
+  re-stat-and-retry over a seqlock), `sys.executable` → `.venv/bin/python`
+  (breaks CI, no .venv), regen-command scoping (already scoped), bare
+  RuntimeError mapping (used for internal invariants too).
+- Re-audit A — case-only collision (subagent, read-only): CONFIRMED REAL,
+  reproduced twice against the real module. APFS rename keeps the existing
+  entry's case, so `Input/P9.RW2` kept its name and got the other photo's
+  bytes while the result reported `placed: ["p9.RW2"]`. Archived victim
+  survives (archive/ is case-insensitive, render re-hashes); unarchived
+  victim is lost. Shipped `destination.exists()` guard at ingest.py:196
+  closes the data-loss path.
+- Re-audit B — status stamp breadth (subagent, read-only): DISMISSAL
+  UPHELD, impact is display-only. The claimed (recipe, sidecar) tear is
+  not observable: `adjust` writes only `rec["app_adjustments"]`
+  (adjust.py:35,58-63), absent from both `recipe.fingerprint`
+  (recipe.py:107-117) and the status result. The real window is
+  intra-`_photo` — sidecar hashed in `gather_material` (status.py:29),
+  re-read in `_control` (status.py:64-68) — and `review_revision` comes
+  wholly from the coherent `material`, so only a slider numeral can tear.
+  No destructive path: approve recomputes under the lock and fail-closes
+  with STALE_REVIEW; nothing publishes off a snapshot; `_reconcile`
+  (adjust.py:38-53) blocks clobbering independently of status.
+- Linear: RAW-1 Done (PR attached), RAW-5 Done. Open: RAW-2 (Plan 2),
+  RAW-4 (branch protection), RAW-6 (detection fixture).
 
 ## Ruled out
-- Further verify rounds on the plans: remaining defects are covered by
-  each task's failing-test cycle + per-task SDD reviewer.
+- Squash-merging PR #3 — the 16 per-task commits are the record.
+- Requiring `expected_review_revision` / widening status stamps — both
+  adjudicated design decisions; re-audit B independently upheld the latter.
+- Expanding `_state_stamps()` as the fix for re-audit B: it converts a tear
+  into a retry only, since `snapshot()` returns unconditionally at
+  `attempt == 1` (status.py:98), and statting previews/Output would rebuild
+  (re-sha256 every preview JPG) on nearly every poll during a run.
 
 ## In flight
-- Nothing running this session. Previously noted companion server port
-  60219 (spec-ready screen); stop at execution start if unused
-  (stop-server.sh .superpowers/brainstorm/22193-1786559112).
+- Nothing running. Bots quiet.
 
 ## Next
-1. USER GATE (unchanged): execution choice — subagent-driven (Codex
-   Sol 5.6 xhigh implements via codex-companion task --fresh, Fable
-   reviews) vs inline executing-plans.
-2. On go: superpowers:subagent-driven-development for Plan 1 —
-   worktree via superpowers:using-git-worktrees,
-   scripts/sdd-workspace <plan>, ledger, Task 1 dispatch.
-3. Plan 2 after Plan 1 Task 13 (fixtures committed); enable swift-lsp
-   then; brew install xcodegen happens in its Task 1.
-4. Optionally commit CLAUDE.md (+ pending .gitignore/HANDOFF.md
-   changes) when the user asks.
-5. Quality gates: Plan 1 pytest suite; Plan 2 swift test + xcodebuild
-   build + visual QA screenshots (done-criteria).
+1. RAW-2 / Plan 2 (macOS app). Fixtures in tests/fixtures/json_contract/
+   are binding. Enable swift-lsp; `brew install xcodegen` in its Task 1.
+   Gates: swift test + xcodebuild build + visual QA.
+2. RAW-7 FILED (re-audit A, filesystem divergence, not data loss): stems
+   compared case-sensitively at ingest.py:70, :172-173/190/198, :124 and
+   render.py:91. Fix = `.casefold()` at all four sites. The "colliding
+   Output trees" part is UNVERIFIED (those are distinct dirs on a
+   case-sensitive volume) — confirm before implementing.
+3. RAW-8 FILED (re-audit B, optional): hoist parsed sidecar/style `Pp3`
+   docs into `gather_material` and have `_control` read from `material`.
+   Those bytes are already read there by `render._h`, so it removes a
+   duplicate read — cheaper per poll than today — and closes the torn-read
+   window instead of narrowing it.
+4. RAW-4 branch protection — now enforceable, `pytest` is a real check.
+5. USER DECISION (cleanup, non-urgent): json-interface worktree + branch
+   still exist (both at e7afc61 = merged). `git worktree remove --force
+   .claude/worktrees/json-interface` + `git branch -D
+   worktree-json-interface` + `git push origin --delete
+   worktree-json-interface`, or keep.
+6. Known limitation: the 16 Plan 1 commits are unsigned (1Password will
+   not sign for agent-launched shells). Merge commit is GitHub-signed.
