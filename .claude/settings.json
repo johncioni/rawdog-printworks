@@ -1,0 +1,31 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(.venv/bin/python -m pytest *)",
+      "Bash(scripts/process.sh status)",
+      "Bash(orca status *)",
+      "Bash(orca skills get *)",
+      "Bash(orca repo list *)",
+      "Bash(orca repo show *)",
+      "Bash(orca worktree list *)",
+      "Bash(orca worktree show *)",
+      "Bash(orca worktree current *)",
+      "Bash(orca worktree ps *)",
+      "Bash(orca terminal read *)",
+      "Bash(orca terminal list *)",
+      "Bash(orca terminal show *)",
+      "Bash(orca linear list *)",
+      "Bash(orca linear issue *)",
+      "Bash(orca linear team *)",
+      "Bash(orca computer get-app-state *)",
+      "Bash(orca computer list-windows *)",
+      "Bash(rtk proxy git status *)",
+      "Bash(rtk proxy git log *)",
+      "Bash(rtk proxy git diff *)",
+      "mcp__plugin_context-mode_context-mode__ctx_search",
+      "mcp__plugin_context-mode_context-mode__ctx_fetch_and_index",
+      "mcp__claude_ai_Linear__list_issues",
+      "mcp__claude_ai_Linear__list_teams"
+    ]
+  }
+}
