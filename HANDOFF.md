@@ -1,41 +1,60 @@
 # HANDOFF
 
 ## Goal
-Pipeline COMPLETE on main (9f52ec3). NOW: brainstorming "RAWdog
-Printworks" — a SwiftUI macOS app frontend for the pipeline (Sequoia+,
-black-primary, amber accent, self-signed personal use). Spec will go to
-docs/superpowers/specs/2026-08-12-macos-app-design.md.
+RAWdog Printworks: BOTH implementation plans COMPLETE at rev 3.2
+(b55aec8), Codex review loop CLOSED. AWAITING USER at the execution
+gate: subagent-driven (recommended) vs inline; Plan 1 executes first
+(its Task 13 fixtures gate Plan 2 Task 2). This session: /init only —
+created repo CLAUDE.md.
 
 ## Done
-- Decisions LOCKED: app + CLI coexist over shared disk state; in-app
-  review (previews, crop overlays w/ drag-nudge, audit checklist);
-  in-app edits = warmth+exposure sliders only (write sidecars);
-  layout = A+C hybrid (grid browse + translucent sidebar + review
-  inspector); name "RAWdog Printworks"; ingest = drag&drop + Input/
-  watch; Approve runs approve→render→publish chain.
-- Architecture APPROVED: SwiftUI app, PipelineClient actor shells to
-  `python -m pipeline` w/ new --json envelopes, status --json, progress
-  events, single-style preview cmd; FSEvents watcher; lockfile arbitrates.
-- Components APPROVED: compare mode (space), crop overlay (C), ⌘1-4
-  styles, debounced 2s slider→sidecar→preview loop, progress HUD,
-  minimal settings (repo path + python path).
-- Sections 3-5 (data flow, error handling, testing w/ shared golden JSON
-  fixtures + visual QA done-criteria) PRESENTED — awaiting user approval.
+- Orca ADE setup: wrote scripts/orca-setup.sh (idempotent worktree
+  bootstrap: rebuilds stale/broken .venv, installs requirements-dev,
+  collect-only smoke, warn-only tool checks); ran it here — it caught
+  and fixed the main .venv's dead shebangs (venv was built at old
+  path; 171 tests pass, pytest entry point works again). Also created
+  .venv in the json-interface worktree (290 tests collect). Set Orca
+  worktreeBaseRef=main (repo id b389b548-...). REMAINING (user, app
+  UI): Orca repo settings → hooks → setup = "bash
+  scripts/orca-setup.sh" (no CLI for hookSettings; UI drive attempt
+  via orca computer didn't open settings, abandoned).
+- Repo-move path fixes (~/photo-edits → ~/Projects/rawdog-printworks):
+  repaired both git worktree gitdir pointers (worktree list now clean),
+  updated python path in config/toolchain.lock (main + worktree;
+  informational entry, not fingerprinted — approvals stand), updated
+  app-default paths in Plan 2 + macOS app spec, fixed cd paths in
+  worktree HANDOFF.md. Left alone: historical provenance.json,
+  /Users/x placeholder in plan test example, worktree's committed doc
+  copies (merge carries the fix). Verified: 171 tests pass, status OK.
+- This session: created /Users/john/Projects/rawdog-printworks/CLAUDE.md
+  (commands, state machine + fingerprint invariant, atomic publish,
+  committed-vs-gitignored state, pointer to the two plans). Uncommitted.
+- Offered /import of ~/.codex/config.toml and ~/.gemini/settings.json
+  (user has not responded).
+- Prior sessions: Plans docs/superpowers/plans/
+  2026-08-12-pipeline-json-interface.md (13 tasks) +
+  2026-08-12-printworks-app.md (11 tasks); review loop closed at rev
+  3.2 (dispositions logged in Plan 1 "Review-round decisions").
 
 ## Ruled out
-- Embedded Python (packaging pain); Electron/Tauri (not native).
+- Further verify rounds on the plans: remaining defects are covered by
+  each task's failing-test cycle + per-task SDD reviewer.
 
 ## In flight
-- Visual companion server port 60219; session dir
-  .superpowers/brainstorm/22193-1786559112/ (mockups in content/,
-  clicks in state/events). Currently showing waiting screen.
+- Nothing running this session. Previously noted companion server port
+  60219 (spec-ready screen); stop at execution start if unused
+  (stop-server.sh .superpowers/brainstorm/22193-1786559112).
 
 ## Next
-1. On user approval of sections 3-5: write spec to
-   docs/superpowers/specs/2026-08-12-macos-app-design.md
-   (use elements-of-style skill), self-review, commit (+ .gitignore
-   change adding .superpowers/), then user spec review gate.
-2. Then Skill(superpowers:writing-plans) for the implementation plan.
-3. Implementation later: Codex Sol 5.6 xhigh implements / Fable reviews
-   (per model-usage-preferences memory); enable swift-lsp; Impeccable +
-   axiom-macos for UI build; computer-use screenshots for visual QA.
+1. USER GATE (unchanged): execution choice — subagent-driven (Codex
+   Sol 5.6 xhigh implements via codex-companion task --fresh, Fable
+   reviews) vs inline executing-plans.
+2. On go: superpowers:subagent-driven-development for Plan 1 —
+   worktree via superpowers:using-git-worktrees,
+   scripts/sdd-workspace <plan>, ledger, Task 1 dispatch.
+3. Plan 2 after Plan 1 Task 13 (fixtures committed); enable swift-lsp
+   then; brew install xcodegen happens in its Task 1.
+4. Optionally commit CLAUDE.md (+ pending .gitignore/HANDOFF.md
+   changes) when the user asks.
+5. Quality gates: Plan 1 pytest suite; Plan 2 swift test + xcodebuild
+   build + visual QA screenshots (done-criteria).
