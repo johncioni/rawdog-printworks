@@ -38,12 +38,11 @@ Linear (RAW) + CodeRabbit, CI per PR. main = fba61d4, clean, CI green.
 - Tasks 1-4 COMPLETE, reviews clean (0bff85d, 3378ea9, e47ad9c, 3dc7904).
   TASK 5 implementer RUNNING (AppModel — the state tree Tasks 7/9/10 extend
   and Task 11 drives; dispatched on opus). `git -C $WT log --oneline -3`.
-- Task 3 needed 1 fix round: a CRITICAL silent progress-event loss lived in the
+- Task 3 took 1 fix round: a CRITICAL silent progress-event loss lived in the
   brief's OWN mandated code (concurrent readabilityHandler read outside the
-  lock → out-of-order appends → spliced JSON → events dropped, 112-263 of 400).
-  Ruled to fix despite being plan-mandated; readabilityHandler replaced by a
-  dedicated blocking-read loop per pipe. Re-reviewer reproduced the bug against
-  pre-fix source, then 0/150 after.
+  lock → spliced JSON → 112-263 of 400 events dropped). Ruled to fix anyway;
+  readabilityHandler replaced by a blocking-read loop per pipe. Re-reviewer
+  reproduced it against pre-fix source, then 0/150 after.
   Deferred minor from Task 2 in the ledger: optional contract fields are not
   drift-tested — the final whole-branch review must triage it.
 - Carried rules (in ledger): editing `project.yml` requires regenerating +
