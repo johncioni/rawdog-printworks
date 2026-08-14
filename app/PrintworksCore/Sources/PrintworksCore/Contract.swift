@@ -54,6 +54,14 @@ public struct CropWindow: Codable, Sendable, Equatable {
     public let w: Double
     public let h: Double
     public let source: String?
+
+    public init(x: Double, y: Double, w: Double, h: Double, source: String?) {
+        self.x = x
+        self.y = y
+        self.w = w
+        self.h = h
+        self.source = source
+    }
 }
 
 public struct PublishedInfo: Codable, Sendable, Equatable {
