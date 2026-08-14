@@ -35,8 +35,8 @@ Linear (RAW) + CodeRabbit, CI per PR. main = fba61d4, clean, CI green.
 - WT=~/orca/workspaces/rawdog-printworks/plan2-printworks-app (branch
   johncioni/plan2-printworks-app). Ledger + all 11 briefs:
   $WT/.superpowers/sdd/2026-08-12-printworks-app/
-- Tasks 1-3 COMPLETE (0bff85d, 3378ea9, e47ad9c). TASK 4 implementer RUNNING
-  (CropMath + Debouncer). `git -C $WT log --oneline -3`.
+- Tasks 1-3 COMPLETE (0bff85d, 3378ea9, e47ad9c). Task 4 implemented
+  (3dc7904, 25/25); its REVIEWER is running. `git -C $WT log --oneline -3`.
 - Task 3 needed 1 fix round: a CRITICAL silent progress-event loss lived in the
   brief's OWN mandated code (concurrent readabilityHandler read outside the
   lock → out-of-order appends → spliced JSON → events dropped, 112-263 of 400).
