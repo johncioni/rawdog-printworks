@@ -37,8 +37,8 @@ Linear (RAW) + CodeRabbit, CI per PR. main = d0e6c49, clean, CI green.
 - WT=~/orca/workspaces/rawdog-printworks/plan2-printworks-app (branch
   johncioni/plan2-printworks-app). Ledger + all 11 briefs:
   $WT/.superpowers/sdd/2026-08-12-printworks-app/
-- Task 1 COMPLETE (0bff85d, review clean); xcodegen 2.46.0 installed via brew.
-  Plan 2 TASK 2 implementer RUNNING (contract models + fixture decoding).
+- Tasks 1 (0bff85d) + RAW-10 COMPLETE, reviews clean; xcodegen 2.46.0 installed.
+  TASK 2 implemented (3378ea9, swift test 10/10); its REVIEWER is running.
   Check: `git -C $WT status --porcelain` and `git -C $WT log --oneline -3`.
 - Carried rules (also in ledger): editing `project.yml` requires regenerating
   + committing the `.xcodeproj` in the SAME commit; Task 11 should pin an
