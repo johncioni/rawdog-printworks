@@ -41,8 +41,8 @@ Linear (RAW) + CodeRabbit, CI per PR. main = fba61d4, clean, CI green.
 - WT=~/orca/workspaces/rawdog-printworks/plan2-printworks-app (branch
   johncioni/plan2-printworks-app). Ledger + all 11 briefs:
   $WT/.superpowers/sdd/2026-08-12-printworks-app/
-- Tasks 1-2 COMPLETE, reviews clean (0bff85d, 3378ea9). TASK 3 implementer
-  RUNNING (PipelineClient actor). Check: `git -C $WT log --oneline -3`.
+- Tasks 1-2 COMPLETE (0bff85d, 3378ea9). Task 3 implemented (243f154, swift
+  test 17/17); its REVIEWER is running. `git -C $WT log --oneline -3`.
   Deferred minor from Task 2 in the ledger: optional contract fields are not
   drift-tested — the final whole-branch review must triage it.
 - Carried rules (also in ledger): editing `project.yml` requires regenerating
