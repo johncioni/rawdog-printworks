@@ -10,20 +10,19 @@ clean, CI green.
 - Plan 2 Tasks 1-4 COMPLETE, reviews clean (0bff85d, 3378ea9, e47ad9c,
   3dc7904). Task 5 AppModel implemented (532c311) — review found it wanting.
 - Task 3 took 1 fix round: a CRITICAL event loss in the brief's OWN mandated
-  code (readabilityHandler race); replaced with a blocking-read loop per pipe.
+  code (readabilityHandler race); fixed with a blocking-read loop per pipe.
 - RAW-10 (a3e8363): run_partial_failure shows RENDER_FAILED beside
   VERIFY_FAILED, so the decoder can't be built from a one-value fixture.
 - REPO-MOVE ORPHAN AUDIT (docs/repo-move-orphans.md): the move stranded 4
   memories (incl. the model-usage directive) and the Codex trust entry; fixed.
-- MODEL POLICY (memory updated): Codex Sol 5.6 xhigh IMPLEMENTS, Opus 5 xhigh
+- MODEL POLICY (in memory): Codex Sol 5.6 xhigh IMPLEMENTS, Opus 5 xhigh
   REVIEWS. Fable is exhausted — never route work to it.
-- Plan 1 SDD ledger/reports ARCHIVED to docs/superpowers/sdd-archive/ (305c396);
-  removing the json-interface worktree is now safe.
+- Plan 1 SDD ledger/reports ARCHIVED to docs/superpowers/sdd-archive/ (305c396).
 
 ## Ruled out
 - Squash-merging Plan 1 — the 16 per-task commits are the record.
-- Requiring `expected_review_revision`; widening `_state_stamps()` — adjudicated
-  design decisions (spec §4.2; spec review rounds 2+3).
+- Requiring `expected_review_revision`; widening `_state_stamps()` — both
+  adjudicated (spec §4.2; review rounds 2+3).
 - Archiving or deleting the 38MB raw Plan 1 transcript at
   ~/.claude/projects/-Users-john-photo-edits--claude-worktrees-json-interface/
   — too big to commit, and everything durable in it is now in the sdd-archive,
