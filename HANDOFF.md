@@ -20,9 +20,8 @@ Linear (RAW) + CodeRabbit, CI per PR. main = fba61d4, clean, CI green.
 - Task 1 complete (0bff85d): package + XcodeGen app target; the committed
   `.xcodeproj` is spec-mandated (spec §9), not a slip.
 - Task 2 complete (3378ea9): contract models decoding the real fixtures.
-  RULING: error `code` fields stay `String`, never a closed enum — that is what
-  lets all ten codes plus unknown ones decode; the tests fail to COMPILE if
-  someone narrows it.
+  RULING: error `code` fields stay `String`, never a closed enum — the tests
+  fail to COMPILE if someone narrows it.
 - Linear: RAW-1, RAW-5, RAW-10 Done. Open: RAW-2 (running), RAW-4, RAW-6..9.
 
 ## Ruled out
@@ -38,17 +37,18 @@ Linear (RAW) + CodeRabbit, CI per PR. main = fba61d4, clean, CI green.
 - WT=~/orca/workspaces/rawdog-printworks/plan2-printworks-app (branch
   johncioni/plan2-printworks-app). Ledger + all 11 briefs:
   $WT/.superpowers/sdd/2026-08-12-printworks-app/
-- Tasks 1-2 COMPLETE (0bff85d, 3378ea9). TASK 3 IN FIX ROUND 1/5: review found
-  a CRITICAL silent progress-event loss (concurrent readabilityHandler reads
-  outside the lock → out-of-order appends → spliced JSON → `try?` drops events;
-  112-263 of 400 delivered). Present verbatim in the brief's mandated code;
-  ruled to fix anyway. `git -C $WT log --oneline -3`.
+- Tasks 1-2 COMPLETE (0bff85d, 3378ea9). TASK 3 fix round 1 done (e47ad9c),
+  SCOPED RE-REVIEW running. Review had found CRITICAL silent progress-event
+  loss in the brief's own mandated code (concurrent readabilityHandler read
+  outside the lock → out-of-order appends → spliced JSON → dropped events,
+  112-263 of 400). Fixed by replacing readabilityHandler with a dedicated
+  blocking-read loop per pipe. `git -C $WT log --oneline -3`.
   Deferred minor from Task 2 in the ledger: optional contract fields are not
   drift-tested — the final whole-branch review must triage it.
-- Carried rules (also in ledger): editing `project.yml` requires regenerating
-  + committing the `.xcodeproj` in the SAME commit; Task 11 should pin an
+- Carried rules (in ledger): editing `project.yml` requires regenerating +
+  committing the `.xcodeproj` in the SAME commit; Task 11 should pin an
   xcodebuild `-destination`; Tasks 8/9/10 briefs are thin — dispatches need
-  spec §5-§8 pointers from me.
+  spec §5-§8 pointers.
 
 ## Next
 1. Continue the loop for Tasks 3-11: implementer → review-package → task
