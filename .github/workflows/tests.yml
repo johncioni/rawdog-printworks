@@ -28,10 +28,17 @@ jobs:
           cache-dependency-path: requirements-dev.txt
 
       # Tests shell out to these for real (tests/test_verify.py,
-      # tests/test_pdfs.py). RawTherapee is deliberately absent: no test
-      # invokes it, and installing the cask would dominate CI time.
+      # tests/test_pdfs.py).
       - name: Install render tools
         run: brew install --quiet exiftool imagemagick img2pdf qpdf poppler
+
+      # tests/test_metadata.py tags fixtures with toolchain._rt_icc_path(),
+      # which resolves RTv4_sRGB.icc inside the app bundle
+      # (Contents/Resources/share/iccprofiles/output). The cask is installed
+      # for that profile only — the resources dir short-circuits the lookup,
+      # so the CLI itself is never executed here.
+      - name: Install RawTherapee (ICC profile source)
+        run: brew install --quiet --cask rawtherapee
 
       - name: Install Python dependencies
         run: |
