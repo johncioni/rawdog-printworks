@@ -14,10 +14,10 @@ Linear (RAW) + CodeRabbit, CI per PR. main = fba61d4, clean, CI green.
 - Plan 2 set up: the Orca worktree provisioned itself via the setup hook
   (295 pass / 1 skip, no manual steps). Ledger + pre-flight scan written.
 - PRE-FLIGHT RULING (carried into every dispatch from Task 4 on): the plan
-  mixes two path conventions with no stated rule — bare `Sources/…` and
-  `Tests/…` are relative to `app/PrintworksCore/`; app-target files live under
-  `app/RAWdogPrintworks/Sources/`. Without it an implementer would have created
-  package files at the repo root and broken the build.
+  mixes two path conventions — bare `Sources/…`/`Tests/…` are relative to
+  `app/PrintworksCore/`; app-target files live under
+  `app/RAWdogPrintworks/Sources/`. Without it, package files land at the repo
+  root and the build breaks.
 - RAW-10 complete (a3e8363): run_partial_failure now shows RENDER_FAILED beside
   VERIFY_FAILED, so the decoder can't be modelled from a one-value fixture.
 - Task 1 complete (0bff85d): PrintworksCore package + XcodeGen app target.
@@ -56,5 +56,5 @@ Linear (RAW) + CodeRabbit, CI per PR. main = fba61d4, clean, CI green.
    reviewer → fix rounds → ledger line. All 11 briefs already generated.
 2. USER: enable swift-lsp — Tasks 3+ are all Swift and I cannot enable it.
 3. RAW-4 branch protection; then low/unscheduled RAW-9 (typed exceptions,
-   start driver.py:277), RAW-7 (`.casefold()` stems — its "colliding Output
-   trees" claim is UNVERIFIED), RAW-8, RAW-6.
+   start driver.py:277), RAW-7 (`.casefold()` stems, claim UNVERIFIED), RAW-8,
+   RAW-6.
