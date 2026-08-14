@@ -20,7 +20,6 @@ done. main = a20cdfc, clean, CI green.
   way. Codex cannot run xcodebuild (sandbox, exit 74) — controller does it.
 - REPO-MOVE ORPHAN AUDIT (docs/repo-move-orphans.md): the move stranded 4
   memories (incl. the model directive) and the Codex trust entry; both fixed.
-- Plan 1 SDD ledger/reports ARCHIVED to docs/superpowers/sdd-archive/ (305c396).
 
 ## Ruled out
 - Squash-merging Plan 1 — the 16 per-task commits are the record.
@@ -38,8 +37,10 @@ done. main = a20cdfc, clean, CI green.
 - TASK 5 SCOPED RE-REVIEW running (opus) on review-532c311..7e19bee.diff. It
   verdicts F1-F6 ADDRESSED/NOT. If it is gone when you resume, re-dispatch it
   from that diff file — it is the last step before Task 5 closes.
-- Codex job task-mssl68qs-lmks2k may still show `running`; its work is already
-  committed and verified, so it can be ignored or cancelled.
+- Codex job task-mssl68qs-lmks2k still shows `running` at ~18m; its edits are
+  already committed (7e19bee) and independently verified, so cancel it:
+  `cd $WT && node <plugin>/scripts/codex-companion.mjs cancel task-mssl68qs-lmks2k`.
+  Its remaining work was only writing its own report file.
 
 ## Next
 1. Read the re-review verdict; if all six ADDRESSED, append to the ledger
