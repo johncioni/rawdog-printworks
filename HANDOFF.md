@@ -35,13 +35,11 @@ CodeRabbit, CI per PR. main = 0e3749b, CI green, 296 tests pass.
   there is no Ruff config, so ANN/TRY rules are advisory not policy).
 
 ## In flight
-- PLAN 2 RUN STARTED (subagent-driven). Orca worktree
+- PLAN 2 RUN STARTED (subagent-driven) in Orca worktree WT=
   ~/orca/workspaces/rawdog-printworks/plan2-printworks-app, branch
-  johncioni/plan2-printworks-app from 60facc9, venv provisioned by the setup
-  hook (295 pass / 1 skip). Ledger + pre-flight scan:
-  <worktree>/.superpowers/sdd/2026-08-12-printworks-app/progress.md.
-  RAW-10 implementer dispatched and mid-flight (3 expected files dirty, not
-  yet committed). Check: `git -C <worktree> log --oneline -3`.
+  johncioni/plan2-printworks-app from 60facc9. Ledger + pre-flight scan:
+  $WT/.superpowers/sdd/2026-08-12-printworks-app/progress.md. RAW-10
+  implementer mid-flight. Check: `git -C $WT log --oneline -3`.
 
 ## Next
 1. RAW-2 / Plan 2 (macOS app). Enable swift-lsp; `brew install xcodegen`
