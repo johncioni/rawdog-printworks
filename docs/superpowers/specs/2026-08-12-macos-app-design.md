@@ -111,7 +111,7 @@ Stdout in `--json` mode is NDJSON: zero or more *event lines*, then exactly one 
 
 ```json
 {
-  "repo": "/Users/john/photo-edits",
+  "repo": "/Users/john/Projects/rawdog-printworks",
   "toolchain": {"ok": true, "failures": []},
   "lock": {"held": false, "stale": false, "pid": null},
   "styles": ["natural", "filmic", "bw", "vibrant"],
@@ -196,7 +196,7 @@ Drag RAW files or a folder anywhere onto the window: the app passes the dropped 
 
 ### 5.5 Settings
 
-One sheet, two fields: repo path (default `~/photo-edits`), python interpreter path (default `<repo>/.venv/bin/python`). Both validated live by running `status --json` with the candidate values (repo must contain `pipeline/`; the probe uses the same environment rules as §4.1). Nothing else.
+One sheet, two fields: repo path (default `~/Projects/rawdog-printworks`), python interpreter path (default `<repo>/.venv/bin/python`). Both validated live by running `status --json` with the candidate values (repo must contain `pipeline/`; the probe uses the same environment rules as §4.1). Nothing else.
 
 ## 6. Data flow
 

@@ -9,3 +9,5 @@ previews/
 .venv/
 __pycache__/
 .superpowers/
+.orca
+.claude/worktrees/

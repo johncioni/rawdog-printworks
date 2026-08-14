@@ -1,0 +1,45 @@
+# CodeRabbit configuration — https://docs.coderabbit.ai/reference/configuration
+# yaml-language-server: $schema=https://storage.googleapis.com/coderabbit_public_assets/schema.v2.json
+#
+# Only settings that differ from CodeRabbit's defaults are listed here.
+language: en-US
+
+reviews:
+  # Surface more findings than the default "chill" profile.
+  profile: assertive
+
+  # Post "Changes Requested" (instead of auto-approving) while actionable
+  # comments are unresolved.
+  request_changes_workflow: true
+
+  path_instructions:
+    - path: "pipeline/**/*.py"
+      instructions: >
+        Python 3 RAW-photo print pipeline (see CLAUDE.md). Guard the core
+        invariants: the per-photo state machine only moves forward via the
+        driver and moves backward on approval-fingerprint mismatch; every
+        input that can change rendered pixels must be part of the approval
+        fingerprint; publication must stay atomic (staging -> immutable vNNN
+        -> symlink swap); mutating CLI commands must hold the driver lock
+        (non-reentrant O_EXCL — flag any path that could double-acquire).
+        Flag new third-party dependencies (stdlib + PyYAML + pyobjc only)
+        and absolute filesystem paths (everything should resolve through
+        pipeline/paths.py or be repo-relative).
+    - path: "tests/**/*.py"
+      instructions: >
+        pytest. Tests must be deterministic and self-contained: no real
+        RawTherapee/exiftool invocations, no network, no dependence on live
+        photo data in the gitignored working dirs (Input/, Output/, archive/,
+        .manifest). Flag sleeps and order-dependent tests.
+
+knowledge_base:
+  linear:
+    usage: enabled
+    team_keys:
+      - RAW
+
+chat:
+  integrations:
+    # Let `@coderabbitai` create/link Linear issues from PR threads.
+    linear:
+      usage: enabled

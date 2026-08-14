@@ -51,6 +51,12 @@ def test_group_bbox_is_thin_wrapper_over_detail(monkeypatch):
 @requires_vision
 def test_group_bbox_detail_detects_real_group():
     preview = paths.previews_dir() / "P1036163_natural_preview.jpg"
+    if not preview.is_file():
+        # previews/ is gitignored live photo data, so it exists only in the
+        # main checkout — never in a fresh worktree or CI. A missing input is
+        # not a detection failure; where the file is present this still fails
+        # loudly rather than skipping.
+        pytest.skip(f"preview fixture not present: {preview}")
 
     bbox, basis = subject.group_bbox_detail(preview)
 
