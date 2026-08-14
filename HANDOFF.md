@@ -4,7 +4,7 @@
 RAWdog Printworks. Plan 1 (pipeline `--json` interface) is MERGED to main and
 its golden fixtures are the binding contract. NOW EXECUTING Plan 2 — the macOS
 SwiftUI app (RAW-2) — subagent-driven in an Orca worktree. Orca + GitHub +
-Linear (RAW) + CodeRabbit, CI per PR. main = d0e6c49, clean, CI green.
+Linear (RAW) + CodeRabbit, CI per PR. main = fba61d4, clean, CI green.
 
 ## Done
 - Plan 1 merged (PR #3, merge commit, 16 task commits kept) + PR #4 clamping
@@ -12,16 +12,20 @@ Linear (RAW) + CodeRabbit, CI per PR. main = d0e6c49, clean, CI green.
   CodeRabbit: 17 findings across both, all answered; the serious one was
   `ingest --from` overwriting a different photo's RAW on case-insensitive
   volumes.
-- Plan 2 run set up: the Orca worktree provisioned itself via the setup hook
+- Plan 2 set up: the Orca worktree provisioned itself via the setup hook
   (295 pass / 1 skip, no manual steps). Ledger + pre-flight scan written.
 - PRE-FLIGHT RULING (carried into every dispatch from Task 4 on): the plan
   mixes two path conventions with no stated rule — bare `Sources/…` and
   `Tests/…` are relative to `app/PrintworksCore/`; app-target files live under
   `app/RAWdogPrintworks/Sources/`. Without it an implementer would have created
   package files at the repo root and broken the build.
-- RAW-10 complete (a3e8363, review clean): the canonical run_partial_failure
-  fixture now shows RENDER_FAILED alongside VERIFY_FAILED, so Plan 2's decoder
-  cannot be modelled from a fixture implying one value. No production change.
+- RAW-10 complete (a3e8363): run_partial_failure now shows RENDER_FAILED beside
+  VERIFY_FAILED, so the decoder can't be modelled from a one-value fixture.
+- Task 1 complete (0bff85d): PrintworksCore package + XcodeGen app target.
+  Committed `.xcodeproj` is spec-mandated (spec §9), not a slip.
+- Task 2 implemented (3378ea9): contract models decoding the real fixtures.
+  RULING: error `code` fields stay `String`, never a closed enum — that is what
+  lets all ten codes plus unknown future ones decode without a crash.
 - Linear: RAW-1, RAW-5, RAW-10 Done. Open: RAW-2 (running), RAW-4, RAW-6..9.
 
 ## Ruled out
@@ -32,14 +36,15 @@ Linear (RAW) + CodeRabbit, CI per PR. main = d0e6c49, clean, CI green.
   adjudicated design decisions (spec §4.2; spec review rounds 2+3).
 - Hardcoding `.venv/bin/python` in tests (breaks CI, no `.venv` there) and
   `-> None` annotations (nothing in this repo is annotated; no Ruff config).
+- Adding a `repoFixturesURL()` helper Task 2's prose names but its own code
+  never uses — verified no later task consumes it; it would be dead code.
 
 ## In flight
 - WT=~/orca/workspaces/rawdog-printworks/plan2-printworks-app (branch
   johncioni/plan2-printworks-app). Ledger + all 11 briefs:
   $WT/.superpowers/sdd/2026-08-12-printworks-app/
-- Tasks 1 (0bff85d) + RAW-10 COMPLETE, reviews clean; xcodegen 2.46.0 installed.
-  TASK 2 implemented (3378ea9, swift test 10/10); its REVIEWER is running.
-  Check: `git -C $WT status --porcelain` and `git -C $WT log --oneline -3`.
+- TASK 2 REVIEWER running against review-0bff85d..3378ea9.diff. Worktree clean
+  at 3378ea9. Check: `git -C $WT log --oneline -3`.
 - Carried rules (also in ledger): editing `project.yml` requires regenerating
   + committing the `.xcodeproj` in the SAME commit; Task 11 should pin an
   xcodebuild `-destination`; Tasks 8/9/10 briefs are thin — dispatches need
@@ -48,12 +53,9 @@ Linear (RAW) + CodeRabbit, CI per PR. main = d0e6c49, clean, CI green.
   worktree — same repo, so HANDOFF is never the newest change.
 
 ## Next
-1. Continue the loop for Tasks 2-11: implementer → review-package → task
+1. Continue the loop for Tasks 3-11: implementer → review-package → task
    reviewer → fix rounds → ledger line. All 11 briefs already generated.
-2. USER: enable swift-lsp — Tasks 2+ are all Swift and I cannot enable it.
-3. RAW-4: branch protection on main (`pytest` is a real check now).
-4. Low, unscheduled: RAW-9 (typed exceptions, start driver.py:277), RAW-7
-   (`.casefold()` stems; "colliding Output trees" claim UNVERIFIED), RAW-8
-   (hoist pp3 parses into `gather_material`), RAW-6 (face-detection fixture).
-5. USER DECISION (non-urgent): the OLD json-interface worktree + branch remain
-   at e7afc61; its `.superpowers/sdd/` ledger is the only record of Plan 1's run.
+2. USER: enable swift-lsp — Tasks 3+ are all Swift and I cannot enable it.
+3. RAW-4 branch protection; then low/unscheduled RAW-9 (typed exceptions,
+   start driver.py:277), RAW-7 (`.casefold()` stems — its "colliding Output
+   trees" claim is UNVERIFIED), RAW-8, RAW-6.
