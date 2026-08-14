@@ -56,5 +56,4 @@ Linear (RAW) + CodeRabbit, CI per PR. main = d0e6c49, clean, CI green.
    (`.casefold()` stems; "colliding Output trees" claim UNVERIFIED), RAW-8
    (hoist pp3 parses into `gather_material`), RAW-6 (face-detection fixture).
 5. USER DECISION (non-urgent): the OLD json-interface worktree + branch remain
-   at e7afc61; its `.superpowers/sdd/` ledger is the only record of how Plan 1
-   ran, so keep it if that matters.
+   at e7afc61; its `.superpowers/sdd/` ledger is the only record of Plan 1's run.
