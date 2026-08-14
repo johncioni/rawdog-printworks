@@ -1272,7 +1272,7 @@ Status-dot mapping (single helper used by sidebar + grid badges): `verified`→`
 
 - [ ] **Step 1: Implement the four files** per the skeleton (no unit tests — logic already covered in core; the gate is the build).
 - [ ] **Step 2: Build** — `xcodegen generate` (if project.yml changed) + `xcodebuild … build` → BUILD SUCCEEDED. Also `swift test --package-path app/PrintworksCore` still green.
-- [ ] **Step 3: Manual smoke** — `open` the built app against the real repo (Settings default `~/photo-edits`): grid shows P1036163/P1036170 as Published, sidebar shows "Earlier" group (legacy recipes have no delivery_id). Screenshot for the Task 11 QA set.
+- [ ] **Step 3: Manual smoke** — `open` the built app against the real repo (Settings default `~/Projects/rawdog-printworks`): grid shows P1036163/P1036170 as Published, sidebar shows "Earlier" group (legacy recipes have no delivery_id). Screenshot for the Task 11 QA set.
 - [ ] **Step 4: Commit**
 
 ```bash
@@ -1338,7 +1338,7 @@ git commit -m "feat(app): crop overlay drag-nudge + inspector (sliders, audit, a
 
 **Interfaces:**
 - Produces:
-  - Settings: two fields (repo path default `~/photo-edits`, python path default `<repo>/.venv/bin/python`) stored in `UserDefaults` keys `repoPath`/`pythonPath`. Paths are tilde-expanded (`NSString.expandingTildeInPath`) before any use — `URL(fileURLWithPath: "~/…")` does NOT expand. Validation is **live** (spec §5.5): field changes debounce (~600 ms) into a `status --json` probe via a throwaway `PipelineClient`, showing ok/error inline; Save enables only while the current pair validates; saving rebuilds the model's client + watcher.
+  - Settings: two fields (repo path default `~/Projects/rawdog-printworks`, python path default `<repo>/.venv/bin/python`) stored in `UserDefaults` keys `repoPath`/`pythonPath`. Paths are tilde-expanded (`NSString.expandingTildeInPath`) before any use — `URL(fileURLWithPath: "~/…")` does NOT expand. Validation is **live** (spec §5.5): field changes debounce (~600 ms) into a `status --json` probe via a throwaway `PipelineClient`, showing ok/error inline; Save enables only while the current pair validates; saving rebuilds the model's client + watcher.
   - `AppModel.pendingInputFiles: [String]` — computed on refresh by listing `Input/*.rw2|*.RW2` whose stems are absent from the snapshot (test with a temp dir set as repo); `IngestBanner` renders "N new RAW files — Ingest now?" → `model.ingestPending()` (plain `ingest --delivery-id <uuid> --json` + `run --json`, test-first).
   - Notification on publish: after an approve-chain or reprocess `RunResult` containing `published` entries, post `UNUserNotificationCenter` notification "P1036163 published (v004, 29 files)" (request authorization once at first use; guard `#if !DEBUG`-free — personal app, always attempt; failure to authorize is silently ignored).
 
