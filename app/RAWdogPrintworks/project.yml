@@ -1,0 +1,26 @@
+name: RAWdogPrintworks
+options:
+  bundleIdPrefix: com.john
+  deploymentTarget:
+    macOS: "15.0"
+packages:
+  PrintworksCore:
+    path: ../PrintworksCore
+targets:
+  RAWdogPrintworks:
+    type: application
+    platform: macOS
+    sources: [Sources]
+    dependencies:
+      - package: PrintworksCore
+    info:
+      path: Info.plist
+      properties:
+        CFBundleDisplayName: RAWdog Printworks
+        LSMinimumSystemVersion: "15.0"
+        LSApplicationCategoryType: public.app-category.photography
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.john.rawdog-printworks
+        CODE_SIGN_IDENTITY: "-"
+        SWIFT_VERSION: "6.0"
