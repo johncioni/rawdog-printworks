@@ -54,8 +54,7 @@ CodeRabbit, CI per PR. main = 0e3749b, CI green, 296 tests pass.
 4. Low, unscheduled: RAW-7 (`.casefold()` stems; its "colliding Output
    trees" claim is UNVERIFIED), RAW-8 (hoist pp3 parses into
    `gather_material`), RAW-6 (committed face-detection fixture).
-5. USER DECISION (non-urgent): json-interface worktree + branch remain at
-   e7afc61. `git worktree remove --force .claude/worktrees/json-interface`
-   && `git branch -D worktree-json-interface` && `git push origin --delete
-   worktree-json-interface` — but its `.superpowers/sdd/` ledger is the
-   only record of how Plan 1 ran, so keep it if that matters.
+5. USER DECISION (non-urgent): the OLD json-interface worktree + branch
+   remain at e7afc61 (`git worktree remove --force` + `git branch -D` +
+   `git push origin --delete`), but its `.superpowers/sdd/` ledger is the
+   only record of how Plan 1 ran — keep it if that matters.
