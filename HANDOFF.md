@@ -34,24 +34,22 @@ Linear (RAW) + CodeRabbit, CI per PR. main = d0e6c49, clean, CI green.
   `-> None` annotations (nothing in this repo is annotated; no Ruff config).
 
 ## In flight
-- WT=~/orca/workspaces/rawdog-printworks/plan2-printworks-app, branch
-  johncioni/plan2-printworks-app. Ledger:
-  $WT/.superpowers/sdd/2026-08-12-printworks-app/progress.md (task log +
-  pre-flight table). All 11 briefs pre-generated alongside it.
+- WT=~/orca/workspaces/rawdog-printworks/plan2-printworks-app (branch
+  johncioni/plan2-printworks-app). Ledger + all 11 briefs:
+  $WT/.superpowers/sdd/2026-08-12-printworks-app/
 - Task 1 COMPLETE (0bff85d, review clean); xcodegen 2.46.0 installed via brew.
   Plan 2 TASK 2 implementer RUNNING (contract models + fixture decoding).
   Check: `git -C $WT status --porcelain` and `git -C $WT log --oneline -3`.
-- Carried rules (also in the ledger): any task editing `project.yml` must
-  regenerate + commit the `.xcodeproj` in the SAME commit; Task 11's release
-  script should pin an xcodebuild `-destination`; Tasks 8/9/10 have 23-25 line
-  briefs, so their dispatches need spec §5-§8 pointers from me.
-- NOTE: this hook fires every turn while a background implementer writes into
-  that worktree — same repo, so HANDOFF is never the newest change.
+- Carried rules (also in ledger): editing `project.yml` requires regenerating
+  + committing the `.xcodeproj` in the SAME commit; Task 11 should pin an
+  xcodebuild `-destination`; Tasks 8/9/10 briefs are thin — dispatches need
+  spec §5-§8 pointers from me.
+- NOTE: this hook fires every turn while an implementer writes in that
+  worktree — same repo, so HANDOFF is never the newest change.
 
 ## Next
-1. Review Task 1 when its report lands, then Tasks 2-11 through the same loop
-   (implementer → review-package → task reviewer → fix rounds → ledger line).
-   Briefs come from the skill's `scripts/task-brief PLAN_FILE N`.
+1. Continue the loop for Tasks 2-11: implementer → review-package → task
+   reviewer → fix rounds → ledger line. All 11 briefs already generated.
 2. USER: enable swift-lsp — Tasks 2+ are all Swift and I cannot enable it.
 3. RAW-4: branch protection on main (`pytest` is a real check now).
 4. Low, unscheduled: RAW-9 (typed exceptions, start driver.py:277), RAW-7
