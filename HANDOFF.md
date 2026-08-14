@@ -10,7 +10,6 @@ Linear (RAW) + CodeRabbit, CI per PR. main = fba61d4, clean, CI green.
 - Plan 1 merged (PR #3, merge commit) + PR #4 clamping `failed[].code` to
   ERROR_CODES. CodeRabbit: 17 findings, all answered; the serious one was
   `ingest --from` overwriting a different photo's RAW on case-insensitive vols.
-- Plan 2 set up: the Orca worktree self-provisioned via the setup hook.
 - PRE-FLIGHT RULING (in every dispatch from Task 4 on): bare `Sources/…`/
   `Tests/…` are relative to `app/PrintworksCore/`; app-target files live under
   `app/RAWdogPrintworks/Sources/`. Else package files land at the repo root.
@@ -36,13 +35,15 @@ Linear (RAW) + CodeRabbit, CI per PR. main = fba61d4, clean, CI green.
   johncioni/plan2-printworks-app). Ledger + all 11 briefs:
   $WT/.superpowers/sdd/2026-08-12-printworks-app/
 - Tasks 1-4 COMPLETE, reviews clean (0bff85d, 3378ea9, e47ad9c, 3dc7904).
-  TASK 5 implementer RUNNING (AppModel — the state tree Tasks 7/9/10 extend
-  and Task 11 drives; dispatched on opus). `git -C $WT log --oneline -3`.
-- Task 3 took 1 fix round: a CRITICAL silent progress-event loss lived in the
-  brief's OWN mandated code (concurrent readabilityHandler read outside the
-  lock → spliced JSON → 112-263 of 400 events dropped). Ruled to fix anyway;
-  readabilityHandler replaced by a blocking-read loop per pipe. Re-reviewer
-  reproduced it against pre-fix source, then 0/150 after.
+  Task 5 AppModel implemented (532c311, 40/40); its REVIEWER is running.
+- MODEL-USE MISS (now corrected in memory): John's standing directive is Codex
+  Sol 5.6 xhigh implements / Fable reviews, to conserve Claude limits. The repo
+  move orphaned that memory at ~/.claude/projects/-Users-john-photo-edits/, so
+  Tasks 1-5 ran Claude implementers. Memories migrated; AWAITING JOHN on
+  switching Tasks 6-11 to Codex (codex 0.147.0 present, slug gpt-5.6-sol valid).
+- Task 3 took 1 fix round: a CRITICAL silent progress-event loss in the brief's
+  OWN mandated code (readabilityHandler race → 112-263 of 400 events dropped);
+  ruled to fix anyway, replaced by a blocking-read loop per pipe.
   Deferred minor from Task 2 in the ledger: optional contract fields are not
   drift-tested — the final whole-branch review must triage it.
 - Carried rules (in ledger): editing `project.yml` requires regenerating +
