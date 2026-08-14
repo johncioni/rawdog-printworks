@@ -21,7 +21,6 @@ Linear (RAW) + CodeRabbit, CI per PR. main = fba61d4, clean, CI green.
 - Task 2 (3378ea9): contract models decoding the real fixtures. RULING: error
   `code` fields stay `String`, never a closed enum — tests fail to COMPILE if
   narrowed.
-- Linear: RAW-1, RAW-5, RAW-10 Done. Open: RAW-2 (running), RAW-4, RAW-6..9.
 
 ## Ruled out
 - Squash-merging Plan 1 — the 16 per-task commits are the record.
