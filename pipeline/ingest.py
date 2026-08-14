@@ -187,13 +187,22 @@ def stage_sources(sources):
                 result["skipped"].append({"file": source.name,
                                           "reason": "duplicate content"})
                 continue
-            if source.stem in manifest_stems | input_stems:
+            destination = paths.input_dir() / source.name
+            # The stem comparison is case-sensitive, but macOS volumes are
+            # case-insensitive by default: source "p9.rw2" has stem "p9",
+            # misses an existing "P9.RW2", and then resolves to that very
+            # file — so the rename below would destroy a different photo's
+            # RAW. Content differs by construction (equal content was
+            # skipped above), so an existing destination is always a
+            # conflict, never a no-op.
+            if (source.stem in manifest_stems | input_stems
+                    or destination.exists()):
                 temp.unlink()
                 result["conflicts"].append(
                     {"file": source.name,
                      "reason": "stem exists with different content"})
                 continue
-            os.replace(temp, paths.input_dir() / source.name)
+            os.replace(temp, destination)
             known_hashes.add(digest)
             input_stems.add(source.stem)
             result["placed"].append(source.name)

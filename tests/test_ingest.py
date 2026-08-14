@@ -218,6 +218,27 @@ def test_stage_sources_conflict_and_duplicate(tmp_repo):
     assert not (paths.input_dir() / "P8.RW2").exists()
 
 
+def test_stage_sources_rejects_a_case_only_stem_collision(tmp_repo):
+    # macOS volumes are case-insensitive by default, so "p9.rw2" resolves to
+    # an existing "P9.RW2" even though the stems compare unequal. Without a
+    # destination check the rename would overwrite a different photo's RAW —
+    # unrecoverable when that RAW has not been archived yet.
+    from pipeline import ingest, paths
+    (paths.input_dir() / "P9.RW2").write_bytes(b"original")
+    if not (paths.input_dir() / "p9.rw2").exists():
+        pytest.skip("case-sensitive filesystem: no collision to reject")
+    src = tmp_repo / "elsewhere"
+    src.mkdir()
+    lower = src / "p9.rw2"
+    lower.write_bytes(b"DIFFERENT")
+
+    result = ingest.stage_sources([lower])
+
+    assert result["placed"] == []
+    assert result["conflicts"][0]["file"] == "p9.rw2"
+    assert (paths.input_dir() / "P9.RW2").read_bytes() == b"original"
+
+
 def test_stage_sources_hashes_the_staged_temp_not_the_live_source(
         tmp_repo, monkeypatch):
     from pathlib import Path

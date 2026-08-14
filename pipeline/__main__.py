@@ -84,12 +84,20 @@ def _dispatch(ns, fn, mutating, precheck=None):
             precheck(ns)
         return _locked(lambda: fn(ns), mutating)()
     if getattr(ns, "json", False):
-        from . import ingest, render
-        return jsonio.run_json(lambda: run() or {}, adapters={
-            render.RenderError: "RENDER_FAILED",
-            ingest.IngestError: "BAD_INPUT",
-            FileNotFoundError: "NOT_FOUND"})
+        return jsonio.run_json(lambda: run() or {}, adapters=_adapters())
     return _wrap(lambda _ns: run())(ns)
+
+
+def _adapters():
+    """The typed-error → contract-code map, shared by every --json command so
+    one command can't report a different code than another for the same
+    failure."""
+    from . import ingest, render
+    return {
+        render.RenderError: "RENDER_FAILED",
+        ingest.IngestError: "BAD_INPUT",
+        FileNotFoundError: "NOT_FOUND",
+    }
 
 
 def _locked_json(ns, fn):
@@ -97,7 +105,7 @@ def _locked_json(ns, fn):
     from . import jsonio
     body = _locked(fn, mutating=True)
     if getattr(ns, "json", False):
-        return jsonio.run_json(body)
+        return jsonio.run_json(body, adapters=_adapters())
     print(json.dumps(body(), indent=2, sort_keys=True))
     return 0
 

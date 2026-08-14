@@ -795,7 +795,13 @@ def process_all(stems: set[str] | None = None, force: bool = False,
                         _stage_event(stem, "render")
                         render_photo(stem, only=stale)
                         persisted = _finish_verified(data, stem, collect)
-            except (RuntimeError, render.RenderError) as error:
+            # Broad by design: the render and publish paths also raise
+            # ValueError, OSError, CalledProcessError, CropError and PdfError,
+            # and in collect mode any of them escaping would abort the batch
+            # and discard the partial result the aggregate envelope exists to
+            # report. BaseException (KeyboardInterrupt, SystemExit) still
+            # propagates.
+            except Exception as error:  # noqa: BLE001
                 if isinstance(error, RuntimeError) and (
                         str(error) == MANUAL_ASSETS_ERROR):
                     print(f"{stem}: skipped — {error}")
@@ -805,7 +811,10 @@ def process_all(stems: set[str] | None = None, force: bool = False,
                     raise
                 else:
                     collect["failed"].append(
-                        {"stem": stem, "code": "RENDER_FAILED",
+                        {"stem": stem,
+                         # A CommandError already carries a contract code;
+                         # anything else is reported as a render failure.
+                         "code": getattr(error, "code", "RENDER_FAILED"),
                          "message": str(error)})
             finally:
                 if remembered is not None and not persisted:
