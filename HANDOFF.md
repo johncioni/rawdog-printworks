@@ -2,38 +2,38 @@
 
 ## Goal
 RAWdog Printworks. Plan 1 (pipeline `--json` interface) is MERGED; its
-golden fixtures in `tests/fixtures/json_contract/` are the binding
-contract for Plan 2, the macOS SwiftUI app (RAW-2) — the next work.
-Repo is wired to Orca + GitHub + Linear (team RAW) + CodeRabbit with a CI
-gate on every PR. main = 6ef71b2, tree clean, CI green, 295 tests pass.
+golden fixtures in `tests/fixtures/json_contract/` bind Plan 2 — the macOS
+SwiftUI app (RAW-2), the next work. Orca + GitHub + Linear (RAW) +
+CodeRabbit, CI per PR. main = 4f190e4, CI green, 296 tests pass.
 
 ## Done
 - PR #3 merged (356115c) as a MERGE COMMIT, keeping all 16 task commits.
-  CodeRabbit APPROVED, 0 unresolved threads.
-- CodeRabbit: 15 findings, all answered — 10 fixed, 5 dismissed with
-  citations. The serious one: `ingest --from` could overwrite a different
-  photo's RAW (stem check is case-sensitive, macOS volumes are not);
-  guarded at ingest.py:196, test verified red before green. Also: shared
-  error adapters for `adjust`, collect isolation widened to Exception,
-  jsonio.deactivate() teardown, pp3 `newline=''`, test_cli scoped to
-  tmp_repo, staged-hash dedup test, ERROR_CODES + sidecar-deletion tests.
-- Post-merge re-audits (read-only subagents) upheld both major
-  dismissals; one reproduced the ingest bug twice. Golden-fixture drift
-  ruled out for both error-path changes: no adjust *error* fixture
-  exists, run_partial_failure's VERIFY_FAILED comes from driver.py:644,
-  and `CommandError` (plain Exception) was previously not caught at all.
-- Docs: CLAUDE.md refreshed for the landed interface; Plan 1 approve-gate
-  wording made precise (20f79c2).
-- Linear: RAW-1, RAW-5 Done. Open: RAW-2, RAW-4, RAW-6, RAW-7, RAW-8.
+  CodeRabbit: 15 findings — 10 fixed, 5 dismissed with citations. Serious
+  one: `ingest --from` could overwrite a different photo's RAW (stem check
+  case-sensitive, macOS volumes are not); guarded at ingest.py:196.
+- PR #4 merged (4f190e4): clamp `failed[].code` to `jsonio.ERROR_CODES`.
+  Those dicts are hand-built, so they bypass `CommandError.__init__`'s
+  check and could emit an out-of-contract code into the one field Plan 2's
+  decoder models from run_partial_failure.json. Includes an
+  `isinstance(code, str)` guard — ERROR_CODES is a frozenset, so an
+  unhashable `.code` raised TypeError *inside* the handler, aborting the
+  batch the isolation exists to protect. Both verified red before green.
+- Post-merge read-only re-audits upheld both major dismissals, reproduced
+  the ingest bug twice, and ruled out golden-fixture drift (no adjust
+  *error* fixture exists; run_partial_failure's VERIFY_FAILED is appended
+  by `_finish_verified`, which returns False rather than raising).
+- Linear: RAW-1, RAW-5 Done. Open: RAW-2, RAW-4, RAW-6, RAW-7, RAW-8, RAW-9.
 
 ## Ruled out
 - Squash-merging PR #3 — the 16 per-task commits are the record.
+- Mapping bare RuntimeError to an operational code — driver.py also uses
+  it for internal invariants (:557 "audit before approval"), so a blanket
+  map mislabels. Typed exceptions at the source instead → RAW-9.
 - Requiring `expected_review_revision`, and widening `_state_stamps()` —
   adjudicated design decisions (spec §4.2; spec review rounds 2+3).
-  Widening also only converts a tear into a retry, since `snapshot()`
-  returns unconditionally at `attempt == 1` (status.py:98).
-- Hardcoding `.venv/bin/python` in tests — breaks CI, which has no
-  `.venv`; `sys.executable` is already the interpreter under test.
+- Hardcoding `.venv/bin/python` in tests (breaks CI, which has no `.venv`)
+  and adding `-> None` annotations (nothing in this repo is annotated, and
+  there is no Ruff config, so ANN/TRY rules are advisory not policy).
 
 ## In flight
 - Nothing running. Bots quiet, no background builds or tasks outstanding.
@@ -41,20 +41,18 @@ gate on every PR. main = 6ef71b2, tree clean, CI green, 295 tests pass.
 ## Next
 1. RAW-2 / Plan 2 (macOS app). Enable swift-lsp; `brew install xcodegen`
    in its Task 1. Gates: `swift test` + `xcodebuild build` + visual QA.
-2. RAW-4: branch protection on main — now enforceable, `pytest` is a real
-   required check.
-3. RAW-7 (low): `.casefold()` stems at ingest.py:70, :124, :172-173/190/
-   198 and render.py:91. Its "colliding Output trees" claim is UNVERIFIED
-   — confirm before implementing.
-4. RAW-8 (low): hoist pp3 parses into `gather_material` so `_control`
-   reads from `material`; removes a duplicate read and closes the
-   torn-read window. Do it when status.py is next touched.
-5. USER DECISION (cleanup, non-urgent): the json-interface worktree and
-   branch still exist, both at e7afc61 (merged):
-   `git worktree remove --force .claude/worktrees/json-interface` &&
-   `git branch -D worktree-json-interface` &&
-   `git push origin --delete worktree-json-interface`
-   Its `.superpowers/sdd/` ledger is the only record of how Plan 1 was
-   executed — removing the worktree destroys it. Keep if that matters.
-6. Known limitation: the 16 Plan 1 commits are unsigned (1Password will
-   not sign for agent-launched shells); the merge commit is GitHub-signed.
+2. RAW-4: branch protection on main — `pytest` is now a real check.
+3. RAW-9 (low): typed exceptions for operational RuntimeErrors, starting
+   at driver.py:277 — MANUAL_ASSETS_ERROR is matched by string equality in
+   the collect handler, so editing that message silently breaks the skip.
+4. RAW-7 (low) `.casefold()` stems (ingest.py:70/124/172-173/190/198,
+   render.py:91) — its "colliding Output trees" claim is UNVERIFIED.
+   RAW-8 (low): hoist pp3 parses into `gather_material` when status.py is
+   next touched. RAW-6 (low): committed fixture for face detection.
+5. USER DECISION (non-urgent): json-interface worktree + branch remain at
+   e7afc61. `git worktree remove --force .claude/worktrees/json-interface`
+   && `git branch -D worktree-json-interface` && `git push origin --delete
+   worktree-json-interface`. Its `.superpowers/sdd/` ledger is the only
+   record of how Plan 1 ran — keep if that matters.
+6. The 16 Plan 1 commits are unsigned (1Password won't sign for
+   agent-launched shells); merge commits are GitHub-signed.
