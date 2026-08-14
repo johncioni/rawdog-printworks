@@ -17,9 +17,8 @@ clean, CI green.
   memories (incl. the model-usage directive) and the Codex trust entry; fixed.
 - MODEL POLICY (memory updated): Codex Sol 5.6 xhigh IMPLEMENTS, Opus 5 xhigh
   REVIEWS. Fable is exhausted — never route work to it.
-- Plan 1 SDD ledger/briefs/reports ARCHIVED to docs/superpowers/sdd-archive/
-  (305c396) — they lived only in the json-interface worktree's gitignored
-  .superpowers/. Removing that worktree is now safe.
+- Plan 1 SDD ledger/reports ARCHIVED to docs/superpowers/sdd-archive/ (305c396);
+  removing the json-interface worktree is now safe.
 
 ## Ruled out
 - Squash-merging Plan 1 — the 16 per-task commits are the record.
