@@ -38,8 +38,9 @@ CodeRabbit, CI per PR. main = 0e3749b, CI green, 296 tests pass.
 - PLAN 2 RUN STARTED (subagent-driven) in Orca worktree WT=
   ~/orca/workspaces/rawdog-printworks/plan2-printworks-app, branch
   johncioni/plan2-printworks-app from 60facc9. Ledger + pre-flight scan:
-  $WT/.superpowers/sdd/2026-08-12-printworks-app/progress.md. RAW-10
-  implementer mid-flight. Check: `git -C $WT log --oneline -3`.
+  $WT/.superpowers/sdd/2026-08-12-printworks-app/progress.md. RAW-10 DONE
+  (a3e8363, review clean). Task 1 (scaffold; installs xcodegen) running.
+  Check: `git -C $WT log --oneline -3`.
 
 ## Next
 1. RAW-2 / Plan 2 (macOS app). Enable swift-lsp; `brew install xcodegen`
@@ -47,7 +48,6 @@ CodeRabbit, CI per PR. main = 0e3749b, CI green, 296 tests pass.
    Do RAW-10 first: `failed[].code` is the whole ERROR_CODES set, but the
    only fixtures showing it pin one value — a decoder built from them
    would be too narrow.
-2. RAW-4: branch protection on main (`pytest` is a real check now).
 3. RAW-9 (low): typed exceptions for operational RuntimeErrors — start at
    driver.py:277, where MANUAL_ASSETS_ERROR is matched by string equality.
 4. Low, unscheduled: RAW-7 (`.casefold()` stems; its "colliding Output
