@@ -22,7 +22,7 @@ CodeRabbit, CI per PR. main = 0e3749b, CI green, 296 tests pass.
   the ingest bug twice, and ruled out golden-fixture drift (no adjust
   *error* fixture exists; run_partial_failure's VERIFY_FAILED is appended
   by `_finish_verified`, which returns False rather than raising).
-- Linear: RAW-1, RAW-5 Done. Open: RAW-2, RAW-4, RAW-6, RAW-7, RAW-8, RAW-9.
+- Linear: RAW-1, RAW-5 Done. Open: RAW-2, RAW-4, RAW-6..RAW-10.
 
 ## Ruled out
 - Squash-merging PR #3 — the 16 per-task commits are the record.
@@ -41,6 +41,9 @@ CodeRabbit, CI per PR. main = 0e3749b, CI green, 296 tests pass.
 ## Next
 1. RAW-2 / Plan 2 (macOS app). Enable swift-lsp; `brew install xcodegen`
    in its Task 1. Gates: `swift test` + `xcodebuild build` + visual QA.
+   Do RAW-10 first: `failed[].code` is the full ERROR_CODES set, but the
+   only fixtures showing that field pin one value, so a decoder built
+   faithfully from them would be modelled too narrowly.
 2. RAW-4: branch protection on main — `pytest` is now a real check.
 3. RAW-9 (low): typed exceptions for operational RuntimeErrors, starting
    at driver.py:277 — MANUAL_ASSETS_ERROR is matched by string equality in
