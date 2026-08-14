@@ -810,12 +810,23 @@ def process_all(stems: set[str] | None = None, force: bool = False,
                     # per-stem isolation exists only for the aggregate result.
                     raise
                 else:
+                    # A CommandError already carries a contract code; anything
+                    # else — including an object with an out-of-contract .code
+                    # — is reported as a render failure. Clamped rather than
+                    # passed through, because this dict is hand-built and so
+                    # never sees CommandError.__init__'s ERROR_CODES check:
+                    # without this, failed[].code could leave the closed set
+                    # that Plan 2's decoder is built against.
+                    # isinstance first: ERROR_CODES is a frozenset, so an
+                    # unhashable .code (list, dict) would raise TypeError from
+                    # the membership test — raised inside this handler, it
+                    # would abort the very batch this block exists to protect.
+                    code = getattr(error, "code", None)
+                    if not isinstance(code, str) or (
+                            code not in jsonio.ERROR_CODES):
+                        code = "RENDER_FAILED"
                     collect["failed"].append(
-                        {"stem": stem,
-                         # A CommandError already carries a contract code;
-                         # anything else is reported as a render failure.
-                         "code": getattr(error, "code", "RENDER_FAILED"),
-                         "message": str(error)})
+                        {"stem": stem, "code": code, "message": str(error)})
             finally:
                 if remembered is not None and not persisted:
                     _restore_forced(data, stem, remembered)
