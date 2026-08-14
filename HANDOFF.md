@@ -40,8 +40,10 @@ Linear (RAW) + CodeRabbit, CI per PR. main = fba61d4, clean, CI green.
 - WT=~/orca/workspaces/rawdog-printworks/plan2-printworks-app (branch
   johncioni/plan2-printworks-app). Ledger + all 11 briefs:
   $WT/.superpowers/sdd/2026-08-12-printworks-app/
-- TASK 2 REVIEWER running against review-0bff85d..3378ea9.diff. Worktree clean
-  at 3378ea9. Check: `git -C $WT log --oneline -3`.
+- Tasks 1-2 COMPLETE, reviews clean (0bff85d, 3378ea9). TASK 3 implementer
+  RUNNING (PipelineClient actor). Check: `git -C $WT log --oneline -3`.
+  Deferred minor from Task 2 in the ledger: optional contract fields are not
+  drift-tested — the final whole-branch review must triage it.
 - Carried rules (also in ledger): editing `project.yml` requires regenerating
   + committing the `.xcodeproj` in the SAME commit; Task 11 should pin an
   xcodebuild `-destination`; Tasks 8/9/10 briefs are thin — dispatches need
