@@ -13,10 +13,8 @@ clean, CI green.
   code (readabilityHandler race); replaced with a blocking-read loop per pipe.
 - RAW-10 (a3e8363): run_partial_failure shows RENDER_FAILED beside
   VERIFY_FAILED, so the decoder can't be built from a one-value fixture.
-- REPO-MOVE ORPHAN AUDIT (docs/repo-move-orphans.md). Tool state is keyed by
-  absolute path; the move stranded 4 memories (incl. the model-usage directive
-  — why Tasks 1-5 wrongly ran Claude implementers) and the Codex trust entry.
-  Both fixed (trust backup: ~/.codex/config.toml.bak-premove-fix).
+- REPO-MOVE ORPHAN AUDIT (docs/repo-move-orphans.md): the move stranded 4
+  memories (incl. the model-usage directive) and the Codex trust entry; fixed.
 - MODEL POLICY (memory updated): Codex Sol 5.6 xhigh IMPLEMENTS, Opus 5 xhigh
   REVIEWS. Fable is exhausted — never route work to it.
 - Plan 1 SDD ledger/briefs/reports ARCHIVED to docs/superpowers/sdd-archive/
