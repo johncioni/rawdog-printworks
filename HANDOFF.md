@@ -38,9 +38,8 @@ Linear (RAW) + CodeRabbit, CI per PR. main = d0e6c49, clean, CI green.
   johncioni/plan2-printworks-app. Ledger:
   $WT/.superpowers/sdd/2026-08-12-printworks-app/progress.md (task log +
   pre-flight table). Briefs for Tasks 1-4 pre-generated alongside it.
-- Plan 2 TASK 1 implementer RUNNING: xcodegen installed
-  (/opt/homebrew/bin/xcodegen), `app/PrintworksCore` + `app/RAWdogPrintworks`
-  created, `.gitignore` modified, NOT yet committed.
+- Task 1 COMPLETE (0bff85d, review clean); xcodegen 2.46.0 installed via brew.
+  Plan 2 TASK 2 implementer RUNNING (contract models + fixture decoding).
   Check: `git -C $WT status --porcelain` and `git -C $WT log --oneline -3`.
 - NOTE: the checkpoint hook fires every turn while a background implementer
   writes into that worktree (same repo, so HANDOFF is never the newest change).
