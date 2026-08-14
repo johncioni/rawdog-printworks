@@ -11,8 +11,7 @@ Linear (RAW) + CodeRabbit, CI per PR. main = fba61d4, clean, CI green.
   `failed[].code` to ERROR_CODES with an `isinstance` guard. CodeRabbit: 17
   findings, all answered; the serious one was `ingest --from` overwriting a
   different photo's RAW on case-insensitive volumes.
-- Plan 2 set up: the Orca worktree provisioned itself via the setup hook
-  (295 pass / 1 skip, no manual steps). Ledger + pre-flight scan written.
+- Plan 2 set up: the Orca worktree self-provisioned via the setup hook.
 - PRE-FLIGHT RULING (in every dispatch from Task 4 on): bare `Sources/…`/
   `Tests/…` are relative to `app/PrintworksCore/`; app-target files live under
   `app/RAWdogPrintworks/Sources/`. Else package files land at the repo root.
