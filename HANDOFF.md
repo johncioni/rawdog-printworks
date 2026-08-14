@@ -17,10 +17,10 @@ CodeRabbit, CI per PR. main = 0e3749b, CI green, 296 tests pass.
   `isinstance(code, str)` guard — ERROR_CODES is a frozenset, so an
   unhashable `.code` raised TypeError *inside* the handler, aborting the
   batch the isolation protects. Both verified red before green.
-- Post-merge read-only re-audits upheld both major dismissals, reproduced
-  the ingest bug twice, and ruled out golden-fixture drift (no adjust
-  *error* fixture exists; run_partial_failure's VERIFY_FAILED is appended
-  by `_finish_verified`, which returns False rather than raising).
+- Post-merge re-audits upheld both major dismissals, reproduced the ingest
+  bug twice, and ruled out golden-fixture drift (no adjust *error* fixture
+  exists; run_partial_failure's VERIFY_FAILED is appended by
+  `_finish_verified`, which returns False rather than raising).
 - Linear: RAW-1, RAW-5 Done. Open: RAW-2, RAW-4, RAW-6..RAW-10.
 
 ## Ruled out
@@ -40,10 +40,10 @@ CodeRabbit, CI per PR. main = 0e3749b, CI green, 296 tests pass.
 ## Next
 1. RAW-2 / Plan 2 (macOS app). Enable swift-lsp; `brew install xcodegen`
    in its Task 1. Gates: `swift test` + `xcodebuild build` + visual QA.
-   Do RAW-10 first: `failed[].code` is the full ERROR_CODES set, but the
-   only fixtures showing that field pin one value, so a decoder built
-   faithfully from them would be modelled too narrowly.
-2. RAW-4: branch protection on main — `pytest` is now a real check.
+   Do RAW-10 first: `failed[].code` is the whole ERROR_CODES set, but the
+   only fixtures showing it pin one value — a decoder built from them
+   would be too narrow.
+2. RAW-4: branch protection on main (`pytest` is a real check now).
 3. RAW-9 (low): typed exceptions for operational RuntimeErrors, starting
    at driver.py:277 — MANUAL_ASSETS_ERROR is matched by string equality in
    the collect handler, so editing that message silently breaks the skip.
@@ -54,7 +54,5 @@ CodeRabbit, CI per PR. main = 0e3749b, CI green, 296 tests pass.
 5. USER DECISION (non-urgent): json-interface worktree + branch remain at
    e7afc61. `git worktree remove --force .claude/worktrees/json-interface`
    && `git branch -D worktree-json-interface` && `git push origin --delete
-   worktree-json-interface`. Its `.superpowers/sdd/` ledger is the only
-   record of how Plan 1 ran — keep if that matters.
-6. The 16 Plan 1 commits are unsigned (1Password won't sign for
-   agent-launched shells); merge commits are GitHub-signed.
+   worktree-json-interface` — but its `.superpowers/sdd/` ledger is the
+   only record of how Plan 1 ran, so keep it if that matters.
