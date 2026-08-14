@@ -11,9 +11,6 @@ clean, CI green.
   3dc7904). Task 5 AppModel implemented (532c311) — review found it wanting.
 - Task 3 took 1 fix round: a CRITICAL event loss in the brief's OWN mandated
   code (readabilityHandler race); fixed with a blocking-read loop per pipe.
-- RAW-10 (a3e8363): run_partial_failure shows RENDER_FAILED beside
-  VERIFY_FAILED, so the decoder can't be built from a one-value fixture.
-- REPO-MOVE ORPHAN AUDIT (docs/repo-move-orphans.md): the move stranded 4
   memories (incl. the model-usage directive) and the Codex trust entry; fixed.
 - MODEL POLICY (in memory): Codex Sol 5.6 xhigh IMPLEMENTS, Opus 5 xhigh
   REVIEWS. Fable is exhausted — never route work to it.
