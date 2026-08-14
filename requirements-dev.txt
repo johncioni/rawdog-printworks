@@ -1,4 +1,21 @@
-pytest
-pyyaml
-pyobjc-framework-Vision
-pyobjc-framework-Quartz
+# Pinned so every worktree and CI run builds an identical environment
+# (scripts/orca-setup.sh installs this file). Same discipline as
+# config/toolchain.lock, which pins the render tools by hash.
+#
+# To upgrade: bump here, rebuild (rm -rf .venv && bash scripts/orca-setup.sh),
+# run the full gate, and commit the new pins with the test result.
+
+# Direct dependencies
+pytest==9.1.1
+PyYAML==6.0.3
+pyobjc-framework-Vision==12.2.2
+pyobjc-framework-Quartz==12.2.2
+
+# Transitive (pinned for reproducibility; pyobjc-* must share one version)
+iniconfig==2.3.0
+packaging==26.3
+pluggy==1.6.0
+Pygments==2.20.0
+pyobjc-core==12.2.2
+pyobjc-framework-Cocoa==12.2.2
+pyobjc-framework-CoreML==12.2.2
