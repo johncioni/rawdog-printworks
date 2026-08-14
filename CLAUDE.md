@@ -12,11 +12,15 @@ All commands run through the repo `.venv` (pyobjc Vision/Quartz deps, macOS-only
 
 ```bash
 scripts/process.sh <cmd>              # wraps .venv/bin/python -m pipeline
-# subcommands: status | ingest | preview <stem> <style> |
-#   croppreview <stem> <style> <crop> | approve <stem> |
-#   render <stem> | verify <stem> | run
+# subcommands: status | ingest [--from <paths> --delivery-id <id>] |
+#   preview <stem> <style> | croppreview <stem> <style> <crop> |
+#   crops --stem <stem> | approve <stem> [--review-file <path>] |
+#   adjust --stem <stem> --style <style> [--temperature|--exposure|--reset] |
+#   render <stem> | verify <stem> | run [--stem <stem>] [--force]
+# most commands also take --json (NDJSON on stdout, envelope last) —
+#   see docs/superpowers/specs/2026-08-12-macos-app-design.md §4.2-4.3
 
-.venv/bin/python -m pytest tests/ -q                    # full quality gate (171 tests)
+.venv/bin/python -m pytest tests/ -q                    # full quality gate (290 tests)
 .venv/bin/python -m pytest tests/test_render.py -q      # one module
 .venv/bin/python -m pytest tests/ -q -k <pattern>       # one test
 ```
@@ -48,4 +52,8 @@ Approval is recorded as an **approval fingerprint** — a hash over every input 
 
 ## Active work
 
-Two approved implementation plans in `docs/superpowers/plans/`: `2026-08-12-pipeline-json-interface.md` (Plan 1, adds a `--json` NDJSON command interface to the pipeline) and `2026-08-12-printworks-app.md` (Plan 2, macOS SwiftUI app driving that interface). Plan 1's Task 13 fixtures gate Plan 2. When executing Plan 1, its "Global Constraints" section is binding (additive-only CLI changes, lock discipline at dispatch, JSON stdout rules).
+Plan 1 (`docs/superpowers/plans/2026-08-12-pipeline-json-interface.md`) is **implemented**: the pipeline exposes the additive `--json` NDJSON interface, and the golden contract fixtures in `tests/fixtures/json_contract/` are the authority for it — Plan 2 must match those bytes, not this prose.
+
+Next up is Plan 2 (`docs/superpowers/plans/2026-08-12-printworks-app.md`), the macOS SwiftUI app driving that interface. Its binding constraints live in the plan's "Global Constraints" section: no pipeline logic in Swift, no repo writes from Swift, argv-only subprocess invocation.
+
+Two contract details that have bitten before: the approval fingerprint is bare hex while `review_revision` carries a `sha256:` prefix, and `approve` without `--review-file` returns an empty result.
