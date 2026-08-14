@@ -8,7 +8,7 @@ clean, CI green.
 
 ## Done
 - Plan 2 Tasks 1-4 COMPLETE, reviews clean (0bff85d, 3378ea9, e47ad9c,
-  3dc7904). Task 5 AppModel implemented (532c311, 40/40) — reviewer running.
+  3dc7904). Task 5 AppModel implemented (532c311) — review found it wanting.
 - Task 3 took 1 fix round: a CRITICAL event loss in the brief's OWN mandated
   code (readabilityHandler race); replaced with a blocking-read loop per pipe.
 - RAW-10 (a3e8363): run_partial_failure shows RENDER_FAILED beside
@@ -35,12 +35,15 @@ clean, CI green.
 - WT=~/orca/workspaces/rawdog-printworks/plan2-printworks-app (branch
   johncioni/plan2-printworks-app). Ledger + all 11 briefs + task reports:
   $WT/.superpowers/sdd/2026-08-12-printworks-app/
-- TASK 5 IN FIX ROUND 1/5, dispatched to CODEX (gpt-5.6-sol xhigh, --fresh) —
-  the first Codex dispatch of this run. Spec ❌: review found 1 Critical +
-  5 Important, all probe-reproduced, incl. `flushPendingAdjustments` not
-  flushing (approve can serialize a pre-adjust revision) and a ~14% flaky
+- TASK 5 IN FIX ROUND 1/5 on CODEX (gpt-5.6-sol xhigh, --fresh). Spec ❌: 1
+  Critical + 5 Important, all probe-reproduced — incl. `flushPendingAdjustments`
+  not flushing (approve can serialize a pre-adjust revision) and a ~14% flaky
   suite. Fix spec: $WT/.superpowers/sdd/.../task-5-fix-round-1.md.
-  CODEX CANNOT COMMIT (.git read-only in its sandbox) — I stage and commit.
+- LIVE CODEX JOB task-mssl68qs-lmks2k. Poll/stage recipe (BOTH must run with
+  cwd=$WT — job state and writable root are keyed to launch dir):
+  `cd $WT && node ~/.claude/plugins/cache/openai-codex/codex/1.0.6/scripts/
+  codex-companion.mjs status task-mssl68qs-lmks2k`. Codex CANNOT commit
+  (.git read-only) — I stage its working-tree changes and commit for it.
 
 ## Next
 1. When Task 5's review lands: ledger it, then dispatch TASK 6 TO CODEX —
