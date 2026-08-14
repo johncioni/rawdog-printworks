@@ -43,11 +43,10 @@ CodeRabbit, CI per PR. main = 0e3749b, CI green, 296 tests pass.
   Check: `git -C $WT log --oneline -3`.
 
 ## Next
-1. RAW-2 / Plan 2 (macOS app). Enable swift-lsp; `brew install xcodegen`
-   in its Task 1. Gates: `swift test` + `xcodebuild build` + visual QA.
-   Do RAW-10 first: `failed[].code` is the whole ERROR_CODES set, but the
-   only fixtures showing it pin one value — a decoder built from them
-   would be too narrow.
+1. RAW-2 / Plan 2 is RUNNING — see In flight. RAW-10 landed first
+   (a3e8363). Gates per task: `swift test` / `xcodebuild build`, visual QA
+   at Task 11. USER: enable swift-lsp; Task 1 installs xcodegen via brew.
+2. RAW-4: branch protection on main (`pytest` is a real check now).
 3. RAW-9 (low): typed exceptions for operational RuntimeErrors — start at
    driver.py:277, where MANUAL_ASSETS_ERROR is matched by string equality.
 4. Low, unscheduled: RAW-7 (`.casefold()` stems; its "colliding Output
