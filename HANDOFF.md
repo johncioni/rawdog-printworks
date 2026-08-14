@@ -48,9 +48,8 @@ CodeRabbit, CI per PR. main = 0e3749b, CI green, 296 tests pass.
    only fixtures showing it pin one value — a decoder built from them
    would be too narrow.
 2. RAW-4: branch protection on main (`pytest` is a real check now).
-3. RAW-9 (low): typed exceptions for operational RuntimeErrors, starting
-   at driver.py:277 — MANUAL_ASSETS_ERROR is matched by string equality in
-   the collect handler, so editing that message silently breaks the skip.
+3. RAW-9 (low): typed exceptions for operational RuntimeErrors — start at
+   driver.py:277, where MANUAL_ASSETS_ERROR is matched by string equality.
 4. Low, unscheduled: RAW-7 (`.casefold()` stems; its "colliding Output
    trees" claim is UNVERIFIED), RAW-8 (hoist pp3 parses into
    `gather_material`), RAW-6 (committed face-detection fixture).
