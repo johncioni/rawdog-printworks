@@ -7,28 +7,32 @@ SwiftUI app (RAW-2) — subagent-driven in an Orca worktree. main = 225eedb,
 clean, CI green.
 
 ## Done
-- Plan 2 Tasks 1-4 COMPLETE, reviews clean: 0bff85d scaffold, 3378ea9 contract
-  models, e47ad9c PipelineClient, 3dc7904 CropMath+Debouncer. Task 5 AppModel
-  implemented (532c311, 40/40) — reviewer running.
+- Plan 2 Tasks 1-4 COMPLETE, reviews clean (0bff85d, 3378ea9, e47ad9c,
+  3dc7904). Task 5 AppModel implemented (532c311, 40/40) — reviewer running.
 - Task 3 took 1 fix round: a CRITICAL silent progress-event loss in the brief's
   OWN mandated code (readabilityHandler race → 112-263 of 400 events dropped).
   Ruled to fix anyway; replaced with a blocking-read loop per pipe.
 - RAW-10 (a3e8363): run_partial_failure now shows RENDER_FAILED beside
   VERIFY_FAILED so the app's decoder can't be built from a one-value fixture.
-- REPO-MOVE ORPHAN AUDIT (docs/repo-move-orphans.md, committed). Tool state is
-  keyed by absolute path, so the move stranded 4 project memories (incl. the
-  model-usage directive — why Tasks 1-5 wrongly ran Claude implementers) and
-  the Codex trust entry. Both fixed: memories migrated, trust added for the
-  repo AND the Plan 2 worktree (backup ~/.codex/config.toml.bak-premove-fix).
+- REPO-MOVE ORPHAN AUDIT (docs/repo-move-orphans.md). Tool state is keyed by
+  absolute path; the move stranded 4 memories (incl. the model-usage directive
+  — why Tasks 1-5 wrongly ran Claude implementers) and the Codex trust entry.
+  Both fixed (trust backup: ~/.codex/config.toml.bak-premove-fix).
 - MODEL POLICY (memory updated): Codex Sol 5.6 xhigh IMPLEMENTS, Opus 5 xhigh
   REVIEWS. Fable is exhausted — never route work to it.
+- Plan 1 SDD ledger/briefs/reports ARCHIVED to docs/superpowers/sdd-archive/
+  (305c396). They lived only in the json-interface worktree's gitignored
+  .superpowers/, so removing that worktree would have destroyed them. Removing
+  it is now safe.
 
 ## Ruled out
 - Squash-merging Plan 1 — the 16 per-task commits are the record.
 - Requiring `expected_review_revision`; widening `_state_stamps()` — adjudicated
   design decisions (spec §4.2; spec review rounds 2+3).
-- Deleting the old Claude project dirs: `-Users-john-photo-edits--claude-
-  worktrees-json-interface/` still holds the Plan 1 SDD session transcript.
+- Archiving or deleting the 38MB raw Plan 1 transcript at
+  ~/.claude/projects/-Users-john-photo-edits--claude-worktrees-json-interface/
+  — too big to commit, and everything durable in it is now in the sdd-archive,
+  the plan doc, or git. Leave it; deletion is irreversible for marginal gain.
 - Moving Task 6's refresh gate out of Task 5 — without it Task 5's own test has
   a real data race; shipping a known race to keep a task boundary is the Task 3
   mistake again.
