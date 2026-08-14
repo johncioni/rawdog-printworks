@@ -13,11 +13,10 @@ CodeRabbit, CI per PR. main = 0e3749b, CI green, 296 tests pass.
   case-sensitive, macOS volumes are not); guarded at ingest.py:196.
 - PR #4 merged (4f190e4): clamp `failed[].code` to `jsonio.ERROR_CODES`.
   Those dicts are hand-built, so they bypass `CommandError.__init__`'s
-  check and could emit an out-of-contract code into the one field Plan 2's
-  decoder models from run_partial_failure.json. Includes an
+  check and could emit an out-of-contract code. Plus an
   `isinstance(code, str)` guard — ERROR_CODES is a frozenset, so an
   unhashable `.code` raised TypeError *inside* the handler, aborting the
-  batch the isolation exists to protect. Both verified red before green.
+  batch the isolation protects. Both verified red before green.
 - Post-merge read-only re-audits upheld both major dismissals, reproduced
   the ingest bug twice, and ruled out golden-fixture drift (no adjust
   *error* fixture exists; run_partial_failure's VERIFY_FAILED is appended
