@@ -93,12 +93,13 @@ actor AsyncGate {
 }
 
 /// Holds an adjust and a watcher refresh independently, so a test can prove
-/// the refresh was dispatched during the command but returned after it ended.
+/// what a refresh reconciles when its `status` returns only after the command
+/// ended — whether it was dispatched during that command or before it began.
 final class DeferredReconcileClient: PipelineRunning, @unchecked Sendable {
     private let lock = NSLock()
     private var statusCallCount = 0
     private let initial: Envelope<StatusSnapshot>
-    private let capturedDuringCommand: Envelope<StatusSnapshot>
+    private let heldStatus: Envelope<StatusSnapshot>
     private let terminal: Envelope<StatusSnapshot>
 
     let mutationStarted = AsyncGate()
@@ -107,10 +108,10 @@ final class DeferredReconcileClient: PipelineRunning, @unchecked Sendable {
     let capturedStatusCanFinish = AsyncGate()
 
     init(initial: Envelope<StatusSnapshot>,
-         capturedDuringCommand: Envelope<StatusSnapshot>,
+         heldStatus: Envelope<StatusSnapshot>,
          terminal: Envelope<StatusSnapshot>) {
         self.initial = initial
-        self.capturedDuringCommand = capturedDuringCommand
+        self.heldStatus = heldStatus
         self.terminal = terminal
     }
 
@@ -126,7 +127,7 @@ final class DeferredReconcileClient: PipelineRunning, @unchecked Sendable {
         case 2:
             await capturedStatusStarted.open()
             await capturedStatusCanFinish.wait()
-            envelope = capturedDuringCommand
+            envelope = heldStatus
         default:
             envelope = terminal
         }
@@ -474,7 +475,7 @@ final class AppModelTests: XCTestCase {
     func testReconcileIsDeferredWhileTheStemsOwnCommandRuns() async {
         let fake = DeferredReconcileClient(
             initial: snap([photo(stem: "P1", revision: "r1")]),
-            capturedDuringCommand: snap([photo(stem: "P1", revision: "r1")]),
+            heldStatus: snap([photo(stem: "P1", revision: "r1")]),
             terminal: snap([photo(stem: "P1", revision: "r2")]))
         let model = AppModel(client: fake, repo: URL(fileURLWithPath: "/r"),
                              sliderDebounce: .zero)
@@ -493,6 +494,44 @@ final class AppModelTests: XCTestCase {
         await fake.mutationCanFinish.open()
         await adjust.value
         XCTAssertNil(model.activeCommand) // captured status has not landed yet
+
+        await fake.capturedStatusCanFinish.open()
+        await watcherRefresh.value
+        XCTAssertEqual(model.drafts["P1"]!.baseRevision, "r2")
+        XCTAssertFalse(model.drafts["P1"]!.isStale)
+    }
+
+    /// The mirror of the case above: the watcher status is dispatched while the
+    /// app is IDLE, and an adjust begins and rebases the draft before it lands.
+    /// Its pre-command snapshot still shows the pre-adjust revision, which no
+    /// longer equals the rebased draft — reconciling it would mark the draft
+    /// stale forever (reconcile only ever SETS `isStale`). A command having run
+    /// between dispatch and landing must therefore skip reconciliation too;
+    /// the queued trailing refresh is the one that judges this draft.
+    func testReconcileIsSkippedWhenACommandRanBetweenDispatchAndLanding() async {
+        let fake = DeferredReconcileClient(
+            initial: snap([photo(stem: "P1", revision: "r1")]),
+            heldStatus: snap([photo(stem: "P1", revision: "r1")]),
+            terminal: snap([photo(stem: "P1", revision: "r2")]))
+        let model = AppModel(client: fake, repo: URL(fileURLWithPath: "/r"),
+                             sliderDebounce: .zero)
+        await model.refresh()
+        model.startDraft(stem: "P1")
+
+        // Dispatched with no command running — the ONLY difference from the
+        // test above, and the whole point of the case.
+        let watcherRefresh = Task { @MainActor in await model.refresh() }
+        await fake.capturedStatusStarted.wait()
+        XCTAssertNil(model.activeCommand)
+
+        let adjust = Task { @MainActor in
+            await model.applyAdjust(stem: "P1", style: "natural",
+                                    temperature: 5600, exposure: nil)
+        }
+        await fake.mutationStarted.wait()
+        await fake.mutationCanFinish.open()
+        await adjust.value
+        XCTAssertEqual(model.drafts["P1"]!.baseRevision, "r2") // rebased
 
         await fake.capturedStatusCanFinish.open()
         await watcherRefresh.value

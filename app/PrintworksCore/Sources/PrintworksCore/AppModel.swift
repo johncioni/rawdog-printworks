@@ -186,8 +186,9 @@ public final class AppModel {
     /// The command context in force when a status subprocess was dispatched.
     /// Reconcile must use this capture-time stamp, not whichever command flags
     /// happen to remain when that subprocess eventually returns.
+    /// `activeStem` is nil when nothing was running at dispatch time.
     private struct SnapshotCapture {
-        let commandGeneration: Int?
+        let commandGeneration: Int
         let activeStem: String?
     }
 
@@ -233,7 +234,7 @@ public final class AppModel {
 
     private func performRefresh() async {
         let capture = SnapshotCapture(
-            commandGeneration: activeCommand == nil ? nil : commandGeneration,
+            commandGeneration: commandGeneration,
             activeStem: activeCommand == nil ? nil : activeStem)
         let result = await client.status()
         guard result.envelope.ok, let snapshot = result.envelope.result else {
@@ -326,10 +327,15 @@ public final class AppModel {
     /// `activeCommand` already cleared).
     private func reconcileDrafts(_ snapshot: StatusSnapshot,
                                  capturedDuring capture: SnapshotCapture) {
+        // A command began after this status was dispatched, so the snapshot
+        // predates whatever that command did — including its rebase. Judging a
+        // rebased draft against a pre-command revision would stale it forever
+        // (reconcile only ever SETS `isStale`). The command's own terminal
+        // refresh, or the trailing refresh the gate queued behind this one,
+        // reconciles with a snapshot that is actually current.
+        guard capture.commandGeneration == commandGeneration else { return }
         for (stem, draft) in drafts {
-            if capture.commandGeneration != nil, capture.activeStem == stem {
-                continue
-            }
+            if capture.activeStem == stem { continue }
             guard let photo = snapshot.photos.first(where: { $0.stem == stem })
             else { continue }
             if photo.reviewRevision != draft.baseRevision, !draft.isStale {
