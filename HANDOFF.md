@@ -49,7 +49,6 @@ Linear (RAW) + CodeRabbit, CI per PR. main = fba61d4, clean, CI green.
   + committing the `.xcodeproj` in the SAME commit; Task 11 should pin an
   xcodebuild `-destination`; Tasks 8/9/10 briefs are thin — dispatches need
   spec §5-§8 pointers from me.
-- NOTE: hook fires every turn while an implementer writes in that worktree.
 
 ## Next
 1. Continue the loop for Tasks 3-11: implementer → review-package → task
