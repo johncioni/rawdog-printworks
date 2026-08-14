@@ -8,10 +8,9 @@ Linear (RAW) + CodeRabbit, CI per PR. main = fba61d4, clean, CI green.
 
 ## Done
 - Plan 1 merged (PR #3, merge commit, 16 task commits kept) + PR #4 clamping
-  `failed[].code` to `jsonio.ERROR_CODES` with an `isinstance` guard.
-  CodeRabbit: 17 findings across both, all answered; the serious one was
-  `ingest --from` overwriting a different photo's RAW on case-insensitive
-  volumes.
+  `failed[].code` to ERROR_CODES with an `isinstance` guard. CodeRabbit: 17
+  findings, all answered; the serious one was `ingest --from` overwriting a
+  different photo's RAW on case-insensitive volumes.
 - Plan 2 set up: the Orca worktree provisioned itself via the setup hook
   (295 pass / 1 skip, no manual steps). Ledger + pre-flight scan written.
 - PRE-FLIGHT RULING (carried into every dispatch from Task 4 on): the plan
@@ -50,7 +49,7 @@ Linear (RAW) + CodeRabbit, CI per PR. main = fba61d4, clean, CI green.
   xcodebuild `-destination`; Tasks 8/9/10 briefs are thin — dispatches need
   spec §5-§8 pointers from me.
 - NOTE: this hook fires every turn while an implementer writes in that
-  worktree — same repo, so HANDOFF is never the newest change.
+  worktree (same repo → HANDOFF is never the newest change).
 
 ## Next
 1. Continue the loop for Tasks 3-11: implementer → review-package → task
