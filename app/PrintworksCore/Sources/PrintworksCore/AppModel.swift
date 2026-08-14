@@ -107,6 +107,7 @@ public final class AppModel {
 
     @ObservationIgnored private let client: any PipelineRunning
     @ObservationIgnored private let sliderDebounce: Duration
+    @ObservationIgnored private let reviewFileDirectory: URL
 
     // MARK: Published state
 
@@ -138,6 +139,11 @@ public final class AppModel {
     /// Successes from the most recent run result — applied even when the
     /// envelope failed with `PARTIAL_FAILURE` (drives Task 10's notifications).
     public var lastPublished: [PublishedPhoto] = []
+    /// State advances and per-stem failures from that same run result.
+    public var lastAdvanced: [AdvancedPhoto] = []
+    public var lastFailures: [String: StemFailure] = [:]
+    /// Per-file failures from the most recent ingest result.
+    public var lastIngestFailures: [String: FileFailure] = [:]
 
     /// Args of the most recently dispatched mutating command.
     public private(set) var lastMutatingArgs: [String]?
@@ -148,6 +154,7 @@ public final class AppModel {
     /// cancel or merge another pair's pending edit.
     @ObservationIgnored private var debouncers: [String: Debouncer] = [:]
     @ObservationIgnored private var pendingAdjustments: [String: PendingAdjust] = [:]
+    @ObservationIgnored private var inFlightAdjustments: [String: InFlightAdjust] = [:]
 
     /// Re-runs the last retryable failed action (`retryBannerAction`).
     @ObservationIgnored private var lastFailedAction: (@MainActor @Sendable () async -> Void)?
@@ -170,11 +177,36 @@ public final class AppModel {
         var exposure: Double?
     }
 
+    private struct InFlightAdjust {
+        let id: UUID
+        let stem: String
+        let task: Task<Void, Never>
+    }
+
+    /// The command context in force when a status subprocess was dispatched.
+    /// Reconcile must use this capture-time stamp, not whichever command flags
+    /// happen to remain when that subprocess eventually returns.
+    private struct SnapshotCapture {
+        let commandGeneration: Int?
+        let activeStem: String?
+    }
+
     public init(client: any PipelineRunning, repo: URL,
                 sliderDebounce: Duration = .seconds(2)) {
         self.client = client
         self.repo = repo
         self.sliderDebounce = sliderDebounce
+        self.reviewFileDirectory = FileManager.default.temporaryDirectory
+    }
+
+    /// Test seam for the review-file write failure path. Production always
+    /// uses the public initializer and therefore the system temp directory.
+    init(client: any PipelineRunning, repo: URL, sliderDebounce: Duration,
+         reviewFileDirectory: URL) {
+        self.client = client
+        self.repo = repo
+        self.sliderDebounce = sliderDebounce
+        self.reviewFileDirectory = reviewFileDirectory
     }
 
     // MARK: - Snapshot
@@ -200,6 +232,9 @@ public final class AppModel {
     }
 
     private func performRefresh() async {
+        let capture = SnapshotCapture(
+            commandGeneration: activeCommand == nil ? nil : commandGeneration,
+            activeStem: activeCommand == nil ? nil : activeStem)
         let result = await client.status()
         guard result.envelope.ok, let snapshot = result.envelope.result else {
             surface(result.envelope.error
@@ -210,7 +245,7 @@ public final class AppModel {
         }
         self.snapshot = snapshot
         busyExternally = snapshot.lock.held && activeCommand == nil
-        reconcileDrafts(snapshot)
+        reconcileDrafts(snapshot, capturedDuring: capture)
     }
 
     public func photo(_ stem: String) -> PhotoStatus? {
@@ -289,9 +324,12 @@ public final class AppModel {
     /// during the command's intermediate states can't flap the draft;
     /// reconciliation happens once, at the terminal refresh (which runs with
     /// `activeCommand` already cleared).
-    private func reconcileDrafts(_ snapshot: StatusSnapshot) {
+    private func reconcileDrafts(_ snapshot: StatusSnapshot,
+                                 capturedDuring capture: SnapshotCapture) {
         for (stem, draft) in drafts {
-            if activeCommand != nil, activeStem == stem { continue }
+            if capture.commandGeneration != nil, capture.activeStem == stem {
+                continue
+            }
             guard let photo = snapshot.photos.first(where: { $0.stem == stem })
             else { continue }
             if photo.reviewRevision != draft.baseRevision, !draft.isStale {
@@ -338,21 +376,47 @@ public final class AppModel {
     /// pending edit on a style the user isn't looking at still belongs to the
     /// photo being approved.
     public func flushPendingAdjustments(stem: String) async {
-        let keys = pendingAdjustments.filter { $0.value.stem == stem }.keys
-        for key in keys {
+        var keys = Set(pendingAdjustments.compactMap { key, value in
+            value.stem == stem ? key : nil
+        })
+        keys.formUnion(inFlightAdjustments.compactMap { key, value in
+            value.stem == stem ? key : nil
+        })
+        for key in keys.sorted() {
             await debouncers[key]?.flush()
+            // If the debounce timer already took its action, `flush()` has
+            // nothing to run. Await the tracked task that action created.
+            await firePendingAdjust(key: key)
         }
     }
 
     private func firePendingAdjust(key: String) async {
-        // Taking the pending values here means a debounce timer and an
-        // explicit flush racing each other still produce exactly one `adjust`.
         guard let pending = pendingAdjustments.removeValue(forKey: key) else {
+            guard let inFlight = inFlightAdjustments[key] else { return }
+            await inFlight.task.value
+            if inFlightAdjustments[key]?.id == inFlight.id {
+                inFlightAdjustments.removeValue(forKey: key)
+            }
             return
         }
-        await applyAdjust(stem: pending.stem, style: pending.style,
-                          temperature: pending.temperature,
-                          exposure: pending.exposure)
+
+        // Queue a second batch for this key behind the first when the user
+        // moved the same slider again while its previous adjust was running.
+        let predecessor = inFlightAdjustments[key]?.task
+        let id = UUID()
+        let task = Task { @MainActor [weak self] in
+            await predecessor?.value
+            guard let self else { return }
+            await self.applyAdjust(stem: pending.stem, style: pending.style,
+                                   temperature: pending.temperature,
+                                   exposure: pending.exposure)
+        }
+        inFlightAdjustments[key] = InFlightAdjust(
+            id: id, stem: pending.stem, task: task)
+        await task.value
+        if inFlightAdjustments[key]?.id == id {
+            inFlightAdjustments.removeValue(forKey: key)
+        }
     }
 
     // MARK: - Actions
@@ -480,7 +544,7 @@ public final class AppModel {
                 ["x": $0.x, "y": $0.y, "w": $0.w, "h": $0.h]
             },
         ]
-        let url = FileManager.default.temporaryDirectory
+        let url = reviewFileDirectory
             .appendingPathComponent("printworks-review-\(UUID().uuidString).json")
         guard let data = try? JSONSerialization.data(withJSONObject: body,
                                                      options: [.sortedKeys]),
@@ -508,6 +572,7 @@ public final class AppModel {
             + ["--delivery-id", UUID().uuidString, "--json"]
         let ingested = await send(IngestResult.self, args: args,
                                   streamProgress: true)
+        applyIngestResult(ingested.envelope.result)
 
         // Result before error: skips/conflicts are collected from the result
         // even when the envelope failed with PARTIAL_FAILURE.
@@ -578,6 +643,18 @@ public final class AppModel {
     private func applyRunResult(_ result: RunResult?) {
         guard let result else { return }
         lastPublished = result.published
+        lastAdvanced = result.advanced
+        lastFailures = result.failed.reduce(into: [:]) { failures, failure in
+            failures[failure.stem] = failure
+        }
+    }
+
+    private func applyIngestResult(_ result: IngestResult?) {
+        guard let result else { return }
+        lastIngestFailures = result.failed.reduce(into: [:]) {
+            failures, failure in
+            failures[failure.file] = failure
+        }
     }
 
     // MARK: - Banner
@@ -612,6 +689,7 @@ public final class AppModel {
         banner = error
         bannerDetails = details.isEmpty ? nil : details
         bannerAction = Self.bannerAction(for: error.code)
+        if bannerAction == .retry, retry == nil { bannerAction = nil }
         lastFailedAction = bannerAction == .retry ? retry : nil
     }
 

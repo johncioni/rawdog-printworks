@@ -5,11 +5,14 @@ import XCTest
 /// (Envelopes are wrapped in CommandResult with an empty stderrTail.)
 final class FakeClient: PipelineRunning, @unchecked Sendable {
     var statusQueue: [Envelope<StatusSnapshot>] = []
+    var statusCalls = 0
     var mutateLog: [[String]] = []
     var mutateHandler: ((_ args: [String]) -> Any)!
+    var asyncMutateHandler: ((_ args: [String]) async -> Any)?
 
     func status() async -> CommandResult<StatusSnapshot> {
-        CommandResult(envelope: statusQueue.removeFirst(), stderrTail: "")
+        statusCalls += 1
+        return CommandResult(envelope: statusQueue.removeFirst(), stderrTail: "")
     }
     func crops(stem: String) async -> CommandResult<CropsResult> {
         CommandResult(envelope: Envelope(ok: true, result: CropsResult(
@@ -20,7 +23,12 @@ final class FakeClient: PipelineRunning, @unchecked Sendable {
                    onEvent: (@Sendable (ProgressEvent) -> Void)?) async
     -> CommandResult<R> {
         mutateLog.append(args)
-        return CommandResult(envelope: mutateHandler(args) as! Envelope<R>,
+        let response = if let asyncMutateHandler {
+            await asyncMutateHandler(args)
+        } else {
+            mutateHandler(args) as Any
+        }
+        return CommandResult(envelope: response as! Envelope<R>,
                              stderrTail: "")
     }
 }
@@ -62,6 +70,87 @@ final class SlowStatusClient: PipelineRunning, @unchecked Sendable {
                    onEvent: (@Sendable (ProgressEvent) -> Void)?) async
     -> CommandResult<R> {
         fatalError("unused")
+    }
+}
+
+actor AsyncGate {
+    private var isOpen = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        if isOpen { return }
+        await withCheckedContinuation { continuation in
+            waiters.append(continuation)
+        }
+    }
+
+    func open() {
+        isOpen = true
+        let pending = waiters
+        waiters.removeAll()
+        for waiter in pending { waiter.resume() }
+    }
+}
+
+/// Holds an adjust and a watcher refresh independently, so a test can prove
+/// the refresh was dispatched during the command but returned after it ended.
+final class DeferredReconcileClient: PipelineRunning, @unchecked Sendable {
+    private let lock = NSLock()
+    private var statusCallCount = 0
+    private let initial: Envelope<StatusSnapshot>
+    private let capturedDuringCommand: Envelope<StatusSnapshot>
+    private let terminal: Envelope<StatusSnapshot>
+
+    let mutationStarted = AsyncGate()
+    let mutationCanFinish = AsyncGate()
+    let capturedStatusStarted = AsyncGate()
+    let capturedStatusCanFinish = AsyncGate()
+
+    init(initial: Envelope<StatusSnapshot>,
+         capturedDuringCommand: Envelope<StatusSnapshot>,
+         terminal: Envelope<StatusSnapshot>) {
+        self.initial = initial
+        self.capturedDuringCommand = capturedDuringCommand
+        self.terminal = terminal
+    }
+
+    func status() async -> CommandResult<StatusSnapshot> {
+        let call = lock.withLock {
+            statusCallCount += 1
+            return statusCallCount
+        }
+        let envelope: Envelope<StatusSnapshot>
+        switch call {
+        case 1:
+            envelope = initial
+        case 2:
+            await capturedStatusStarted.open()
+            await capturedStatusCanFinish.wait()
+            envelope = capturedDuringCommand
+        default:
+            envelope = terminal
+        }
+        return CommandResult(envelope: envelope, stderrTail: "")
+    }
+
+    func crops(stem: String) async -> CommandResult<CropsResult> {
+        CommandResult(envelope: Envelope(ok: true, result: CropsResult(
+            stem: stem, basis: nil, windows: [:]), error: nil), stderrTail: "")
+    }
+
+    func mutate<R>(_ type: R.Type, args: [String],
+                   onEvent: (@Sendable (ProgressEvent) -> Void)?) async
+    -> CommandResult<R> {
+        await mutationStarted.open()
+        await mutationCanFinish.wait()
+        let result = AdjustResult(
+            stem: "P1", style: "natural", preview: "p.jpg",
+            temperature: Control(value: 5600, source: "sidecar"),
+            exposure: Control(value: nil, source: "camera"),
+            reviewRevisionBefore: "r1", reviewRevisionAfter: "r2")
+        return CommandResult(envelope: Envelope(ok: true, result: result,
+                                                error: nil) as! Envelope<R>,
+                             stderrTail: "")
     }
 }
 
@@ -193,7 +282,7 @@ final class AppModelTests: XCTestCase {
         let fake = FakeClient()
         fake.statusQueue = Array(repeating: snap([photo(stem: "P1", revision: "r1"),
                                                   photo(stem: "P2", revision: "r1")]),
-                                 count: 4)
+                                 count: 6)
         fake.mutateHandler = { args in
             Envelope(ok: true, result: AdjustResult(
                 stem: args[args.firstIndex(of: "--stem")! + 1],
@@ -207,8 +296,11 @@ final class AppModelTests: XCTestCase {
         let model = AppModel(client: fake, repo: URL(fileURLWithPath: "/r"),
                              sliderDebounce: .zero)
         await model.refresh()
-        // Two different (stem, style) pairs scheduled back-to-back: BOTH fire.
+        // Three different (stem, style) pairs scheduled back-to-back: all fire,
+        // including both styles belonging to the stem flushed first.
         model.setSlider(stem: "P1", style: "natural", temperature: 5600,
+                        exposure: nil)
+        model.setSlider(stem: "P1", style: "filmic", temperature: 5500,
                         exposure: nil)
         model.setSlider(stem: "P2", style: "bw", temperature: 5400,
                         exposure: nil)
@@ -216,7 +308,70 @@ final class AppModelTests: XCTestCase {
         await model.flushPendingAdjustments(stem: "P2")
         let adjustTargets = fake.mutateLog.filter { $0.first == "adjust" }
             .map { "\($0[$0.firstIndex(of: "--stem")! + 1])|\($0[$0.firstIndex(of: "--style")! + 1])" }
-        XCTAssertEqual(Set(adjustTargets), ["P1|natural", "P2|bw"])
+        XCTAssertEqual(Set(adjustTargets),
+                       ["P1|natural", "P1|filmic", "P2|bw"])
+    }
+
+    /// Approve can arrive after the debounce timer has removed its pending
+    /// value but while the resulting adjust is still running. It must await
+    /// that task and serialize the rebased revision into the review file.
+    func testApproveWaitsForDebouncedAdjustAlreadyInFlight() async throws {
+        let fake = FakeClient()
+        fake.statusQueue = Array(repeating:
+            snap([photo(stem: "P1", revision: "r2")]), count: 4)
+        fake.statusQueue[0] = snap([photo(stem: "P1", revision: "r1")])
+
+        let adjustStarted = AsyncGate()
+        let adjustCanFinish = AsyncGate()
+        let adjustFinished = AsyncGate()
+        nonisolated(unsafe) var reviewRevision: String?
+        fake.asyncMutateHandler = { args in
+            switch args.first {
+            case "adjust":
+                await adjustStarted.open()
+                await adjustCanFinish.wait()
+                await adjustFinished.open()
+                return Envelope(ok: true, result: AdjustResult(
+                    stem: "P1", style: "natural", preview: "p.jpg",
+                    temperature: Control(value: 5600, source: "sidecar"),
+                    exposure: Control(value: nil, source: "camera"),
+                    reviewRevisionBefore: "r1", reviewRevisionAfter: "r2"),
+                    error: nil) as Any
+            case "approve":
+                // Model PipelineClient's FIFO: the invocation may be queued,
+                // but the already-written review file exposes which revision
+                // approve read before entering that queue.
+                await adjustFinished.wait()
+                let index = args.firstIndex(of: "--review-file")!
+                let data = FileManager.default.contents(atPath: args[index + 1])!
+                let body = try! JSONSerialization.jsonObject(with: data)
+                    as! [String: Any]
+                reviewRevision = body["expected_review_revision"] as? String
+                return Envelope(ok: true, result: ApproveResult(
+                    stem: "P1", state: "approved", fingerprint: "f"),
+                    error: nil) as Any
+            default:
+                return Envelope(ok: true, result: RunResult(
+                    published: [], advanced: [], failed: []), error: nil) as Any
+            }
+        }
+
+        let model = AppModel(client: fake, repo: URL(fileURLWithPath: "/r"),
+                             sliderDebounce: .zero)
+        await model.refresh()
+        model.startDraft(stem: "P1")
+        model.setSlider(stem: "P1", style: "natural", temperature: 5600,
+                        exposure: nil)
+        await adjustStarted.wait()
+
+        Task {
+            try? await Task.sleep(for: .milliseconds(50))
+            await adjustCanFinish.open()
+        }
+        await model.approve(stem: "P1")
+
+        XCTAssertEqual(reviewRevision, "r2")
+        XCTAssertEqual(model.drafts["P1"]?.baseRevision, "r2")
     }
 
     func testReReviewAdoptsRevisionAndResetsChecks() async {
@@ -313,27 +468,36 @@ final class AppModelTests: XCTestCase {
         XCTAssertTrue(model.drafts["P1"]!.isStale)
     }
 
-    /// Staleness evaluation is deferred while the stem's own command runs, and
-    /// happens once at the terminal refresh (spec §6.1).
+    /// A watcher status dispatched while this stem's own command is active can
+    /// return after the command clears its flags. Its intermediate snapshot is
+    /// still deferred; only the queued terminal refresh may reconcile.
     func testReconcileIsDeferredWhileTheStemsOwnCommandRuns() async {
-        let fake = FakeClient()
-        fake.statusQueue = [snap([photo(stem: "P1", revision: "r1")]),
-                            snap([photo(stem: "P1", revision: "r2")]),
-                            snap([photo(stem: "P1", revision: "r2")])]
+        let fake = DeferredReconcileClient(
+            initial: snap([photo(stem: "P1", revision: "r1")]),
+            capturedDuringCommand: snap([photo(stem: "P1", revision: "r1")]),
+            terminal: snap([photo(stem: "P1", revision: "r2")]))
         let model = AppModel(client: fake, repo: URL(fileURLWithPath: "/r"),
                              sliderDebounce: .zero)
         await model.refresh()
         model.startDraft(stem: "P1")
 
-        model.activeCommand = "adjust"
-        model.activeStem = "P1"
-        await model.refresh()          // intermediate state — must not flap
-        XCTAssertFalse(model.drafts["P1"]!.isStale)
+        let adjust = Task { @MainActor in
+            await model.applyAdjust(stem: "P1", style: "natural",
+                                    temperature: 5600, exposure: nil)
+        }
+        await fake.mutationStarted.wait()
 
-        model.activeCommand = nil
-        model.activeStem = nil
-        await model.refresh()          // terminal refresh reconciles
-        XCTAssertTrue(model.drafts["P1"]!.isStale)
+        let watcherRefresh = Task { @MainActor in await model.refresh() }
+        await fake.capturedStatusStarted.wait()
+
+        await fake.mutationCanFinish.open()
+        await adjust.value
+        XCTAssertNil(model.activeCommand) // captured status has not landed yet
+
+        await fake.capturedStatusCanFinish.open()
+        await watcherRefresh.value
+        XCTAssertEqual(model.drafts["P1"]!.baseRevision, "r2")
+        XCTAssertFalse(model.drafts["P1"]!.isStale)
     }
 
     /// The review-file is the only file this app writes: it goes to the system
@@ -418,7 +582,8 @@ final class AppModelTests: XCTestCase {
             Envelope(ok: false, result: RunResult(
                 published: [PublishedPhoto(stem: "P1", version: "v004",
                                            artifactCount: 29)],
-                advanced: [], failed: [StemFailure(
+                advanced: [AdvancedPhoto(stem: "P3", state: "preview_ready")],
+                failed: [StemFailure(
                     stem: "P2", code: "VERIFY_FAILED", message: "bad")]),
                 error: PipelineErrorInfo(code: "PARTIAL_FAILURE",
                                          message: "1 of 2 failed"))
@@ -428,6 +593,72 @@ final class AppModelTests: XCTestCase {
         await model.refresh()
         await model.reprocessAll()
         XCTAssertEqual(model.lastPublished.map(\.stem), ["P1"])  // result first
+        XCTAssertEqual(model.lastAdvanced.map(\.stem), ["P3"])
+        XCTAssertEqual(model.lastFailures["P2"], StemFailure(
+            stem: "P2", code: "VERIFY_FAILED", message: "bad"))
         XCTAssertEqual(model.banner?.code, "PARTIAL_FAILURE")    // then error
+    }
+
+    func testIngestStoresPerFileFailures() async {
+        let fake = FakeClient()
+        fake.statusQueue = [snap([])]
+        fake.mutateHandler = { _ in
+            Envelope(ok: false, result: IngestResult(
+                ingested: [], skipped: [], conflicts: [], failed: [FileFailure(
+                    file: "bad.rw2", code: "BAD_INPUT", message: "corrupt")]),
+                error: PipelineErrorInfo(code: "PARTIAL_FAILURE",
+                                         message: "1 file failed"))
+        }
+        let model = AppModel(client: fake, repo: URL(fileURLWithPath: "/r"),
+                             sliderDebounce: .zero)
+
+        await model.ingest(paths: ["/incoming/bad.rw2"])
+
+        XCTAssertEqual(model.lastIngestFailures["bad.rw2"], FileFailure(
+            file: "bad.rw2", code: "BAD_INPUT", message: "corrupt"))
+        XCTAssertEqual(model.banner?.code, "PARTIAL_FAILURE")
+    }
+
+    func testRefreshInternalFailureDoesNotOfferDeadRetry() async {
+        let fake = FakeClient()
+        fake.statusQueue = [Envelope(
+            ok: false, result: nil,
+            error: PipelineErrorInfo(code: "INTERNAL", message: "status failed"))]
+        let model = AppModel(client: fake, repo: URL(fileURLWithPath: "/r"),
+                             sliderDebounce: .zero)
+
+        await model.refresh()
+        XCTAssertEqual(model.banner?.code, "INTERNAL")
+        XCTAssertNil(model.bannerAction)
+
+        await model.retryBannerAction()
+        XCTAssertEqual(fake.statusCalls, 1)
+    }
+
+    func testReviewFileFailureDoesNotOfferDeadRetry() async {
+        let persistedCropPhoto = PhotoStatus(
+            stem: "P1", state: "review_required", deliveryId: "d1",
+            ingestedAt: "2026-08-12T00:00:00Z", reviewRevision: "r1",
+            previews: [:], previewHashes: [:], stalePreviews: [],
+            adjustments: [:],
+            crops: ["8x10": CropWindow(x: 0, y: 0, w: 1, h: 1,
+                                        source: "persisted")],
+            expressionAudit: [], published: PublishedInfo(
+                version: nil, path: nil, artifactCount: nil))
+        let fake = FakeClient()
+        fake.statusQueue = [snap([persistedCropPhoto]), snap([persistedCropPhoto])]
+        let model = AppModel(client: fake, repo: URL(fileURLWithPath: "/r"),
+                             sliderDebounce: .zero,
+                             reviewFileDirectory: URL(fileURLWithPath: "/dev/null"))
+        await model.refresh()
+        model.startDraft(stem: "P1")
+
+        await model.approve(stem: "P1")
+        XCTAssertEqual(model.banner?.code, "INTERNAL")
+        XCTAssertNil(model.bannerAction)
+        XCTAssertTrue(fake.mutateLog.isEmpty)
+
+        await model.retryBannerAction()
+        XCTAssertTrue(fake.mutateLog.isEmpty)
     }
 }
