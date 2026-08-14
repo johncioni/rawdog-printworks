@@ -43,8 +43,7 @@ Linear (RAW) + CodeRabbit, CI per PR. main = d0e6c49, clean, CI green.
   created, `.gitignore` modified, NOT yet committed.
   Check: `git -C $WT status --porcelain` and `git -C $WT log --oneline -3`.
 - NOTE: the checkpoint hook fires every turn while a background implementer
-  writes into that worktree — same repo, so HANDOFF is never newer than the
-  last repo change.
+  writes into that worktree (same repo, so HANDOFF is never the newest change).
 
 ## Next
 1. Review Task 1 when its report lands, then Tasks 2-11 through the same loop
