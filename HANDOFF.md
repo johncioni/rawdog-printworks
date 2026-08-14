@@ -16,11 +16,11 @@ Linear (RAW) + CodeRabbit, CI per PR. main = fba61d4, clean, CI green.
   `app/RAWdogPrintworks/Sources/`. Else package files land at the repo root.
 - RAW-10 complete (a3e8363): run_partial_failure shows RENDER_FAILED beside
   VERIFY_FAILED, so the decoder can't be built from a one-value fixture.
-- Task 1 complete (0bff85d): package + XcodeGen app target; the committed
-  `.xcodeproj` is spec-mandated (spec §9), not a slip.
-- Task 2 complete (3378ea9): contract models decoding the real fixtures.
-  RULING: error `code` fields stay `String`, never a closed enum — the tests
-  fail to COMPILE if someone narrows it.
+- Task 1 (0bff85d): package + XcodeGen app target; the committed `.xcodeproj`
+  is spec-mandated (spec §9), not a slip.
+- Task 2 (3378ea9): contract models decoding the real fixtures. RULING: error
+  `code` fields stay `String`, never a closed enum — tests fail to COMPILE if
+  narrowed.
 - Linear: RAW-1, RAW-5, RAW-10 Done. Open: RAW-2 (running), RAW-4, RAW-6..9.
 
 ## Ruled out
