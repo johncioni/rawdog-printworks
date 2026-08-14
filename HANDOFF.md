@@ -9,11 +9,10 @@ clean, CI green.
 ## Done
 - Plan 2 Tasks 1-4 COMPLETE, reviews clean (0bff85d, 3378ea9, e47ad9c,
   3dc7904). Task 5 AppModel implemented (532c311, 40/40) — reviewer running.
-- Task 3 took 1 fix round: a CRITICAL silent progress-event loss in the brief's
-  OWN mandated code (readabilityHandler race → 112-263 of 400 events dropped).
-  Ruled to fix anyway; replaced with a blocking-read loop per pipe.
-- RAW-10 (a3e8363): run_partial_failure now shows RENDER_FAILED beside
-  VERIFY_FAILED so the app's decoder can't be built from a one-value fixture.
+- Task 3 took 1 fix round: a CRITICAL event loss in the brief's OWN mandated
+  code (readabilityHandler race); replaced with a blocking-read loop per pipe.
+- RAW-10 (a3e8363): run_partial_failure shows RENDER_FAILED beside
+  VERIFY_FAILED, so the decoder can't be built from a one-value fixture.
 - REPO-MOVE ORPHAN AUDIT (docs/repo-move-orphans.md). Tool state is keyed by
   absolute path; the move stranded 4 memories (incl. the model-usage directive
   — why Tasks 1-5 wrongly ran Claude implementers) and the Codex trust entry.
@@ -21,9 +20,8 @@ clean, CI green.
 - MODEL POLICY (memory updated): Codex Sol 5.6 xhigh IMPLEMENTS, Opus 5 xhigh
   REVIEWS. Fable is exhausted — never route work to it.
 - Plan 1 SDD ledger/briefs/reports ARCHIVED to docs/superpowers/sdd-archive/
-  (305c396). They lived only in the json-interface worktree's gitignored
-  .superpowers/, so removing that worktree would have destroyed them. Removing
-  it is now safe.
+  (305c396) — they lived only in the json-interface worktree's gitignored
+  .superpowers/. Removing that worktree is now safe.
 
 ## Ruled out
 - Squash-merging Plan 1 — the 16 per-task commits are the record.
@@ -33,16 +31,19 @@ clean, CI green.
   ~/.claude/projects/-Users-john-photo-edits--claude-worktrees-json-interface/
   — too big to commit, and everything durable in it is now in the sdd-archive,
   the plan doc, or git. Leave it; deletion is irreversible for marginal gain.
-- Moving Task 6's refresh gate out of Task 5 — without it Task 5's own test has
-  a real data race; shipping a known race to keep a task boundary is the Task 3
-  mistake again.
+- Moving Task 6's refresh gate out of Task 5 — the reviewer confirmed it is
+  spec §7's watcher-storm rule verbatim, so it belongs regardless.
 
 ## In flight
 - WT=~/orca/workspaces/rawdog-printworks/plan2-printworks-app (branch
   johncioni/plan2-printworks-app). Ledger + all 11 briefs + task reports:
   $WT/.superpowers/sdd/2026-08-12-printworks-app/
-- TASK 5 REVIEWER running (opus) on review-3dc7904..532c311.diff. Check:
-  `git -C $WT log --oneline -3`.
+- TASK 5 IN FIX ROUND 1/5, dispatched to CODEX (gpt-5.6-sol xhigh, --fresh) —
+  the first Codex dispatch of this run. Spec ❌: review found 1 Critical +
+  5 Important, all probe-reproduced, incl. `flushPendingAdjustments` not
+  flushing (approve can serialize a pre-adjust revision) and a ~14% flaky
+  suite. Fix spec: $WT/.superpowers/sdd/.../task-5-fix-round-1.md.
+  CODEX CANNOT COMMIT (.git read-only in its sandbox) — I stage and commit.
 
 ## Next
 1. When Task 5's review lands: ledger it, then dispatch TASK 6 TO CODEX —
