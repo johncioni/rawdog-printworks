@@ -17,13 +17,13 @@ done; Task 6 is in flight. main = 9b7941a, clean, CI green.
   reconcile skips when it moved. NOTE the naive one-liner does NOT work — as
   `Int?`, `capture.commandGeneration != commandGeneration` is always true when
   captured idle, killing reconcile entirely; the field had to go non-optional.
-  Guard removed in a scratch copy = new test fails 5/5 and nothing else does.
-  20/20 green suite runs at 46 tests, xcodebuild OK, pytest 295/1.
+  Scratch-revert of the guard fails the new test 5/5 and nothing else; 20/20
+  green at 46 tests, xcodebuild OK, pytest 295/1.
 - MODEL POLICY (in memory): Codex Sol 5.6 xhigh IMPLEMENTS, Opus 5 xhigh
   REVIEWS. Fable exhausted — never route to it. Codex's writable root is the
   CWD THAT LAUNCHES IT, so always `cd $WT` first; job state is keyed the same
-  way (`status <id>` from the wrong cwd says "No job found"). Codex cannot run
-  xcodebuild (sandbox, exit 74) — controller does it.
+  way (`status <id>` elsewhere = "No job found"). It cannot run xcodebuild
+  (sandbox, exit 74) — controller does.
 
 ## Ruled out
 - Squash-merging Plan 1 — the 16 per-task commits are the record.
@@ -31,32 +31,30 @@ done; Task 6 is in flight. main = 9b7941a, clean, CI green.
   adjudicated (spec §4.2; review rounds 2+3).
 - Moving Task 6's refresh gate out of Task 5 — it is spec §7's watcher-storm
   rule verbatim, so it belongs regardless. Task 6 must NOT duplicate it.
-- Deleting the 38MB raw Plan 1 transcript at ~/.claude/projects/-Users-john-
-  photo-edits--claude-worktrees-json-interface/ — superseded by the archive.
+- Deleting the 38MB raw Plan 1 transcript (~/.claude/projects/-Users-john-
+  photo-edits--claude-worktrees-json-interface/) — the archive supersedes it.
 
 ## In flight
 - WT=~/orca/workspaces/rawdog-printworks/plan2-printworks-app (branch
   johncioni/plan2-printworks-app, HEAD 3212f6c). Ledger + 11 briefs + reports:
-  $WT/.superpowers/sdd/2026-08-12-printworks-app/progress.md
-- TASK 6 (RepoWatcher) RUNNING: Codex job task-mssrwrc5-9wl7s9, dispatched from
-  $WT. Background poll bcvprprzu notifies on terminal status. Its dispatch
+  $WT/.superpowers/sdd/2026-08-12-printworks-app/ (progress.md is the ledger)
+- TASK 6 (RepoWatcher) RUNNING: Codex job task-mssrwrc5-9wl7s9, dispatched
+  from $WT; background poll bcvprprzu notifies on terminal status. Its dispatch
   carries 5 rulings the brief lacks (bare-`Sources/` = app/PrintworksCore/;
-  gate already exists; hard file scope incl. DO NOT TOUCH HANDOFF.md — it
-  overwrote this file last time; no git, no xcodebuild; 20-run anti-flake gate).
+  gate already exists; hard file scope incl. DO NOT TOUCH HANDOFF.md, it
+  overwrote this file last time; no git; no xcodebuild; 20-run anti-flake).
 
 ## Next
-1. When Codex finishes: `cd $WT`, read
-   .superpowers/sdd/.../task-6-report.md, confirm ONLY the 2 intended files
-   changed (`git status`), then stage+commit for it, run xcodebuild yourself
-   (`cd $WT/app/RAWdogPrintworks && xcodebuild -project RAWdogPrintworks
-   .xcodeproj -scheme RAWdogPrintworks -destination 'platform=macOS,arch=arm64'
-   build`) and 20x `swift test` in $WT/app/PrintworksCore.
-2. Then review Task 6 (ASK the user first — this harness is configured not to
-   spawn Agent subagents unless requested).
+1. When Codex finishes: `cd $WT`, read .superpowers/sdd/.../task-6-report.md,
+   confirm ONLY the 2 intended files changed, stage+commit for it, then run
+   BOTH gates yourself — `cd $WT/app/RAWdogPrintworks && xcodebuild -project
+   RAWdogPrintworks.xcodeproj -scheme RAWdogPrintworks -destination
+   'platform=macOS,arch=arm64' build`, and 20x `swift test` in
+   $WT/app/PrintworksCore.
+2. Then review Task 6 — ASK first: this harness will not spawn Agent subagents
+   unless the user requests it.
 3. CARRY: Task 7's spec §7 badge is UNBLOCKED — F5 added lastFailures/
    lastAdvanced/lastIngestFailures, single write site. Tasks 8/9/10 briefs are
    23-25 lines and need fuller dispatches (point at spec §5-§8, the AppModel
-   surface, the view files Task 7 leaves). Task 11 must pin an xcodebuild
-   `-destination`.
-4. Deferred minors are in the ledger — point the final whole-branch review at
-   them. USER: enable swift-lsp.
+   surface, the view files Task 7 leaves). Task 11 must pin a `-destination`.
+4. Deferred minors: in the ledger, for the whole-branch review. USER: swift-lsp.
