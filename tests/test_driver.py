@@ -1207,8 +1207,13 @@ def test_process_all_collect_clamps_per_stem_codes_to_the_contract(
     class Bogus(Exception):
         code = "NOT_A_CONTRACT_CODE"
 
+    class Unhashable(Exception):
+        # ERROR_CODES is a frozenset; a membership test on this would raise
+        # TypeError inside the handler and abort the batch.
+        code = ["not", "a", "string"]
+
     m = manifest.load()
-    for stem in ("P1", "P2"):
+    for stem in ("P1", "P2", "P3"):
         manifest.set_state(m, stem, "approved")
         m["photos"][stem]["fingerprint"] = "fp"
     manifest.save(m)
@@ -1217,6 +1222,8 @@ def test_process_all_collect_clamps_per_stem_codes_to_the_contract(
     def render_one(stem, only=None):
         if stem == "P1":
             raise Bogus("exposes a code outside the contract")
+        if stem == "P3":
+            raise Unhashable("exposes an unhashable code")
         raise jsonio.CommandError("INVALID_STATE", "a real contract code")
 
     monkeypatch.setattr(driver, "render_photo", render_one)
@@ -1227,7 +1234,8 @@ def test_process_all_collect_clamps_per_stem_codes_to_the_contract(
     driver.process_all(collect=collect)
 
     by_stem = {entry["stem"]: entry["code"] for entry in collect["failed"]}
-    assert by_stem == {"P1": "RENDER_FAILED", "P2": "INVALID_STATE"}
+    assert by_stem == {"P1": "RENDER_FAILED", "P2": "INVALID_STATE",
+                       "P3": "RENDER_FAILED"}
     assert all(entry["code"] in jsonio.ERROR_CODES
                for entry in collect["failed"])
 

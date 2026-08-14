@@ -817,12 +817,16 @@ def process_all(stems: set[str] | None = None, force: bool = False,
                     # never sees CommandError.__init__'s ERROR_CODES check:
                     # without this, failed[].code could leave the closed set
                     # that Plan 2's decoder is built against.
+                    # isinstance first: ERROR_CODES is a frozenset, so an
+                    # unhashable .code (list, dict) would raise TypeError from
+                    # the membership test — raised inside this handler, it
+                    # would abort the very batch this block exists to protect.
                     code = getattr(error, "code", None)
+                    if not isinstance(code, str) or (
+                            code not in jsonio.ERROR_CODES):
+                        code = "RENDER_FAILED"
                     collect["failed"].append(
-                        {"stem": stem,
-                         "code": (code if code in jsonio.ERROR_CODES
-                                  else "RENDER_FAILED"),
-                         "message": str(error)})
+                        {"stem": stem, "code": code, "message": str(error)})
             finally:
                 if remembered is not None and not persisted:
                     _restore_forced(data, stem, remembered)
