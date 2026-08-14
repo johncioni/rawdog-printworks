@@ -4,7 +4,7 @@
 RAWdog Printworks. Plan 1 (pipeline `--json` interface) is MERGED; its
 golden fixtures in `tests/fixtures/json_contract/` bind Plan 2 — the macOS
 SwiftUI app (RAW-2), the next work. Orca + GitHub + Linear (RAW) +
-CodeRabbit, CI per PR. main = 4f190e4, CI green, 296 tests pass.
+CodeRabbit, CI per PR. main = 0e3749b, CI green, 296 tests pass.
 
 ## Done
 - PR #3 merged (356115c) as a MERGE COMMIT, keeping all 16 task commits.
