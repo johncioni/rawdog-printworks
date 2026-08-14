@@ -35,8 +35,6 @@ Linear (RAW) + CodeRabbit, CI per PR. main = fba61d4, clean, CI green.
   adjudicated design decisions (spec §4.2; spec review rounds 2+3).
 - Hardcoding `.venv/bin/python` in tests (breaks CI, no `.venv` there) and
   `-> None` annotations (nothing in this repo is annotated; no Ruff config).
-- Adding a `repoFixturesURL()` helper Task 2's prose names but its own code
-  never uses — verified no later task consumes it; it would be dead code.
 
 ## In flight
 - WT=~/orca/workspaces/rawdog-printworks/plan2-printworks-app (branch
