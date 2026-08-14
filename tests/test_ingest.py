@@ -264,6 +264,35 @@ def test_stage_sources_hashes_the_staged_temp_not_the_live_source(
     assert (paths.input_dir() / "P9.RW2").read_bytes() == b"first-bytes"
 
 
+def test_stage_sources_dedup_decision_uses_the_staged_bytes(
+        tmp_repo, monkeypatch):
+    # Placement alone cannot catch a live-source hash bug: the placed file is
+    # copied from the staged temp either way. Pre-seeding Input/ under a
+    # different stem with the pre-mutation content makes the DECISION
+    # observable — hashing the staged copy sees a content duplicate and skips,
+    # while hashing the mutated source would see new content and place it.
+    from pathlib import Path
+    from pipeline import ingest, paths
+    (paths.input_dir() / "P0.RW2").write_bytes(b"first-bytes")
+    src = tmp_repo / "elsewhere"
+    src.mkdir()
+    f = src / "P9.RW2"
+    f.write_bytes(b"first-bytes")
+
+    original_copy2 = ingest.shutil.copy2
+
+    def mutating_copy(source, dest):
+        original_copy2(source, dest)
+        Path(source).write_bytes(b"MUTATED-AFTER-COPY")
+    monkeypatch.setattr(ingest.shutil, "copy2", mutating_copy)
+
+    result = ingest.stage_sources([f])
+
+    assert result["placed"] == []
+    assert result["skipped"][0]["reason"] == "duplicate content"
+    assert not (paths.input_dir() / "P9.RW2").exists()
+
+
 def test_run_records_delivery_metadata_only_when_given(tmp_repo, monkeypatch):
     from pipeline import ingest, recipe
     monkeypatch.setattr(ingest, "exif_summary", lambda p: {
