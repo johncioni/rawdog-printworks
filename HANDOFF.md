@@ -57,4 +57,3 @@ clean, CI green.
 4. CARRY INTO TASK 11: pin an xcodebuild `-destination`; any task editing
    `project.yml` must regenerate + commit the `.xcodeproj` in the same commit.
 5. Deferred minors are logged in the ledger — point the final whole-branch
-   review at them. USER: enable swift-lsp.
