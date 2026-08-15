@@ -607,7 +607,7 @@ public final class AppModel {
                     retry: { [weak self] in await self?.ingest(paths: paths) })
         } else if let error = runError {
             surface(error, details: runDetails,
-                    retry: { [weak self] in await self?.reprocessAll() })
+                    retry: { [weak self] in await self?.runAll() })
         } else if !notices.isEmpty {
             // Not a pipeline failure — a report the user has to act on in the
             // CLI. Carries its own code so §7's action mapping offers no button.
@@ -632,6 +632,15 @@ public final class AppModel {
     }
 
     /// Plain `run --stem S --json` — the Retry behind a failed render.
+    public func retryRender(stem: String) async {
+        await runStem(stem)
+    }
+
+    private func runAll() async {
+        await runCycle(stem: nil, args: ["run", "--json"],
+                       retry: { [weak self] in await self?.runAll() })
+    }
+
     private func runStem(_ stem: String) async {
         await runCycle(stem: stem, args: ["run", "--stem", stem, "--json"],
                        retry: { [weak self] in await self?.runStem(stem) })

@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 import PrintworksCore
 
@@ -56,17 +55,42 @@ struct GridView: View {
         let appearance = PhotoStateAppearance(state: photo.state)
         return VStack(alignment: .leading, spacing: 10) {
             ZStack(alignment: .topLeading) {
-                preview(photo)
-                    .id(photo.previewHashes["natural"] ?? "")
+                PreviewImage(
+                    path: photo.previews["natural"] ?? nil,
+                    contentHash: photo.previewHashes["natural"] ?? nil,
+                    repo: model.repo
+                )
 
                 Label(appearance.label, systemImage: "circle.fill")
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(appearance.color)
                     .padding(.horizontal, 9)
                     .padding(.vertical, 6)
-                    .background(.ultraThinMaterial,
+                    .background(Theme.panel.opacity(0.85),
                                 in: RoundedRectangle(cornerRadius: 8))
                     .padding(10)
+
+                if model.lastFailures[photo.stem] != nil {
+                    HStack(spacing: 8) {
+                        Label("Render failed",
+                              systemImage: "exclamationmark.triangle.fill")
+                        Button("Retry") {
+                            Task { await model.retryRender(stem: photo.stem) }
+                        }
+                        .buttonStyle(.borderless)
+                        .disabled(model.busyExternally
+                                  || model.activeCommand != nil)
+                    }
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 6)
+                    .background(Color.red.opacity(0.9),
+                                in: RoundedRectangle(cornerRadius: 8))
+                    .frame(maxWidth: .infinity, maxHeight: .infinity,
+                           alignment: .topTrailing)
+                    .padding(10)
+                }
 
                 if let progress = model.renderProgress[photo.stem] {
                     VStack {
@@ -92,25 +116,6 @@ struct GridView: View {
                 .stroke(Theme.hairline, lineWidth: 1)
         }
         .contentShape(RoundedRectangle(cornerRadius: 10))
-    }
-
-    @ViewBuilder
-    private func preview(_ photo: PhotoStatus) -> some View {
-        if let path = photo.previews["natural"] ?? nil,
-           let image = NSImage(contentsOf: RepoPaths.resolve(path, repo: model.repo)) {
-            Image(nsImage: image)
-                .resizable()
-                .scaledToFill()
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .clipped()
-        } else {
-            ZStack {
-                Theme.canvas
-                Image(systemName: "photo")
-                    .font(.largeTitle)
-                    .foregroundStyle(.secondary)
-            }
-        }
     }
 
     private var visiblePhotos: [PhotoStatus] {

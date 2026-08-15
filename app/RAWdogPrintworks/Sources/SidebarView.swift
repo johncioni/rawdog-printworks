@@ -1,4 +1,3 @@
-import AppKit
 import SwiftUI
 import PrintworksCore
 
@@ -116,8 +115,13 @@ struct SidebarView: View {
     private func photoRow(_ photo: PhotoStatus) -> some View {
         let appearance = PhotoStateAppearance(state: photo.state)
         return HStack(spacing: 10) {
-            sidebarThumbnail(photo)
-                .id(photo.previewHashes["natural"] ?? "")
+            PreviewImage(
+                path: photo.previews["natural"] ?? nil,
+                contentHash: photo.previewHashes["natural"] ?? nil,
+                repo: model.repo
+            )
+            .frame(width: 42, height: 42)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(photo.stem)
@@ -135,23 +139,6 @@ struct SidebarView: View {
         }
         .contentShape(Rectangle())
         .padding(.vertical, 2)
-    }
-
-    @ViewBuilder
-    private func sidebarThumbnail(_ photo: PhotoStatus) -> some View {
-        if let path = photo.previews["natural"] ?? nil,
-           let image = NSImage(contentsOf: RepoPaths.resolve(path, repo: model.repo)) {
-            Image(nsImage: image)
-                .resizable()
-                .scaledToFill()
-                .frame(width: 42, height: 42)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-        } else {
-            Image(systemName: "photo")
-                .foregroundStyle(.secondary)
-                .frame(width: 42, height: 42)
-                .background(Theme.panel, in: RoundedRectangle(cornerRadius: 6))
-        }
     }
 
     private func pipelineRow(

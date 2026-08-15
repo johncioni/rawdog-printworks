@@ -52,8 +52,9 @@ struct PrintworksApp: App {
 
         watcher.start()
         updatePolling()
-        defer { watcher.stop() }
 
+        // The watcher is shared by every WindowGroup scene. A cancelled scene
+        // removes only its stream continuation; RepoWatcher.deinit owns stop().
         for await _ in changes {
             guard !Task.isCancelled else { break }
             await model.refresh()

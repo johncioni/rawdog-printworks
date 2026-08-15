@@ -10,6 +10,7 @@
 		2B8E1124FD6637511E671575 /* ErrorBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8A0259826B63F3D422ECB93 /* ErrorBanner.swift */; };
 		53AD4CEDA3ED9B9DB4F12FBF /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8488AC88AADDEF83C91D87C /* SidebarView.swift */; };
 		753ABA92C72ECC870AE900F3 /* PrintworksApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3CB3B941DFCAD38A0263C82 /* PrintworksApp.swift */; };
+		901973283AEAF7846AA41145 /* PreviewImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DB3FFC02930C9ACFD2BD4FF /* PreviewImage.swift */; };
 		BE5A825A7AF83E5ADCD3A283 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFC7998A937FE9922A71CC94 /* Theme.swift */; };
 		D1AD8D0793F2B7CB4E59E046 /* MainWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = D932305A2A209F9D6B4925B9 /* MainWindow.swift */; };
 		DBBE77FA40C7C017B7839141 /* GridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58B319B94EFAF5323E2AF00C /* GridView.swift */; };
@@ -19,6 +20,7 @@
 /* Begin PBXFileReference section */
 		58B319B94EFAF5323E2AF00C /* GridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridView.swift; sourceTree = "<group>"; };
 		676BC75110657924D2B3FB9F /* PrintworksCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = PrintworksCore; path = ../PrintworksCore; sourceTree = SOURCE_ROOT; };
+		7DB3FFC02930C9ACFD2BD4FF /* PreviewImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewImage.swift; sourceTree = "<group>"; };
 		A3CB3B941DFCAD38A0263C82 /* PrintworksApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrintworksApp.swift; sourceTree = "<group>"; };
 		A8A0259826B63F3D422ECB93 /* ErrorBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ErrorBanner.swift; sourceTree = "<group>"; };
 		BCFF02D96323B290067ABBBB /* RAWdogPrintworks.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RAWdogPrintworks.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -70,6 +72,7 @@
 				A8A0259826B63F3D422ECB93 /* ErrorBanner.swift */,
 				58B319B94EFAF5323E2AF00C /* GridView.swift */,
 				D932305A2A209F9D6B4925B9 /* MainWindow.swift */,
+				7DB3FFC02930C9ACFD2BD4FF /* PreviewImage.swift */,
 				A3CB3B941DFCAD38A0263C82 /* PrintworksApp.swift */,
 				C8488AC88AADDEF83C91D87C /* SidebarView.swift */,
 				EFC7998A937FE9922A71CC94 /* Theme.swift */,
@@ -140,6 +143,7 @@
 				2B8E1124FD6637511E671575 /* ErrorBanner.swift in Sources */,
 				DBBE77FA40C7C017B7839141 /* GridView.swift in Sources */,
 				D1AD8D0793F2B7CB4E59E046 /* MainWindow.swift in Sources */,
+				901973283AEAF7846AA41145 /* PreviewImage.swift in Sources */,
 				753ABA92C72ECC870AE900F3 /* PrintworksApp.swift in Sources */,
 				53AD4CEDA3ED9B9DB4F12FBF /* SidebarView.swift in Sources */,
 				BE5A825A7AF83E5ADCD3A283 /* Theme.swift in Sources */,

@@ -673,6 +673,39 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.banner?.code, "PARTIAL_FAILURE")
     }
 
+    func testIngestRunFailureRetryDoesNotForceWholeRepo() async {
+        let fake = FakeClient()
+        fake.statusQueue = [snap([]), snap([])]
+        var runCalls = 0
+        fake.mutateHandler = { args in
+            if args.first == "ingest" {
+                return Envelope(ok: true, result: IngestResult(
+                    ingested: ["P1"], skipped: [], conflicts: [], failed: []),
+                    error: nil) as Any
+            }
+            runCalls += 1
+            if runCalls == 1 {
+                return Envelope(ok: false, result: RunResult(
+                    published: [], advanced: [], failed: [StemFailure(
+                        stem: "P1", code: "RENDER_FAILED", message: "bad")]),
+                    error: PipelineErrorInfo(code: "RENDER_FAILED",
+                                             message: "render failed")) as Any
+            }
+            return Envelope(ok: true, result: RunResult(
+                published: [], advanced: [], failed: []), error: nil) as Any
+        }
+        let model = AppModel(client: fake, repo: URL(fileURLWithPath: "/r"),
+                             sliderDebounce: .zero)
+
+        await model.ingest(paths: ["/incoming/P1.rw2"])
+        XCTAssertEqual(model.bannerAction, .retry)
+        await model.retryBannerAction()
+
+        let retryArgs = fake.mutateLog.last
+        XCTAssertEqual(retryArgs, ["run", "--json"])
+        XCTAssertFalse(retryArgs?.contains("--force") ?? true)
+    }
+
     func testRefreshInternalFailureDoesNotOfferDeadRetry() async {
         let fake = FakeClient()
         fake.statusQueue = [Envelope(
