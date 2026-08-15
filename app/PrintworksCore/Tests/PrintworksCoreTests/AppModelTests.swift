@@ -225,6 +225,80 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.drafts["P1"]!.baseRevision, "r2")
     }
 
+    func testRerenderPreviewSendsExactArgsAndRefreshes() async {
+        let fake = FakeClient()
+        fake.statusQueue = [snap([photo(stem: "P1", revision: "r2")])]
+        fake.mutateHandler = { _ in
+            Envelope(ok: true, result: AdjustResult(
+                stem: "P1", style: "filmic", preview: "p.jpg",
+                temperature: Control(value: nil, source: "camera"),
+                exposure: Control(value: nil, source: "camera"),
+                reviewRevisionBefore: "r1", reviewRevisionAfter: "r2"),
+                error: nil)
+        }
+        let model = AppModel(client: fake, repo: URL(fileURLWithPath: "/r"),
+                             sliderDebounce: .zero)
+
+        await model.rerenderPreview(stem: "P1", style: "filmic")
+
+        XCTAssertEqual(fake.mutateLog, [[
+            "preview", "--stem", "P1", "--style", "filmic", "--json",
+        ]])
+        XCTAssertEqual(fake.statusCalls, 1)
+    }
+
+    func testRerenderPreviewUsesSharedRebaseForBothPairBranches() async {
+        let matching = FakeClient()
+        matching.statusQueue = [
+            snap([photo(stem: "P1", revision: "r1")]),
+            snap([photo(stem: "P1", revision: "r2")]),
+        ]
+        matching.mutateHandler = { _ in
+            Envelope(ok: true, result: AdjustResult(
+                stem: "P1", style: "filmic", preview: "p.jpg",
+                temperature: Control(value: nil, source: "camera"),
+                exposure: Control(value: nil, source: "camera"),
+                reviewRevisionBefore: "r1", reviewRevisionAfter: "r2"),
+                error: nil)
+        }
+        let matchingModel = AppModel(
+            client: matching, repo: URL(fileURLWithPath: "/r"),
+            sliderDebounce: .zero)
+        await matchingModel.refresh()
+        matchingModel.startDraft(stem: "P1")
+
+        await matchingModel.rerenderPreview(stem: "P1", style: "filmic")
+
+        XCTAssertFalse(matchingModel.drafts["P1"]!.isStale)
+        XCTAssertEqual(matchingModel.drafts["P1"]!.baseRevision, "r2")
+
+        let nonmatching = FakeClient()
+        // Keep the terminal snapshot at the draft's old revision so only the
+        // shared rebase path can mark the non-matching pair stale.
+        nonmatching.statusQueue = [
+            snap([photo(stem: "P1", revision: "r1")]),
+            snap([photo(stem: "P1", revision: "r1")]),
+        ]
+        nonmatching.mutateHandler = { _ in
+            Envelope(ok: true, result: AdjustResult(
+                stem: "P1", style: "filmic", preview: "p.jpg",
+                temperature: Control(value: nil, source: "camera"),
+                exposure: Control(value: nil, source: "camera"),
+                reviewRevisionBefore: "rX", reviewRevisionAfter: "r2"),
+                error: nil)
+        }
+        let nonmatchingModel = AppModel(
+            client: nonmatching, repo: URL(fileURLWithPath: "/r"),
+            sliderDebounce: .zero)
+        await nonmatchingModel.refresh()
+        nonmatchingModel.startDraft(stem: "P1")
+
+        await nonmatchingModel.rerenderPreview(stem: "P1", style: "filmic")
+
+        XCTAssertTrue(nonmatchingModel.drafts["P1"]!.isStale)
+        XCTAssertEqual(nonmatchingModel.drafts["P1"]!.baseRevision, "r1")
+    }
+
     func testCanApproveGates() async {
         let fake = FakeClient()
         fake.statusQueue = [snap([photo(stem: "P1", revision: "r1")])]

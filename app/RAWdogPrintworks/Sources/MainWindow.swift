@@ -134,15 +134,3 @@ struct MainWindow: View {
         }
     }
 }
-
-/// Task 8 replaces this placeholder with the review canvas and inspector.
-struct ReviewScreen: View {
-    @Bindable var model: AppModel
-
-    var body: some View {
-        Text(model.selectedStem.map { "Review \($0)" } ?? "Review")
-            .font(.title2)
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}

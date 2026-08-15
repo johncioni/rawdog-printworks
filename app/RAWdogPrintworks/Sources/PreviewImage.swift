@@ -84,10 +84,19 @@ struct PreviewImage: View {
     let path: String?
     let contentHash: String?
     let repo: URL
+    let contentMode: ContentMode
 
     @Environment(\.displayScale) private var displayScale
     @State private var preview: DownsampledPreview?
     @State private var loadedHash: String?
+
+    init(path: String?, contentHash: String?, repo: URL,
+         contentMode: ContentMode = .fill) {
+        self.path = path
+        self.contentHash = contentHash
+        self.repo = repo
+        self.contentMode = contentMode
+    }
 
     var body: some View {
         GeometryReader { geometry in
@@ -104,7 +113,7 @@ struct PreviewImage: View {
             if let preview {
                 Image(decorative: preview.image, scale: displayScale)
                     .resizable()
-                    .scaledToFill()
+                    .aspectRatio(contentMode: contentMode)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .clipped()
             } else {
