@@ -2,6 +2,8 @@ import Darwin
 import Foundation
 
 public final class RepoWatcher: @unchecked Sendable {
+    private static let maxCoalesceWait = 2.0
+
     private static let watchedDirectories = [
         "Input",
         "previews",
@@ -32,53 +34,105 @@ public final class RepoWatcher: @unchecked Sendable {
     private let coalesceDelay: Double
     private let queue = DispatchQueue(label: "com.rawdog.printworks.repo-watcher",
                                       qos: .utility)
+    private let queueKey = DispatchSpecificKey<Void>()
     private let lock = NSLock()
-    private let continuation: AsyncStream<Void>.Continuation
 
     private var watches: [String: DirectoryWatch] = [:]
+    private var lifecycleGeneration: UInt64 = 0
+    private var stopsInFlight = 0
     private var pendingChange = false
+    private var firstPendingChangeAt: DispatchTime?
     private var coalesceGeneration: UInt64 = 0
     private var pendingCoalesce: DispatchWorkItem?
     private var pollingGeneration: UInt64 = 0
     private var pollingTask: Task<Void, Never>?
+    private var continuations: [UInt64: AsyncStream<Void>.Continuation] = [:]
+    private var nextConsumerID: UInt64 = 0
 
-    public let changes: AsyncStream<Void>
+    public var changes: AsyncStream<Void> {
+        AsyncStream(bufferingPolicy: .bufferingNewest(1)) { [weak self] continuation in
+            guard let self else {
+                continuation.finish()
+                return
+            }
+            let consumerID = lock.withLock {
+                nextConsumerID &+= 1
+                continuations[nextConsumerID] = continuation
+                return nextConsumerID
+            }
+            continuation.onTermination = { [weak self] _ in
+                self?.removeContinuation(consumerID)
+            }
+        }
+    }
 
     public init(repo: URL, coalesce: Duration = .milliseconds(500)) {
         self.repo = repo
         self.coalesceDelay = Self.seconds(coalesce)
-        let stream = AsyncStream<Void>.makeStream(
-            bufferingPolicy: .bufferingNewest(1))
-        self.changes = stream.stream
-        self.continuation = stream.continuation
+        queue.setSpecific(key: queueKey, value: ())
     }
 
     deinit {
         stop()
-        continuation.finish()
     }
 
     /// Starts sources for every currently present review-input directory.
     /// Calling this again is intentional: existing sources are retained while
     /// paths that were absent during an earlier call are retried.
     public func start() {
+        start(afterEntry: nil)
+    }
+
+    private func start(afterEntry: (@Sendable () -> Void)?) {
+        let generation: UInt64? = lock.withLock {
+            guard stopsInFlight == 0 else { return nil }
+            return lifecycleGeneration
+        }
+        guard let generation else { return }
+
+        afterEntry?()
         for relativePath in Self.watchedDirectories {
-            startWatching(relativePath)
+            startWatching(relativePath,
+                          requiredLifecycleGeneration: generation)
         }
     }
 
-    /// Cancels every source, waits for each cancellation handler to close its
-    /// descriptor, cancels polling, and invalidates any queued coalesce fire.
+    #if DEBUG
+    func _startForTesting(afterEntry: @escaping @Sendable () -> Void) {
+        start(afterEntry: afterEntry)
+    }
+
+    func _runOnPrivateQueueForTesting(
+        _ operation: @escaping @Sendable () -> Void
+    ) {
+        queue.async(execute: operation)
+    }
+    #endif
+
+    /// Cancels every source, cancels polling, invalidates queued coalescing,
+    /// and finishes current consumers. Off the source queue it also waits for
+    /// cancellation handlers to close descriptors; on that queue the handlers
+    /// drain immediately after this call returns, avoiding self-deadlock.
     public func stop() {
+        let onOwnQueue = DispatchQueue.getSpecific(key: queueKey) != nil
         let stopped = lock.withLock {
+            lifecycleGeneration &+= 1
+            stopsInFlight += 1
             pollingGeneration &+= 1
             coalesceGeneration &+= 1
             pendingChange = false
+            firstPendingChangeAt = nil
 
-            let state = (pollingTask, pendingCoalesce, Array(watches.values))
+            let state = (
+                pollingTask,
+                pendingCoalesce,
+                Array(watches.values),
+                Array(continuations.values)
+            )
             pollingTask = nil
             pendingCoalesce = nil
             watches.removeAll()
+            continuations.removeAll()
             return state
         }
 
@@ -87,8 +141,16 @@ public final class RepoWatcher: @unchecked Sendable {
         for watch in stopped.2 {
             watch.source.cancel()
         }
-        for watch in stopped.2 {
-            watch.closed.wait()
+        if !onOwnQueue {
+            for watch in stopped.2 {
+                watch.closed.wait()
+            }
+        }
+        for continuation in stopped.3 {
+            continuation.finish()
+        }
+        lock.withLock {
+            stopsInFlight -= 1
         }
     }
 
@@ -142,9 +204,19 @@ public final class RepoWatcher: @unchecked Sendable {
 
     private func startWatching(
         _ relativePath: String,
+        requiredLifecycleGeneration: UInt64? = nil,
         requiredPollingGeneration: UInt64? = nil
     ) {
         lock.lock()
+        if stopsInFlight != 0 {
+            lock.unlock()
+            return
+        }
+        if let requiredLifecycleGeneration,
+           requiredLifecycleGeneration != lifecycleGeneration {
+            lock.unlock()
+            return
+        }
         if let requiredPollingGeneration,
            (requiredPollingGeneration != pollingGeneration
             || pollingTask == nil) {
@@ -223,6 +295,10 @@ public final class RepoWatcher: @unchecked Sendable {
             lock.unlock()
             return
         }
+        let now = DispatchTime.now()
+        if !pendingChange {
+            firstPendingChangeAt = now
+        }
         pendingChange = true
         coalesceGeneration &+= 1
         let generation = coalesceGeneration
@@ -231,24 +307,47 @@ public final class RepoWatcher: @unchecked Sendable {
             self?.emitCoalesced(generation: generation)
         }
         pendingCoalesce = work
+        let trailingDeadline = now + coalesceDelay
+        let maximumDeadline = (firstPendingChangeAt ?? now)
+            + Self.maxCoalesceWait
+        let deadline = min(trailingDeadline, maximumDeadline)
         lock.unlock()
 
-        queue.asyncAfter(deadline: .now() + coalesceDelay, execute: work)
+        queue.asyncAfter(deadline: deadline, execute: work)
     }
 
     private func emitCoalesced(generation: UInt64) {
-        lock.withLock {
-            guard generation == coalesceGeneration, pendingChange else { return }
+        let currentContinuations: [AsyncStream<Void>.Continuation]? = lock.withLock {
+            guard generation == coalesceGeneration, pendingChange else {
+                return nil
+            }
             pendingChange = false
+            firstPendingChangeAt = nil
             pendingCoalesce = nil
+            return Array(continuations.values)
+        }
+        guard let currentContinuations else { return }
+        for continuation in currentContinuations {
             continuation.yield(())
         }
     }
 
     private func emitPoll(generation: UInt64) {
-        lock.withLock {
-            guard generation == pollingGeneration, pollingTask != nil else { return }
+        let currentContinuations: [AsyncStream<Void>.Continuation]? = lock.withLock {
+            guard generation == pollingGeneration, pollingTask != nil else {
+                return nil
+            }
+            return Array(continuations.values)
+        }
+        guard let currentContinuations else { return }
+        for continuation in currentContinuations {
             continuation.yield(())
+        }
+    }
+
+    private func removeContinuation(_ consumerID: UInt64) {
+        lock.withLock {
+            _ = continuations.removeValue(forKey: consumerID)
         }
     }
 

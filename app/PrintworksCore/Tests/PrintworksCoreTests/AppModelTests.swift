@@ -4,9 +4,13 @@ import XCTest
 /// Scriptable fake: every call pops the next canned envelope.
 /// (Envelopes are wrapped in CommandResult with an empty stderrTail.)
 final class FakeClient: PipelineRunning, @unchecked Sendable {
+    private let mutateLogLock = NSLock()
+    private var storedMutateLog: [[String]] = []
     var statusQueue: [Envelope<StatusSnapshot>] = []
     var statusCalls = 0
-    var mutateLog: [[String]] = []
+    var mutateLog: [[String]] {
+        mutateLogLock.withLock { storedMutateLog }
+    }
     var mutateHandler: ((_ args: [String]) -> Any)!
     var asyncMutateHandler: ((_ args: [String]) async -> Any)?
 
@@ -22,7 +26,7 @@ final class FakeClient: PipelineRunning, @unchecked Sendable {
     func mutate<R>(_ type: R.Type, args: [String],
                    onEvent: (@Sendable (ProgressEvent) -> Void)?) async
     -> CommandResult<R> {
-        mutateLog.append(args)
+        mutateLogLock.withLock { storedMutateLog.append(args) }
         let response = if let asyncMutateHandler {
             await asyncMutateHandler(args)
         } else {
