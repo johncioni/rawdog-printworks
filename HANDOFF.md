@@ -27,9 +27,8 @@ only its re-review. main = this checkpoint's own commit, pushed; WT = c4a10d1.
 - CLEANUP DONE: removed the merged `json-interface` worktree + local/remote branch
   (e7afc61) and merged branches 1bfe1e1, e112c86, efbdbc0; pushed main. Live data
   intact (Input 120M, Output 951M, archive 79M).
-- SWIFT-LSP RESOLVED: from spec ab46d02's setup checklist. `sourcekit-lsp` exists
-  in the Xcode toolchain, nothing configured. RECOMMENDED TO DROP — the sandbox
-  fix gives stronger signal. Awaiting user yes/no.
+- SWIFT-LSP DROPPED by user 2026-08-15 (it predated the sandbox fix, which gives
+  stronger signal). Do not reintroduce it.
 
 ## Ruled out
 - Settled, don't reopen: Task 6's refresh gate (§7), `_state_stamps()` (§4.2).
@@ -44,16 +43,18 @@ only its re-review. main = this checkpoint's own commit, pushed; WT = c4a10d1.
 ## In flight
 - WT=~/orca/workspaces/rawdog-printworks/plan2-printworks-app (HEAD c4a10d1,
   branch johncioni/…). Ledger: $WT/.superpowers/sdd/2026-08-12-printworks-app/
-- Nothing running. Gate logs + re-runnable script: <scratchpad>/under-load-gate*
+- RE-REVIEW RUNNING: Orca terminal `term_403cb16f-3eb6-492e-843f-34a2d1ba5b5d`
+  (Opus 5 xhigh, title task6-rereview) in the WT. Check with `orca terminal read
+  --terminal <handle> --json`; it writes `task-6-rereview.md` in the ledger.
+- Gate logs + re-runnable script: <scratchpad>/under-load-gate*
 - `task-6-fix-round-1.md` is a controller RECONSTRUCTION, claims tagged [claimed]
   vs [verified]. It and the brief exist on disk only (`.superpowers/` ignored).
 
 ## Next
-1. Launch re-review: `orca terminal create --worktree name:plan2-printworks-app
-   --command 'claude --model claude-opus-5'`, then send task-6-rereview-dispatch.md
+1. Read `task-6-rereview.md` when the reviewer lands it; act on findings. If it
+   blocks Task 6, fix round 2 goes to Codex via the Orca dispatch above.
 2. Then Task 7 (rewrite its dispatch from task-7-brief.md into the ledger);
    Tasks 8/9/10 dispatches add spec §5-§8, AppModel surface, Task 7's view
    files, sandbox flags. Task 11 pins `-destination`.
-3. OPEN FOR USER: swift-lsp drop-or-wire; and whether to finish diagnosing the
-   claude-hud statusline flagging context-mode (ctx_doctor is fully green, and
-   /mcp showed it had reconnected — likely a stale past-disconnect indicator).
+3. Nothing open for the user. (context-mode statusline warning: closed — it
+   cleared on its own; ctx_doctor was green throughout.)
