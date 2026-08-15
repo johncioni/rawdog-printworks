@@ -56,5 +56,4 @@ only its re-review. main = this checkpoint's own commit, pushed; WT = c4a10d1.
 2. Then Task 7 (rewrite its dispatch from task-7-brief.md into the ledger);
    Tasks 8/9/10 dispatches add spec §5-§8, AppModel surface, Task 7's view
    files, sandbox flags. Task 11 pins `-destination`.
-3. Nothing open for the user. (context-mode statusline warning: closed — it
-   cleared on its own; ctx_doctor was green throughout.)
+3. Nothing open for the user.
