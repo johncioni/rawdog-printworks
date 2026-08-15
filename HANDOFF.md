@@ -3,57 +3,57 @@
 ## Goal
 RAWdog Printworks. Plan 1 (pipeline `--json`) is MERGED; its golden fixtures are
 the binding contract. NOW EXECUTING Plan 2 — the macOS SwiftUI app (RAW-2) in the
-Orca worktree. Tasks 1-6/11 implemented; Task 6 is COMMITTED and green, awaiting
-only its re-review. main = this checkpoint's own commit, pushed; WT = c4a10d1.
+Orca worktree. **Tasks 1-6 of 11 are COMPLETE and re-reviewed; Task 7 is next.**
+main = this checkpoint's own commit, pushed; WT = c4a10d1.
 
 ## Done
 - Tasks 1-4 clean (0bff85d, 3378ea9, e47ad9c, 3dc7904); Task 5 AppModel 532c311
-  + 7e19bee "ship it". Detail in the WT ledger.
-- F2-MIRROR GAP CLOSED (3212f6c, TDD). The ledger's one-liner does NOT work — as
-  `Int?` that compare is always true when captured idle; `commandGeneration` had
-  to become non-optional.
-- TASK 6 FIX ROUND COMMITTED as two commits, split for authorship: c36db76 =
-  Codex's fix for all 7 findings; c4a10d1 = MY test rewrite. Re-review both.
-- Gate round 1 failed 1/25 at loadavg 150. ADJUDICATED A TEST DEFECT, NOT A
-  PRODUCT BUG: `pendingChange` stays true and the newest work item holds the
-  current generation, so an emission is only LATE (≤2s), never lost; the test
-  budgeted 350ms. Rewrote it + mutation-checked (30≠0,30≠1,31≠1). Round 2 25/25.
-- CODEX SANDBOX FIXED — supersedes "Codex cannot run xcodebuild". Memory
-  `codex-swift-sandbox-fix`. EVERY Swift dispatch carries BOTH flags: `swift
-  build/test --disable-sandbox`, `xcodebuild OTHER_SWIFT_FLAGS='-disable-sandbox'`.
-- DISPATCH REWRITTEN FOR ORCA (memory `orca-agent-dispatch`): `orca terminal
-  create --worktree name:<wt> --command '<agent>'` + `terminal send/wait/read`.
-  Briefs go in the LEDGER, never the scratchpad — that killed Task 7's prompt.
-- CLEANUP DONE: removed the merged `json-interface` worktree + local/remote branch
-  (e7afc61) and merged branches 1bfe1e1, e112c86, efbdbc0; pushed main. Live data
-  intact (Input 120M, Output 951M, archive 79M).
-- SWIFT-LSP DROPPED by user 2026-08-15 (it predated the sandbox fix, which gives
-  stronger signal). Do not reintroduce it.
+  + 7e19bee "ship it"; F2-mirror gap closed 3212f6c. Detail in the WT ledger.
+- TASK 6 SHIPS. Fix round 1 = c36db76 (Codex, all 7 findings) + c4a10d1 (MY test
+  rewrite). Re-review `task-6-rereview.md`: SPEC ✅, QUALITY ships, no Critical,
+  no Important blocker. It re-derived the mutation matrix from scratch rather
+  than inheriting the [claimed] evidence — 20 mutants, 19 killed.
+- MY ADJUDICATION UPHELD but MIS-STATED — correct it wherever repeated. Late-not-
+  lost is real (reviewer reproduced at load ~300: 0 at 350ms, delivery 11ms
+  later). But "bounded by `maxCoalesceWait` 2s" is WRONG: that bounds the
+  scheduled deadline, not delivery (`.utility` queue + actor hop slip without
+  bound). Honest form: "never lost; late by an unbounded amount". And "never
+  lost" covers scheduling only — M2 is a real drop path. c4a10d1's msg repeats it.
+- The two `#if DEBUG` seams: ACCEPTED (internal, absent from Release; I3+M6 are
+  only testable because of them). Caveat: `swift test -c release` won't compile.
+- CODEX SANDBOX FIXED (memory `codex-swift-sandbox-fix`). EVERY Swift dispatch
+  carries BOTH flags: `swift build/test --disable-sandbox`, `xcodebuild
+  OTHER_SWIFT_FLAGS='-disable-sandbox'`.
+- DISPATCH IS ORCA NOW (memory `orca-agent-dispatch`): `orca terminal create
+  --worktree name:<wt> --command '<agent>'` + `terminal send --text ... --enter`
+  / `wait --terminal <h> --for tui-idle` / `read`. Briefs go in the LEDGER, never
+  the scratchpad — that is what destroyed Task 7's original prompt.
+- CLEANUP DONE: merged `json-interface` worktree + local/remote branch removed
+  (e7afc61), merged branches 1bfe1e1/e112c86/efbdbc0 deleted, main pushed. Live
+  photo data verified intact. SWIFT-LSP DROPPED by user — do not reintroduce.
 
 ## Ruled out
 - Settled, don't reopen: Task 6's refresh gate (§7), `_state_stamps()` (§4.2).
-- Two Task 6 minors (kqueue blind to in-place edits; `Output/photos/<stem>/`
-  unwatched) — deferred to whole-branch review.
+- Two original-review minors (kqueue blind to in-place edits; `Output/photos/
+  <stem>/` unwatched) — still deferred to the whole-branch review.
 - Redirecting Xcode caches to /tmp — the manifest cache is not redirectable.
 - `danger-full-access` for Codex — would expose the main repo's live photo data.
-- Chasing the 1/25 flake by repro — 0/20 in isolation; read the code instead.
-- Inline-vs-subagent for the re-review — moot; dispatches via Orca now.
-- Pinning main's sha in this file — the writing commit invalidates it instantly.
+- Fix round 2 for Task 6 — reviewer's call and mine: carry P1+M1-M4 into Task 7.
+- Pinning main's sha here — the commit writing it invalidates it instantly.
 
 ## In flight
-- WT=~/orca/workspaces/rawdog-printworks/plan2-printworks-app (HEAD c4a10d1,
-  branch johncioni/…). Ledger: $WT/.superpowers/sdd/2026-08-12-printworks-app/
-- RE-REVIEW RUNNING: Orca terminal `term_403cb16f-3eb6-492e-843f-34a2d1ba5b5d`
-  (Opus 5 xhigh, title task6-rereview) in the WT. Check with `orca terminal read
-  --terminal <handle> --json`; it writes `task-6-rereview.md` in the ledger.
-- A background watcher polls for that file (60min cap) and reports when it lands.
-  Gate logs + re-runnable script: <scratchpad>/under-load-gate*
-- `task-6-fix-round-1.md` is a controller RECONSTRUCTION, claims tagged [claimed]
-  vs [verified]. It and the brief exist on disk only (`.superpowers/` ignored).
+- Nothing running. WT=~/orca/workspaces/.../plan2-printworks-app (HEAD c4a10d1);
+  ledger $WT/.superpowers/sdd/2026-08-12-printworks-app/ is GITIGNORED, so the
+  review, the reconstruction and the briefs exist on disk only.
+- Reviewer terminal left open for scrollback: term_403cb16f-3eb6-492e-843f-
+  34a2d1ba5b5d (finished, 58m, $7.11). Close with `orca terminal close`.
 
 ## Next
-1. Read `task-6-rereview.md` when the reviewer lands it; act on findings. If it
-   blocks Task 6, fix round 2 goes to Codex via the Orca dispatch above.
-2. Then Task 7 (rewrite its dispatch from task-7-brief.md into the ledger);
-   Tasks 8/9/10 dispatches add spec §5-§8, AppModel surface, Task 7's view
-   files, sandbox flags. Task 11 pins `-destination`. Nothing open for the user.
+1. Write Task 7's dispatch INTO THE LEDGER from task-7-brief.md, folding in the
+   re-review's carry-forwards: **P1** (pin the coalesce *window* — expose
+   `effectiveCoalesceDelay` and assert 0.5 / injected 0.2; config not timing, so
+   it cannot flake; today `coalesce-10x` survives and a 500ms→5s slip keeps all
+   58 tests green) plus **M1-M4** (see `task-6-rereview.md` for each).
+2. Dispatch it per the Orca method above. Tasks 8/9/10 briefs are 23-25 lines and
+   need spec §5-§8, the AppModel surface, Task 7's view files, the sandbox flags.
+   Task 11 pins `-destination`.
