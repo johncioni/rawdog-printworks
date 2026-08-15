@@ -157,6 +157,8 @@ public final class AppModel {
     @ObservationIgnored private var pendingAdjustments: [String: PendingAdjust] = [:]
     @ObservationIgnored private var inFlightAdjustments: [String: InFlightAdjust] = [:]
     @ObservationIgnored private var failureStamps: [String: FailureStamp] = [:]
+    @ObservationIgnored private var cropCache: [String: CachedCrops] = [:]
+    @ObservationIgnored private var cropRequests: [String: CropRequest] = [:]
 
     /// Re-runs the last retryable failed action (`retryBannerAction`).
     @ObservationIgnored private var lastFailedAction: (@MainActor @Sendable () async -> Void)?
@@ -193,6 +195,17 @@ public final class AppModel {
             publishedVersion = photo.published.version
             reviewRevision = photo.reviewRevision
         }
+    }
+
+    private struct CachedCrops {
+        let revision: String
+        let result: CropsResult
+    }
+
+    private struct CropRequest {
+        let id: UUID
+        let revision: String
+        let task: Task<CommandResult<CropsResult>, Never>
     }
 
     /// The command context in force when a status subprocess was dispatched.
@@ -276,6 +289,49 @@ public final class AppModel {
         snapshot?.photos.first { $0.stem == stem }
     }
 
+    /// Photos belonging to one delivery, preserving the pipeline snapshot's
+    /// order. A nil ID denotes the delivery-less "Earlier" group.
+    public func photos(inDeliveryOf deliveryID: String?) -> [PhotoStatus] {
+        (snapshot?.photos ?? []).filter { $0.deliveryId == deliveryID }
+    }
+
+    /// Read-only crop suggestions/persisted windows, cached only while the
+    /// photo's review revision is unchanged.
+    public func crops(stem: String) async -> CropsResult? {
+        guard let revision = photo(stem)?.reviewRevision else { return nil }
+        if let cached = cropCache[stem], cached.revision == revision {
+            return cached.result
+        }
+
+        let request: CropRequest
+        if let pending = cropRequests[stem], pending.revision == revision {
+            request = pending
+        } else {
+            let id = UUID()
+            let client = client
+            let task = Task { await client.crops(stem: stem) }
+            request = CropRequest(id: id, revision: revision, task: task)
+            cropRequests[stem] = request
+        }
+
+        let response = await request.task.value
+        if cropRequests[stem]?.id == request.id {
+            cropRequests.removeValue(forKey: stem)
+        }
+        guard response.envelope.ok, let result = response.envelope.result else {
+            surface(response.envelope.error
+                    ?? PipelineErrorInfo(code: "INTERNAL",
+                                         message: "crops returned no result"),
+                    details: response.stderrTail)
+            return nil
+        }
+        guard photo(stem)?.reviewRevision == revision else {
+            return await crops(stem: stem)
+        }
+        cropCache[stem] = CachedCrops(revision: revision, result: result)
+        return result
+    }
+
     /// Deliveries newest first, with the delivery-less legacy photos ("Earlier")
     /// always last. Photo order inside a group is the snapshot's own order.
     public func deliveries() -> [(id: String?, photos: [PhotoStatus])] {
@@ -321,6 +377,23 @@ public final class AppModel {
         draft.checks = ReviewDraft.emptyChecks
         draft.isStale = false
         drafts[stem] = draft
+    }
+
+    public func setDraftCheck(stem: String, key: String, isChecked: Bool) {
+        guard ReviewDraft.checkKeys.contains(key) else { return }
+        if drafts[stem] == nil { startDraft(stem: stem) }
+        drafts[stem]?.checks[key] = isChecked
+    }
+
+    public func setDraftNote(stem: String, note: String) {
+        if drafts[stem] == nil { startDraft(stem: stem) }
+        drafts[stem]?.note = note
+    }
+
+    public func setCropNudge(stem: String, cropName: String,
+                             window: CropWindow) {
+        if drafts[stem] == nil { startDraft(stem: stem) }
+        drafts[stem]?.cropNudges[cropName] = window
     }
 
     /// The ONE shared rebase path, used by both `applyAdjust` and
@@ -482,6 +555,31 @@ public final class AppModel {
         await endCommand()
     }
 
+    /// Cancels any not-yet-issued edit for this pair, then restores the
+    /// pipeline-owned adjustment bundle with `adjust --reset`.
+    public func resetAdjust(stem: String, style: String) async {
+        let key = Self.debouncerKey(stem: stem, style: style)
+        pendingAdjustments.removeValue(forKey: key)
+        await debouncers[key]?.flush()
+        debouncers.removeValue(forKey: key)
+        await firePendingAdjust(key: key)
+
+        beginCommand("adjust", stem: stem)
+        let result = await send(
+            AdjustResult.self,
+            args: ["adjust", "--stem", stem, "--style", style, "--reset",
+                   "--json"])
+        if result.envelope.ok, let adjusted = result.envelope.result {
+            rebase(stem: stem, before: adjusted.reviewRevisionBefore,
+                   after: adjusted.reviewRevisionAfter)
+        }
+        surface(result.envelope.error, details: result.stderrTail,
+                retry: { [weak self] in
+                    await self?.resetAdjust(stem: stem, style: style)
+                })
+        await endCommand()
+    }
+
     /// `preview --stem S --style Y --json` — the stale-preview chip's action.
     /// Shares the rebase path with `applyAdjust`: the result carries the same
     /// `review_revision_before`/`after` pair.
@@ -554,8 +652,7 @@ public final class AppModel {
                                     draft: ReviewDraft) async -> [String: CropWindow] {
         var windows = photo(stem)?.crops ?? [:]
         if windows.isEmpty {
-            let result = await client.crops(stem: stem)
-            if let fetched = result.envelope.result { windows = fetched.windows }
+            if let fetched = await crops(stem: stem) { windows = fetched.windows }
         }
         windows.merge(draft.cropNudges) { _, nudge in nudge }
         return windows

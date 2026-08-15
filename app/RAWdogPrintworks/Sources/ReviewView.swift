@@ -4,6 +4,9 @@ import PrintworksCore
 struct ReviewScreen: View {
     @Bindable var model: AppModel
     @State private var showingCompare = false
+    @State private var showingCrops = false
+    @State private var cropResult: CropsResult?
+    @State private var previewImageSize: CGSize?
 
     var body: some View {
         HStack(spacing: 0) {
@@ -28,22 +31,62 @@ struct ReviewScreen: View {
                 .fill(Theme.hairline)
                 .frame(width: 1)
 
-            inspector
+            inspectorColumn
         }
         .background(Theme.canvas)
+        .task(id: cropLoadKey) {
+            guard showingCrops, let photo = selectedPhoto else {
+                cropResult = nil
+                return
+            }
+            cropResult = nil
+            let result = await model.crops(stem: photo.stem)
+            guard model.selectedStem == photo.stem,
+                  model.photo(photo.stem)?.reviewRevision == photo.reviewRevision
+            else { return }
+            cropResult = result
+        }
+        .onChange(of: selectedPreviewIdentity) { _, _ in
+            previewImageSize = nil
+        }
     }
 
     private func reviewCanvas(_ photo: PhotoStatus) -> some View {
-        let previewPath = photo.previews[model.selectedStyle] ?? nil
-        let previewHash = photo.previewHashes[model.selectedStyle] ?? nil
+        let photoStyle = model.selectedStyle
+        let previewPath = photo.previews[photoStyle] ?? nil
+        let previewHash = photo.previewHashes[photoStyle] ?? nil
         return ZStack {
-            PreviewImage(
-                path: previewPath,
-                contentHash: previewHash,
-                repo: model.repo,
-                contentMode: .fit
-            )
-            .id(previewHash)
+            ZStack {
+                PreviewImage(
+                    path: previewPath,
+                    contentHash: previewHash,
+                    repo: model.repo,
+                    contentMode: .fit,
+                    onImageSize: { size in
+                        guard model.selectedStem == photo.stem,
+                              model.selectedStyle == photoStyle,
+                              (model.photo(photo.stem)?
+                                .previewHashes[photoStyle] ?? nil) == previewHash
+                        else { return }
+                        previewImageSize = size
+                    }
+                )
+                .id(previewHash)
+
+                if showingCrops, !cropWindows.isEmpty,
+                   let previewImageSize {
+                    CropOverlayView(
+                        windows: cropWindows,
+                        imageSize: previewImageSize,
+                        onNudge: { cropName, window in
+                            model.setCropNudge(
+                                stem: photo.stem,
+                                cropName: cropName,
+                                window: window)
+                        }
+                    )
+                }
+            }
             .padding(20)
 
             if photo.stalePreviews.contains(model.selectedStyle) {
@@ -53,9 +96,28 @@ struct ReviewScreen: View {
                     .padding(20)
             }
 
-            if model.activeCommand == "preview",
+            if let command = model.activeCommand,
+               ["preview", "adjust"].contains(command),
                model.activeStem == photo.stem {
                 RenderingPreviewOverlay()
+            }
+
+            if showingCrops, let basisLabel {
+                Text(basisLabel)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .background(Theme.panel,
+                                in: RoundedRectangle(cornerRadius: 8))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Theme.hairline, lineWidth: 1)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity,
+                           alignment: .bottomLeading)
+                    .padding(20)
+                    .accessibilityLabel("Crop basis: \(basisLabel)")
             }
         }
     }
@@ -81,28 +143,12 @@ struct ReviewScreen: View {
                 }
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("Preview out of date — re-render")
         .disabled(model.busyExternally || model.activeCommand != nil)
     }
 
-    private var inspector: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(model.selectedStem ?? "Review")
-                    .font(.title3.weight(.semibold))
-                    .lineLimit(1)
-                Text("Preview style")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            Picker("Style", selection: $model.selectedStyle) {
-                ForEach(styles, id: \.self) { style in
-                    Text(style.capitalized).tag(style)
-                }
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-
+    private var inspectorColumn: some View {
+        VStack(spacing: 0) {
             Button {
                 showingCompare.toggle()
             } label: {
@@ -112,20 +158,14 @@ struct ReviewScreen: View {
                     .frame(maxWidth: .infinity)
             }
             .keyboardShortcut(.space, modifiers: [])
+            .accessibilityLabel(showingCompare
+                                ? "Close Compare" : "Compare Styles")
+            .padding(18)
 
             Divider()
 
-            VStack(alignment: .leading, spacing: 6) {
-                Text("⌘1–⌘4  Switch style")
-                Text("Space  Compare")
-                Text("← / →  Previous / next photo")
-            }
-            .font(.caption)
-            .foregroundStyle(.secondary)
-
-            Spacer()
+            InspectorView(model: model)
         }
-        .padding(18)
         .frame(width: 260)
         .frame(maxHeight: .infinity, alignment: .top)
         .background(Theme.panel)
@@ -151,6 +191,14 @@ struct ReviewScreen: View {
             Button("Next Photo") { moveSelection(by: 1) }
                 .keyboardShortcut(.rightArrow, modifiers: [])
                 .disabled(adjacentStem(offset: 1) == nil)
+
+            Button("Toggle Crop Overlay") { showingCrops.toggle() }
+                .keyboardShortcut("c", modifiers: [])
+
+            if showingCompare {
+                Button("Close Compare") { showingCompare = false }
+                    .keyboardShortcut(.escape, modifiers: [])
+            }
         }
         .frame(width: 0, height: 0)
         .opacity(0)
@@ -170,9 +218,38 @@ struct ReviewScreen: View {
 
     private var reviewPhotos: [PhotoStatus] {
         guard let selectedPhoto else { return [] }
-        return (model.snapshot?.photos ?? []).filter {
-            $0.deliveryId == selectedPhoto.deliveryId
+        return model.photos(inDeliveryOf: selectedPhoto.deliveryId)
+    }
+
+    private var cropWindows: [String: CropWindow] {
+        guard let photo = selectedPhoto else { return [:] }
+        var windows = cropResult?.stem == photo.stem
+            ? cropResult?.windows ?? [:] : photo.crops
+        if let nudges = model.drafts[photo.stem]?.cropNudges {
+            windows.merge(nudges) { _, nudge in nudge }
         }
+        return windows
+    }
+
+    private var basisLabel: String? {
+        guard cropResult?.stem == selectedPhoto?.stem else { return nil }
+        switch cropResult?.basis {
+        case "center": return "centered fallback"
+        case "detector_error": return "detection failed — centered"
+        case nil, "faces", "persisted": return nil
+        case let basis?: return basis.replacingOccurrences(of: "_", with: " ")
+        }
+    }
+
+    private var cropLoadKey: String {
+        guard let photo = selectedPhoto else { return "none|\(showingCrops)" }
+        return "\(photo.stem)|\(photo.reviewRevision)|\(showingCrops)"
+    }
+
+    private var selectedPreviewIdentity: String? {
+        guard let photo = selectedPhoto else { return nil }
+        let hash = photo.previewHashes[model.selectedStyle] ?? nil
+        return "\(photo.stem)|\(model.selectedStyle)|\(hash ?? "missing")"
     }
 
     private func adjacentStem(offset: Int) -> String? {

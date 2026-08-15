@@ -102,18 +102,13 @@ struct MainWindow: View {
         let photos = model.snapshot?.photos ?? []
         if showingReview,
            let stem = model.selectedStem,
-           let deliveryID = model.photo(stem)?.deliveryId {
-            return photos.filter { $0.deliveryId == deliveryID }
-        }
-        if showingReview,
-           let stem = model.selectedStem,
-           model.photo(stem)?.deliveryId == nil {
-            return photos.filter { $0.deliveryId == nil }
+           let photo = model.photo(stem) {
+            return model.photos(inDeliveryOf: photo.deliveryId)
         }
         guard let selectedDeliveryID = model.selectedDeliveryId else {
             return photos
         }
-        return photos.filter { $0.deliveryId == selectedDeliveryID }
+        return model.photos(inDeliveryOf: selectedDeliveryID)
     }
 
     private var deliveryTitle: String {

@@ -60,6 +60,7 @@ struct CompareView: View {
                 .contentShape(RoundedRectangle(cornerRadius: 10))
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(style.capitalized)
         } else {
             Theme.canvas
                 .frame(maxWidth: .infinity, maxHeight: .infinity)

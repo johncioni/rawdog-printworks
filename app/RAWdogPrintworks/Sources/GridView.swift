@@ -123,7 +123,7 @@ struct GridView: View {
         guard let selectedDeliveryID = model.selectedDeliveryId else {
             return photos
         }
-        return photos.filter { $0.deliveryId == selectedDeliveryID }
+        return model.photos(inDeliveryOf: selectedDeliveryID)
     }
 
     private func progressFraction(_ event: ProgressEvent) -> Double {

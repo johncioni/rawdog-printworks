@@ -370,6 +370,113 @@ final class AppModelTests: XCTestCase {
         XCTAssertTrue(audit.contains("eyes open — all: pass"))
     }
 
+    func testSetSliderSendsOnlyChangedTemperatureControl() async {
+        let fake = FakeClient()
+        fake.statusQueue = [snap([])]
+        fake.mutateHandler = { _ in
+            Envelope(ok: true, result: AdjustResult(
+                stem: "P1", style: "natural", preview: "p.jpg",
+                temperature: Control(value: 5600, source: "sidecar"),
+                exposure: Control(value: nil, source: "camera"),
+                reviewRevisionBefore: "r1", reviewRevisionAfter: "r2"),
+                error: nil)
+        }
+        let model = AppModel(client: fake, repo: URL(fileURLWithPath: "/r"),
+                             sliderDebounce: .seconds(60))
+
+        model.setSlider(stem: "P1", style: "natural", temperature: 5600,
+                        exposure: nil)
+        await model.flushPendingAdjustments(stem: "P1")
+
+        XCTAssertEqual(fake.mutateLog, [[
+            "adjust", "--stem", "P1", "--style", "natural",
+            "--temperature", "5600", "--json",
+        ]])
+    }
+
+    func testResetAdjustSendsResetFlag() async {
+        let fake = FakeClient()
+        fake.statusQueue = [snap([])]
+        fake.mutateHandler = { _ in
+            Envelope(ok: true, result: AdjustResult(
+                stem: "P1", style: "natural", preview: "p.jpg",
+                temperature: Control(value: nil, source: "camera"),
+                exposure: Control(value: nil, source: "camera"),
+                reviewRevisionBefore: "r1", reviewRevisionAfter: "r2"),
+                error: nil)
+        }
+        let model = AppModel(client: fake, repo: URL(fileURLWithPath: "/r"),
+                             sliderDebounce: .zero)
+
+        await model.resetAdjust(stem: "P1", style: "natural")
+
+        XCTAssertEqual(fake.mutateLog, [[
+            "adjust", "--stem", "P1", "--style", "natural", "--reset",
+            "--json",
+        ]])
+    }
+
+    func testCropsUsesCanonicalArgsAndCachesUntilRevisionChanges() async throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(
+            at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let script = directory.appendingPathComponent("crops-stub.sh")
+        try """
+        #!/bin/sh
+        printf '%s\\n' "$*" >> "$PWD/args.log"
+        case "$1" in
+          status)
+            if [ -f "$PWD/status-seen" ]; then
+              REV=r2
+            else
+              REV=r1
+              : > "$PWD/status-seen"
+            fi
+            printf '%s\\n' '{"ok":true,"result":{"repo":"/r","toolchain":{"ok":true,"failures":[]},"lock":{"held":false,"stale":false,"pid":null},"styles":["natural"],"photos":[{"stem":"P1","state":"review_required","delivery_id":"d1","ingested_at":null,"review_revision":"'"$REV"'","previews":{},"preview_hashes":{},"stale_previews":[],"adjustments":{},"crops":{},"expression_audit":[],"published":{"version":null,"path":null,"artifact_count":null}}]}}'
+            ;;
+          crops)
+            if [ -f "$PWD/crops-seen" ]; then
+              BASIS=center
+            else
+              BASIS=faces
+              : > "$PWD/crops-seen"
+            fi
+            printf '%s\\n' '{"ok":true,"result":{"stem":"P1","basis":"'"$BASIS"'","windows":{}}}'
+            ;;
+        esac
+        """.write(to: script, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755],
+                                              ofItemAtPath: script.path)
+        let client = PipelineClient(
+            config: PipelineConfig(repo: directory, python: script),
+            executableOverride: script)
+        let model = AppModel(client: client, repo: directory,
+                             sliderDebounce: .zero)
+
+        await model.refresh()
+        let first = await model.crops(stem: "P1")
+        let cached = await model.crops(stem: "P1")
+        await model.refresh()
+        let refreshed = await model.crops(stem: "P1")
+
+        XCTAssertEqual(first?.basis, "faces")
+        XCTAssertEqual(cached?.basis, "faces")
+        XCTAssertEqual(refreshed?.basis, "center")
+        let cropInvocations = try String(
+            contentsOf: directory.appendingPathComponent("args.log"),
+            encoding: .utf8
+        ).split(separator: "\n").map(String.init).filter {
+            $0.hasPrefix("crops ")
+        }
+        XCTAssertEqual(cropInvocations, [
+            "crops --stem P1 --json",
+            "crops --stem P1 --json",
+        ])
+    }
+
     func testDebouncersAreKeyedPerStemAndStyle() async {
         let fake = FakeClient()
         fake.statusQueue = Array(repeating: snap([photo(stem: "P1", revision: "r1"),

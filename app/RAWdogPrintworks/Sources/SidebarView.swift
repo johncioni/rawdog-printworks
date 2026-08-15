@@ -159,9 +159,7 @@ struct SidebarView: View {
     private var reviewPhotos: [PhotoStatus] {
         guard let stem = model.selectedStem,
               let selectedPhoto = model.photo(stem) else { return [] }
-        return (model.snapshot?.photos ?? []).filter {
-            $0.deliveryId == selectedPhoto.deliveryId
-        }
+        return model.photos(inDeliveryOf: selectedPhoto.deliveryId)
     }
 
     private var pipelineActivityTitle: String {
