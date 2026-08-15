@@ -173,8 +173,9 @@ final class DeferredReconcileClient: PipelineRunning, @unchecked Sendable {
 @MainActor
 final class AppModelTests: XCTestCase {
     private func photo(stem: String, revision: String,
+                       state: String = "review_required",
                        stale: [String] = []) -> PhotoStatus {
-        PhotoStatus(stem: stem, state: "review_required", deliveryId: "d1",
+        PhotoStatus(stem: stem, state: state, deliveryId: "d1",
                     ingestedAt: "2026-08-12T00:00:00Z",
                     reviewRevision: revision, previews: [:], previewHashes: [:],
                     stalePreviews: stale, adjustments: [:], crops: [:],
@@ -651,6 +652,67 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.lastFailures["P2"], StemFailure(
             stem: "P2", code: "VERIFY_FAILED", message: "bad"))
         XCTAssertEqual(model.banner?.code, "PARTIAL_FAILURE")    // then error
+    }
+
+    func testRetrySuccessPreservesOtherStemFailures() async {
+        let fake = FakeClient()
+        fake.statusQueue = [
+            snap([photo(stem: "P1", revision: "r1"),
+                  photo(stem: "P2", revision: "r1")]),
+            snap([photo(stem: "P1", revision: "r1", state: "verified"),
+                  photo(stem: "P2", revision: "r1")]),
+        ]
+        var runCalls = 0
+        fake.mutateHandler = { _ in
+            runCalls += 1
+            if runCalls == 1 {
+                return Envelope(ok: false, result: RunResult(
+                    published: [], advanced: [], failed: [
+                        StemFailure(stem: "P1", code: "RENDER_FAILED",
+                                    message: "bad one"),
+                        StemFailure(stem: "P2", code: "RENDER_FAILED",
+                                    message: "bad two"),
+                    ]), error: PipelineErrorInfo(
+                        code: "PARTIAL_FAILURE", message: "2 failed")) as Any
+            }
+            return Envelope(ok: true, result: RunResult(
+                published: [PublishedPhoto(stem: "P1", version: "v001",
+                                           artifactCount: 29)],
+                advanced: [], failed: []), error: nil) as Any
+        }
+        let model = AppModel(client: fake, repo: URL(fileURLWithPath: "/r"),
+                             sliderDebounce: .zero)
+
+        await model.reprocessAll()
+        XCTAssertNotNil(model.lastFailures["P1"])
+        XCTAssertNotNil(model.lastFailures["P2"])
+
+        await model.retryRender(stem: "P1")
+        XCTAssertNil(model.lastFailures["P1"])
+        XCTAssertEqual(model.lastFailures["P2"]?.message, "bad two")
+    }
+
+    func testRefreshClearsFailureWhenDiskStateIsVerified() async {
+        let fake = FakeClient()
+        fake.statusQueue = [
+            snap([photo(stem: "P1", revision: "r1")]),
+            snap([photo(stem: "P1", revision: "r1", state: "verified")]),
+        ]
+        fake.mutateHandler = { _ in
+            Envelope(ok: false, result: RunResult(
+                published: [], advanced: [], failed: [StemFailure(
+                    stem: "P1", code: "RENDER_FAILED", message: "bad")]),
+                error: PipelineErrorInfo(code: "RENDER_FAILED",
+                                         message: "render failed"))
+        }
+        let model = AppModel(client: fake, repo: URL(fileURLWithPath: "/r"),
+                             sliderDebounce: .zero)
+
+        await model.reprocessAll()
+        XCTAssertNotNil(model.lastFailures["P1"])
+
+        await model.refresh()
+        XCTAssertNil(model.lastFailures["P1"])
     }
 
     func testIngestStoresPerFileFailures() async {

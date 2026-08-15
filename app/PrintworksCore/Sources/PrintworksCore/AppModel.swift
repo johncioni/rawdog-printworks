@@ -139,7 +139,8 @@ public final class AppModel {
     /// Successes from the most recent run result — applied even when the
     /// envelope failed with `PARTIAL_FAILURE` (drives Task 10's notifications).
     public var lastPublished: [PublishedPhoto] = []
-    /// State advances and per-stem failures from that same run result.
+    /// State advances from the most recent result and unresolved per-stem
+    /// failures accumulated across targeted runs.
     public var lastAdvanced: [AdvancedPhoto] = []
     public var lastFailures: [String: StemFailure] = [:]
     /// Per-file failures from the most recent ingest result.
@@ -245,6 +246,9 @@ public final class AppModel {
             return
         }
         self.snapshot = snapshot
+        let verified = Set(snapshot.photos.lazy
+            .filter { $0.state == "verified" }.map(\.stem))
+        lastFailures = lastFailures.filter { !verified.contains($0.key) }
         busyExternally = snapshot.lock.held && activeCommand == nil
         reconcileDrafts(snapshot, capturedDuring: capture)
     }
@@ -659,8 +663,11 @@ public final class AppModel {
         guard let result else { return }
         lastPublished = result.published
         lastAdvanced = result.advanced
-        lastFailures = result.failed.reduce(into: [:]) { failures, failure in
-            failures[failure.stem] = failure
+        for stem in result.published.map(\.stem) + result.advanced.map(\.stem) {
+            lastFailures.removeValue(forKey: stem)
+        }
+        for failure in result.failed {
+            lastFailures[failure.stem] = failure
         }
     }
 

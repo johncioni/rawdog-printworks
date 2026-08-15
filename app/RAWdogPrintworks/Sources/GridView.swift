@@ -85,7 +85,7 @@ struct GridView: View {
                     .foregroundStyle(.white)
                     .padding(.horizontal, 9)
                     .padding(.vertical, 6)
-                    .background(Color.red.opacity(0.9),
+                    .background(Color.red,
                                 in: RoundedRectangle(cornerRadius: 8))
                     .frame(maxWidth: .infinity, maxHeight: .infinity,
                            alignment: .topTrailing)

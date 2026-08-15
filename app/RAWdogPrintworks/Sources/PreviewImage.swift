@@ -8,13 +8,22 @@ private struct DownsampledPreview: @unchecked Sendable {
 
 private actor PreviewImageCache {
     static let shared = PreviewImageCache()
+    private static let countLimit = 40
+    private static let totalCostLimit = 256 * 1024 * 1024
 
     private struct Key: Hashable {
         let contentHash: String
         let maxPixelSize: Int
     }
 
-    private var images: [Key: DownsampledPreview] = [:]
+    private struct Entry {
+        let preview: DownsampledPreview
+        let cost: Int
+    }
+
+    private var images: [Key: Entry] = [:]
+    private var recency: [Key] = []
+    private var totalCost = 0
 
     func image(
         contentHash: String,
@@ -24,7 +33,11 @@ private actor PreviewImageCache {
         guard !Task.isCancelled else { return nil }
         let key = Key(contentHash: contentHash,
                       maxPixelSize: maxPixelSize)
-        if let image = images[key] { return image }
+        if let entry = images[key] {
+            recency.removeAll { $0 == key }
+            recency.append(key)
+            return entry.preview
+        }
 
         let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
         guard let source = CGImageSourceCreateWithURL(url as CFURL,
@@ -42,12 +55,30 @@ private actor PreviewImageCache {
         ) else { return nil }
 
         let preview = DownsampledPreview(image: image)
-        images[key] = preview
+        let cost = image.bytesPerRow * image.height
+        guard cost <= Self.totalCostLimit else { return preview }
+        while images.count >= Self.countLimit
+                || totalCost > Self.totalCostLimit - cost {
+            guard let oldest = recency.first else { break }
+            recency.removeFirst()
+            if let evicted = images.removeValue(forKey: oldest) {
+                totalCost -= evicted.cost
+            }
+        }
+        images[key] = Entry(preview: preview, cost: cost)
+        recency.append(key)
+        totalCost += cost
         return preview
     }
 
     func evict(contentHash: String) {
-        images = images.filter { $0.key.contentHash != contentHash }
+        let keys = images.keys.filter { $0.contentHash == contentHash }
+        for key in keys {
+            if let evicted = images.removeValue(forKey: key) {
+                totalCost -= evicted.cost
+            }
+        }
+        recency.removeAll { $0.contentHash == contentHash }
     }
 }
 
@@ -71,7 +102,8 @@ struct PreviewImage: View {
     var body: some View {
         GeometryReader { geometry in
             let maxPointSize = max(geometry.size.width, geometry.size.height)
-            let maxPixelSize = Int(ceil(maxPointSize * displayScale))
+            let raw = Int(ceil(maxPointSize * displayScale))
+            let maxPixelSize = (raw + 255) / 256 * 256
             content(request: request(maxPixelSize: maxPixelSize))
         }
     }
@@ -118,8 +150,8 @@ struct PreviewImage: View {
                 await PreviewImageCache.shared.evict(contentHash: loadedHash)
             }
             loadedHash = nextHash
+            preview = nil
         }
-        preview = nil
         guard let request else { return }
 
         let loaded = await PreviewImageCache.shared.image(
