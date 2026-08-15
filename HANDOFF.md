@@ -3,32 +3,36 @@
 ## Goal
 RAWdog Printworks. Plan 1 (pipeline `--json`) is MERGED to main; its golden
 fixtures are the binding contract. NOW EXECUTING Plan 2 — the macOS SwiftUI app
-(RAW-2) in an Orca worktree. Tasks 1-5/11 done; Task 6 fix round 1 UNCOMMITTED,
-pending the under-load gate. main = 8b8660b.
+(RAW-2) in an Orca worktree. Tasks 1-6/11 implemented; Task 6 is COMMITTED and
+green, awaiting only its scoped re-review. main = 8bd3407.
 
 ## Done
 - Tasks 1-4 done, reviews clean: 0bff85d scaffold, 3378ea9 models, e47ad9c
   PipelineClient, 3dc7904 CropMath+Debouncer. Task 5 (AppModel) COMPLETE:
-  532c311 + fix round 7e19bee, re-review "ship it". Detail in the WT ledger.
+  532c311 + 7e19bee, re-review "ship it". Detail in the WT ledger.
 - F2-MIRROR GAP CLOSED (3212f6c, TDD). The ledger's one-liner does NOT work — as
-  `Int?` that compare is always true when captured idle, killing reconcile
-  entirely; `commandGeneration` had to become non-optional.
-- Task 6 (RepoWatcher) IMPLEMENTED b3fcf2a (Codex); review = SPEC ❌ + 1 Critical
-  + 5 Important; fix round 1 addressed all 7 (see In flight).
-- CODEX SANDBOX ROOT-CAUSED AND FIXED 2026-08-15 — supersedes "Codex cannot run
-  xcodebuild"; it can now. Config fix in `~/.codex/config.toml`; writeup in memory
-  `codex-swift-sandbox-fix`. EVERY Swift dispatch carries BOTH flags: `swift
-  build/test --disable-sandbox`, `xcodebuild OTHER_SWIFT_FLAGS='-disable-sandbox'`.
-- RECONSTRUCTED the missing `task-6-fix-round-1.md` from the crashed job's
-  transcript + diff; claims tagged [claimed] vs [verified]. FOR THE RE-REVIEW:
-  the fix adds two `#if DEBUG` seams to production RepoWatcher.swift.
+  `Int?` that compare is always true when captured idle, killing reconcile;
+  `commandGeneration` had to become non-optional.
+- TASK 6 FIX ROUND 1 COMMITTED as TWO commits, split for authorship clarity:
+  c36db76 = Codex's fix for all 7 findings (C1 multicast `changes`, I1-I5, the
+  4 minors); c4a10d1 = MY test rewrite (see below). Re-review both.
 - GATE ROUND 1 FAILED 1/25 at loadavg 150 (coalesce test saw 0 emissions).
   ADJUDICATED A TEST DEFECT, NOT A PRODUCT BUG: `pendingChange` stays true and
   the newest work item holds the current generation, so an emission can only be
-  LATE (bounded by `maxCoalesceWait = 2.0s`), never lost. I1 IS genuinely closed.
-- I REWROTE that test (controller-authored, NOT Codex; production file untouched):
-  absence assert keeps its fixed wait, arrival polls to 5s, ADDED a settle assert
-  for "exactly once". Mutation-checked: per-change emit trips all 3 (30≠0,30≠1,31≠1).
+  LATE (bounded by `maxCoalesceWait` 2s), never lost. The test budgeted 350ms
+  from the last write — tighter than the watcher promises. I1 IS closed.
+- I REWROTE that test (c4a10d1, controller-authored, NOT Codex; production file
+  byte-identical): absence assert keeps its fixed wait, arrival polls to 5s,
+  ADDED a settle assert for "exactly once". Mutation-checked — per-change emit
+  trips all 3 (30≠0, 30≠1, 31≠1). GATE ROUND 2: 25/25 green at loadavg 158.
+- ALL GATES GREEN committed: swift 58/58, xcodebuild OK, pytest 295/1, clean.
+- CODEX SANDBOX ROOT-CAUSED AND FIXED — supersedes "Codex cannot run xcodebuild".
+  Config fix in `~/.codex/config.toml`; writeup in memory
+  `codex-swift-sandbox-fix`. EVERY Swift dispatch carries BOTH flags: `swift
+  build/test --disable-sandbox`, `xcodebuild OTHER_SWIFT_FLAGS='-disable-sandbox'`.
+- `task-6-fix-round-1.md` is a controller RECONSTRUCTION (Codex died on a stream
+  disconnect before reporting); claims tagged [claimed] vs [verified]. It lives
+  on disk only (`.superpowers/` gitignored) — regenerable from its transcript.
 - MODEL POLICY: Codex xhigh IMPLEMENTS, Opus 5 xhigh REVIEWS. Codex's writable
   root is the CWD THAT LAUNCHES IT (`cd $WT` first); it rewrites HANDOFF.md.
 
@@ -41,19 +45,15 @@ pending the under-load gate. main = 8b8660b.
 - Chasing the 1/25 flake by repro — 0/20 in isolation; read the code instead.
 
 ## In flight
-- WT=~/orca/workspaces/rawdog-printworks/plan2-printworks-app (HEAD b3fcf2a,
+- WT=~/orca/workspaces/rawdog-printworks/plan2-printworks-app (HEAD c4a10d1,
   branch johncioni/…). Ledger: $WT/.superpowers/sdd/2026-08-12-printworks-app/
-- UNCOMMITTED in WT: Codex's fix round (+451/-29 over 3 files) PLUS my test
-  rewrite. Backup of Codex's original: <scratchpad>/codex-task6-fixround1.patch
-- GATE ROUND 2 RUNNING in background (25x `swift test` vs 20 spinners, exit code
-  as oracle). Check `tail <scratchpad>/under-load-gate.out`; round 1's log is
-  under-load-gate-round1.out. Script: <scratchpad>/under-load-gate.sh
+- Nothing running. Gate logs + re-runnable script: <scratchpad>/under-load-gate*
 - Task 7's dispatch was LOST with the crashed scratchpad; rewrite from brief.
 
 ## Next
-1. On `GATE PASS`: `cd $WT && git add -A && git commit` the fix round for Codex
-   (include task-6-fix-round-1.md). On FAIL, read the failing run-N.log first.
-2. Then the scoped re-review of b3fcf2a..HEAD; tell it the test file is now
-   controller-authored. USER DECISION PENDING: inline as Opus, or subagent.
-3. Then Task 7; Tasks 8/9/10 dispatches add spec §5-§8, AppModel surface, Task
+1. Scoped re-review of b3fcf2a..c4a10d1. Tell it: c4a10d1's test file is
+   controller-authored, and RepoWatcher.swift gained two `#if DEBUG` seams
+   (`_startForTesting`, `_runOnPrivateQueueForTesting`) needing accept/reject.
+   USER DECISION PENDING: inline as Opus, or dispatch a subagent.
+2. Then Task 7; Tasks 8/9/10 dispatches add spec §5-§8, AppModel surface, Task
    7's view files, sandbox flags. Task 11 pins `-destination`. USER: swift-lsp.
