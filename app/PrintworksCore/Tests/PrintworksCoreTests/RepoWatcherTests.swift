@@ -95,15 +95,31 @@ final class RepoWatcherTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(10))
         }
 
+        // Asserting ABSENCE needs a fixed wait: nothing may emit before the
+        // trailing delay elapses.
         try await Task.sleep(for: .milliseconds(50))
         let beforeDelay = await counter.current()
         XCTAssertEqual(beforeDelay, 0,
                        "a trailing coalesce must not emit immediately")
 
-        try await Task.sleep(for: .milliseconds(300))
+        // Asserting ARRIVAL must not be a fixed wait. The emission is bounded
+        // by RepoWatcher's own contract — no later than the first change plus
+        // maxCoalesceWait (2s) — not by 350ms from the last write. Under load,
+        // kqueue delivery and asyncAfter both slip, so a fixed margin fails on
+        // a busy machine while the watcher is behaving correctly. Poll instead.
+        let deadline = ContinuousClock.now + .seconds(5)
+        while await counter.current() < 1, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
         let afterDelay = await counter.current()
         XCTAssertEqual(afterDelay, 1,
                        "30 raw writes must collapse to one emission")
+
+        // ...and stay collapsed: no second emission trails the first.
+        try await Task.sleep(for: .milliseconds(400))
+        let settled = await counter.current()
+        XCTAssertEqual(settled, 1,
+                       "the burst must emit exactly once, not repeatedly")
 
         consumer.cancel()
         await consumer.value
