@@ -18,12 +18,11 @@ re-review is RUNNING. main = this checkpoint's own commit, pushed; WT = c9165c2.
   M3 ingest-failure "Retry" escalated to a whole-repo `run --force`. Fixed in
   c9165c2 (+ m4 badge contrast, m5 render-failed badge), committed by me because
   a linked worktree's .git is outside Codex's writable roots.
-- I VERIFIED THE FIX MYSELF: tests exit 0 (60), xcodebuild exit 0; M3 mutation
-  RED when `--force` restored; M1 OBSERVED via lsof — 11 watched-dir FDs survive
-  ⌘N/⌘W (old bug closed all 11); m4 measured 6.13:1 contrast (was 1.45/1.85).
-  Screenshots in ledger `qa/` + docs archive. LESSON: my first pass GREPPED for
-  the hash key instead of READING whether a cache sat behind it — that is how M2
-  reached me. Greps confirm the letter, reading confirms the intent.
+- I VERIFIED THE FIX MYSELF: tests exit 0 (60), xcodebuild exit 0; M3 mutation RED
+  when `--force` restored; M1 OBSERVED via lsof (11 watched-dir FDs survive ⌘N/⌘W;
+  old bug closed all 11); m4 measured 6.13:1 (was 1.45/1.85). Shots in `qa/`.
+  LESSON: my first pass GREPPED for the hash key instead of READING whether a
+  cache sat behind it — that is how M2 reached me.
 - CODEX SANDBOX FIXED (memory `codex-swift-sandbox-fix`). EVERY Swift dispatch
   carries BOTH flags: `swift build/test --disable-sandbox`, `xcodebuild
   OTHER_SWIFT_FLAGS='-disable-sandbox'`.
@@ -44,10 +43,9 @@ re-review is RUNNING. main = this checkpoint's own commit, pushed; WT = c9165c2.
 - Pinning main's sha here — the commit writing it invalidates it instantly.
 
 ## In flight
-- TASK 7 FIX RE-REVIEW RUNNING (Opus, `term_72835830-…`), scope bffbf56..c9165c2,
-  brief `task-7-fix-round-1-rereview-dispatch.md`; watcher polls for
-  `task-7-fix-round-1-rereview.md`. The built app is open (read-only; do NOT
-  click Reprocess — it runs the pipeline on live photo data).
+- TASK 7 FIX RE-REVIEW RUNNING (Opus, `term_72835830-…`), bffbf56..c9165c2;
+  watcher polls for `task-7-fix-round-1-rereview.md`. The built app is open
+  (read-only; do NOT click Reprocess — it runs the pipeline on live photo data).
 - WT=~/orca/workspaces/.../plan2-printworks-app (HEAD c9165c2); ledger
   $WT/.superpowers/sdd/2026-08-12-printworks-app/ is GITIGNORED but now ARCHIVED
   through Task 6 to `docs/superpowers/sdd-archive/2026-08-12-printworks-app/`
