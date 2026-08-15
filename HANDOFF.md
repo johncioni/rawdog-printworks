@@ -46,7 +46,8 @@ only its re-review. main = this checkpoint's own commit, pushed; WT = c4a10d1.
 - RE-REVIEW RUNNING: Orca terminal `term_403cb16f-3eb6-492e-843f-34a2d1ba5b5d`
   (Opus 5 xhigh, title task6-rereview) in the WT. Check with `orca terminal read
   --terminal <handle> --json`; it writes `task-6-rereview.md` in the ledger.
-- Gate logs + re-runnable script: <scratchpad>/under-load-gate*
+- A background watcher polls for that file (60min cap) and reports when it lands.
+  Gate logs + re-runnable script: <scratchpad>/under-load-gate*
 - `task-6-fix-round-1.md` is a controller RECONSTRUCTION, claims tagged [claimed]
   vs [verified]. It and the brief exist on disk only (`.superpowers/` ignored).
 
@@ -55,5 +56,4 @@ only its re-review. main = this checkpoint's own commit, pushed; WT = c4a10d1.
    blocks Task 6, fix round 2 goes to Codex via the Orca dispatch above.
 2. Then Task 7 (rewrite its dispatch from task-7-brief.md into the ledger);
    Tasks 8/9/10 dispatches add spec §5-§8, AppModel surface, Task 7's view
-   files, sandbox flags. Task 11 pins `-destination`.
-3. Nothing open for the user.
+   files, sandbox flags. Task 11 pins `-destination`. Nothing open for the user.
