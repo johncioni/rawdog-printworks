@@ -3,8 +3,8 @@
 ## Goal
 RAWdog Printworks. Plan 1 (pipeline `--json`) is MERGED to main; its golden
 fixtures are the binding contract. NOW EXECUTING Plan 2 — the macOS SwiftUI app
-(RAW-2) — subagent-driven in an Orca worktree. Tasks 1-5 of 11 complete; Task
-6's fix round 1 is done on disk but UNCOMMITTED. main = 1dd2295.
+(RAW-2), subagent-driven in an Orca worktree. Tasks 1-5 of 11 complete; Task 6's
+fix round 1 is done on disk but UNCOMMITTED. main = e890e19.
 
 ## Done
 - Plan 2 Tasks 1-4 complete, reviews clean: 0bff85d scaffold, 3378ea9 contract
@@ -23,41 +23,47 @@ fixtures are the binding contract. NOW EXECUTING Plan 2 — the macOS SwiftUI ap
   `swift build/test --disable-sandbox` and `xcodebuild
   OTHER_SWIFT_FLAGS='$(inherited) -disable-sandbox'` — config alone is NOT
   enough. `CoreSimulatorService`/`DVTFilePathFSEvents` noise is benign.
+- RECONSTRUCTED the missing `task-6-fix-round-1.md` into the WT ledger from the
+  crashed job's transcript + the diff. Claims are tagged [claimed] (Codex's
+  narration) vs [verified] (I re-ran it). Flagged for the re-review: the fix
+  adds two `#if DEBUG` seams to production RepoWatcher.swift
+  (`_startForTesting`, `_runOnPrivateQueueForTesting`) — accept/reject call.
 - MODEL POLICY: Codex Sol 5.6 xhigh IMPLEMENTS, Opus 5 xhigh REVIEWS (Fable
   exhausted, never route to it). Codex's writable root is the CWD THAT LAUNCHES
-  IT, so always `cd $WT` first; job state is keyed the same way. It rewrites
-  HANDOFF.md (its own Stop hook outranks any prohibition) — revert, don't argue.
+  IT, so always `cd $WT` first. It rewrites HANDOFF.md (its own Stop hook
+  outranks any prohibition) — revert, don't argue.
 
 ## Ruled out
 - Squash-merging Plan 1 — the 16 per-task commits are the record.
-- Requiring `expected_review_revision`; widening `_state_stamps()` — both
-  adjudicated (spec §4.2; review rounds 2+3).
+- Requiring `expected_review_revision`; widening `_state_stamps()` — adjudicated.
 - Moving Task 6's refresh gate out of Task 5 — spec §7's watcher-storm rule
   verbatim, re-confirmed by Task 6's reviewer.
-- Two Task 6 minors (kqueue misses in-place edits; `Output/photos/<stem>/`
+- Two Task 6 minors (in-place edits invisible to kqueue; `Output/photos/<stem>/`
   unwatched) — deferred to the whole-branch review.
-- Redirecting Xcode caches to /tmp to dodge the sandbox — 5 variants all failed;
-  the manifest-loading cache is not redirectable. Fixed properly instead.
+- Redirecting Xcode caches to /tmp — 5 variants failed; the manifest-loading
+  cache is not redirectable. Fixed properly instead.
+- `danger-full-access` for Codex — would expose the main repo's live photo data.
 
 ## In flight
 - WT=~/orca/workspaces/rawdog-printworks/plan2-printworks-app (branch
-  johncioni/plan2-printworks-app, HEAD b3fcf2a). Ledger + briefs + reports:
-  $WT/.superpowers/sdd/2026-08-12-printworks-app/ (progress.md)
-- TASK 6 FIX ROUND 1 IS COMPLETE BUT UNCOMMITTED: 3 files, +451/-29
-  (RepoWatcher.swift, RepoWatcherTests.swift, AppModelTests.swift). Codex ran
-  30/30 green then DIED on `stream disconnected` before writing its report, so
-  `task-6-fix-round-1.md` does not exist. Reconstruct it from the transcript:
-  ~/.codex/sessions/2026/08/14/rollout-2026-08-14T08-34-23-01a00044-*.jsonl
-  Backup patch: <scratchpad>/codex-task6-fixround1.patch
-  All 7 findings map to new tests. I have since confirmed `xcodebuild` BUILD
-  SUCCEEDED and 58 XCTests pass — but NOT yet under load.
-- Task 7's written dispatch was LOST with the crashed session's scratchpad;
-  rewrite it from task-7-brief.md.
+  johncioni/plan2-printworks-app, HEAD b3fcf2a). Ledger:
+  $WT/.superpowers/sdd/2026-08-12-printworks-app/
+- TASK 6 FIX ROUND 1 COMPLETE BUT UNCOMMITTED: 3 files, +451/-29 (RepoWatcher,
+  RepoWatcherTests, AppModelTests); all 7 findings map to new tests. Backup
+  patch: <scratchpad>/codex-task6-fixround1.patch. I confirmed xcodebuild BUILD
+  SUCCEEDED + 58 XCTests pass.
+- UNDER-LOAD GATE RUNNING in background (25x `swift test` vs 20 spinners on 10
+  cores, exit code as oracle). Check: `tail <scratchpad>/under-load-gate.out`;
+  `pgrep -f under-load-gate.sh`. At checkpoint time: 4/25 GREEN, still running.
+  Script: <scratchpad>/under-load-gate.sh (re-runnable).
+- Task 7's dispatch was LOST with the crashed scratchpad; rewrite from brief.
 
 ## Next
-1. Run the suite UNDER LOAD in $WT (exit code as oracle, never a grep), then
-   commit the fix round for Codex, then dispatch the scoped re-review on it.
-2. Then Task 7. Tasks 8/9/10 briefs are 23-25 lines and need the same
-   treatment: spec §5-§8, the AppModel surface, the view files Task 7 leaves,
-   and the Swift sandbox flags. Task 11 must pin a `-destination`.
-3. Deferred minors: in the ledger, for the whole-branch review. USER: swift-lsp.
+1. When the gate prints `GATE PASS`, `cd $WT && git add -A && git commit` the
+   fix round on Codex's behalf (include task-6-fix-round-1.md). If it prints
+   GATE FAIL, read the failing `<scratchpad>/run-N.log` before anything else.
+2. Then the scoped re-review of the fix diff (b3fcf2a..HEAD). USER DECISION
+   PENDING: run it inline as Opus, or dispatch a subagent — asked, not answered.
+3. Then Task 7; Tasks 8/9/10 dispatches must add spec §5-§8, the AppModel
+   surface, Task 7's view files, and the sandbox flags. Task 11 pins
+   `-destination`. Deferred minors ride the whole-branch review. USER: swift-lsp.
