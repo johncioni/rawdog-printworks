@@ -174,13 +174,14 @@ final class DeferredReconcileClient: PipelineRunning, @unchecked Sendable {
 final class AppModelTests: XCTestCase {
     private func photo(stem: String, revision: String,
                        state: String = "review_required",
-                       stale: [String] = []) -> PhotoStatus {
+                       stale: [String] = [],
+                       version: String? = nil) -> PhotoStatus {
         PhotoStatus(stem: stem, state: state, deliveryId: "d1",
                     ingestedAt: "2026-08-12T00:00:00Z",
                     reviewRevision: revision, previews: [:], previewHashes: [:],
                     stalePreviews: stale, adjustments: [:], crops: [:],
                     expressionAudit: [], published: PublishedInfo(
-                        version: nil, path: nil, artifactCount: nil))
+                        version: version, path: nil, artifactCount: nil))
     }
 
     private func snap(_ photos: [PhotoStatus],
@@ -654,6 +655,41 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.banner?.code, "PARTIAL_FAILURE")    // then error
     }
 
+    /// `run --stem P1 --force` on a published photo: the render fails, the
+    /// pipeline restores the manifest to `verified` (driver.py
+    /// `_restore_forced`), so the terminal refresh sees `verified` and the
+    /// filter must not delete the failure the same command just recorded.
+    func testForceReprocessFailureOnVerifiedPhotoKeepsBadge() async {
+        let verifiedPhoto = PhotoStatus(
+            stem: "P1", state: "verified", deliveryId: "d1",
+            ingestedAt: "2026-08-12T00:00:00Z", reviewRevision: "r1",
+            previews: [:], previewHashes: [:], stalePreviews: [],
+            adjustments: [:], crops: [:], expressionAudit: [],
+            published: PublishedInfo(version: "v001", path: "p",
+                                     artifactCount: 29))
+        let fake = FakeClient()
+        fake.statusQueue = [snap([verifiedPhoto])]
+        fake.mutateHandler = { _ in
+            Envelope(ok: false, result: RunResult(
+                published: [], advanced: [], failed: [StemFailure(
+                    stem: "P1", code: "RENDER_FAILED",
+                    message: "rawtherapee exited 1")]),
+                error: PipelineErrorInfo(code: "PARTIAL_FAILURE",
+                                         message: "1 of 1 photos failed")) as Any
+        }
+        let model = AppModel(client: fake, repo: URL(fileURLWithPath: "/r"),
+                             sliderDebounce: .zero)
+
+        await model.reprocess(stem: "P1")
+
+        XCTAssertEqual(fake.mutateLog.first,
+                       ["run", "--stem", "P1", "--force", "--json"])
+        XCTAssertNotNil(model.lastFailures["P1"],
+                        "force-reprocess failure erased by the verified filter")
+        XCTAssertNil(model.bannerAction,
+                     "PARTIAL_FAILURE maps to no banner action")
+    }
+
     func testRetrySuccessPreservesOtherStemFailures() async {
         let fake = FakeClient()
         fake.statusQueue = [
@@ -692,11 +728,15 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.lastFailures["P2"]?.message, "bad two")
     }
 
-    func testRefreshClearsFailureWhenDiskStateIsVerified() async {
+    func testRefreshClearsFailureWhenPublishedVersionChanges() async {
         let fake = FakeClient()
         fake.statusQueue = [
-            snap([photo(stem: "P1", revision: "r1")]),
-            snap([photo(stem: "P1", revision: "r1", state: "verified")]),
+            snap([photo(stem: "P1", revision: "r1", state: "verified",
+                        version: "v001")]),
+            snap([photo(stem: "P1", revision: "r1", state: "verified",
+                        version: "v001")]),
+            snap([photo(stem: "P1", revision: "r1", state: "verified",
+                        version: "v002")]),
         ]
         fake.mutateHandler = { _ in
             Envelope(ok: false, result: RunResult(
@@ -708,6 +748,32 @@ final class AppModelTests: XCTestCase {
         let model = AppModel(client: fake, repo: URL(fileURLWithPath: "/r"),
                              sliderDebounce: .zero)
 
+        await model.refresh()
+        await model.reprocessAll()
+        XCTAssertNotNil(model.lastFailures["P1"])
+
+        await model.refresh()
+        XCTAssertNil(model.lastFailures["P1"])
+    }
+
+    func testRefreshClearsFailureWhenReviewRevisionChanges() async {
+        let fake = FakeClient()
+        fake.statusQueue = [
+            snap([photo(stem: "P1", revision: "r1")]),
+            snap([photo(stem: "P1", revision: "r1")]),
+            snap([photo(stem: "P1", revision: "r2")]),
+        ]
+        fake.mutateHandler = { _ in
+            Envelope(ok: false, result: RunResult(
+                published: [], advanced: [], failed: [StemFailure(
+                    stem: "P1", code: "RENDER_FAILED", message: "bad")]),
+                error: PipelineErrorInfo(code: "RENDER_FAILED",
+                                         message: "render failed"))
+        }
+        let model = AppModel(client: fake, repo: URL(fileURLWithPath: "/r"),
+                             sliderDebounce: .zero)
+
+        await model.refresh()
         await model.reprocessAll()
         XCTAssertNotNil(model.lastFailures["P1"])
 

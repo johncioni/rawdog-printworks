@@ -156,6 +156,7 @@ public final class AppModel {
     @ObservationIgnored private var debouncers: [String: Debouncer] = [:]
     @ObservationIgnored private var pendingAdjustments: [String: PendingAdjust] = [:]
     @ObservationIgnored private var inFlightAdjustments: [String: InFlightAdjust] = [:]
+    @ObservationIgnored private var failureStamps: [String: FailureStamp] = [:]
 
     /// Re-runs the last retryable failed action (`retryBannerAction`).
     @ObservationIgnored private var lastFailedAction: (@MainActor @Sendable () async -> Void)?
@@ -182,6 +183,16 @@ public final class AppModel {
         let id: UUID
         let stem: String
         let task: Task<Void, Never>
+    }
+
+    private struct FailureStamp: Equatable {
+        let publishedVersion: String?
+        let reviewRevision: String
+
+        init(photo: PhotoStatus) {
+            publishedVersion = photo.published.version
+            reviewRevision = photo.reviewRevision
+        }
     }
 
     /// The command context in force when a status subprocess was dispatched.
@@ -246,9 +257,17 @@ public final class AppModel {
             return
         }
         self.snapshot = snapshot
-        let verified = Set(snapshot.photos.lazy
-            .filter { $0.state == "verified" }.map(\.stem))
-        lastFailures = lastFailures.filter { !verified.contains($0.key) }
+        for photo in snapshot.photos where lastFailures[photo.stem] != nil {
+            let current = FailureStamp(photo: photo)
+            guard let failedAt = failureStamps[photo.stem] else {
+                failureStamps[photo.stem] = current
+                continue
+            }
+            if current != failedAt {
+                lastFailures.removeValue(forKey: photo.stem)
+                failureStamps.removeValue(forKey: photo.stem)
+            }
+        }
         busyExternally = snapshot.lock.held && activeCommand == nil
         reconcileDrafts(snapshot, capturedDuring: capture)
     }
@@ -665,9 +684,15 @@ public final class AppModel {
         lastAdvanced = result.advanced
         for stem in result.published.map(\.stem) + result.advanced.map(\.stem) {
             lastFailures.removeValue(forKey: stem)
+            failureStamps.removeValue(forKey: stem)
         }
         for failure in result.failed {
             lastFailures[failure.stem] = failure
+            if let photo = photo(failure.stem) {
+                failureStamps[failure.stem] = FailureStamp(photo: photo)
+            } else {
+                failureStamps.removeValue(forKey: failure.stem)
+            }
         }
     }
 

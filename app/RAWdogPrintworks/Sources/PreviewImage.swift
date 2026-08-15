@@ -70,16 +70,6 @@ private actor PreviewImageCache {
         totalCost += cost
         return preview
     }
-
-    func evict(contentHash: String) {
-        let keys = images.keys.filter { $0.contentHash == contentHash }
-        for key in keys {
-            if let evicted = images.removeValue(forKey: key) {
-                totalCost -= evicted.cost
-            }
-        }
-        recency.removeAll { $0.contentHash == contentHash }
-    }
 }
 
 private struct PreviewRequest: Hashable {
@@ -146,9 +136,6 @@ struct PreviewImage: View {
     private func load(_ request: PreviewRequest?) async {
         let nextHash = request?.contentHash
         if loadedHash != nextHash {
-            if let loadedHash {
-                await PreviewImageCache.shared.evict(contentHash: loadedHash)
-            }
             loadedHash = nextHash
             preview = nil
         }
