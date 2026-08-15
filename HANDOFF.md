@@ -3,19 +3,23 @@
 ## Goal
 RAWdog Printworks. Plan 1 (pipeline `--json`) is MERGED; its golden fixtures are
 the binding contract. NOW EXECUTING Plan 2 — the macOS SwiftUI app (RAW-2) in the
-Orca worktree. **Tasks 1-6 of 11 COMPLETE and re-reviewed; TASK 7 IS RUNNING.**
-main = this checkpoint's own commit, pushed; WT = c4a10d1.
+Orca worktree. **Tasks 1-7 of 11 done** (7 built, gate-verified and smoked by me;
+NOT yet re-reviewed). main = this checkpoint's own commit, pushed; WT = bffbf56.
 
 ## Done
 - Tasks 1-4 clean (0bff85d, 3378ea9, e47ad9c, 3dc7904); Task 5 AppModel 532c311
   + 7e19bee "ship it"; F2-mirror gap closed 3212f6c. Detail in the WT ledger.
-- TASK 6 SHIPS: c36db76 (Codex, all 7 findings) + c4a10d1 (MY test rewrite);
-  re-review SPEC ✅ / ships, 20 mutants re-derived, 19 killed. `#if DEBUG` seams
-  ACCEPTED (caveat: `swift test -c release` won't compile the test target).
-- MY ADJUDICATION UPHELD but MIS-STATED — correct wherever repeated. Late-not-lost
-  is real (reproduced at load ~300). But "bounded by `maxCoalesceWait` 2s" is
-  WRONG — that bounds the scheduled deadline, not delivery; and "never lost"
-  covers scheduling only (M2 is a real drop path). c4a10d1's msg repeats the error.
+- TASK 6 SHIPS: c36db76 + c4a10d1; re-review SPEC ✅, 20 mutants re-derived, 19
+  killed; `#if DEBUG` seams ACCEPTED. MY ADJUDICATION UPHELD BUT MIS-STATED —
+  "bounded by `maxCoalesceWait` 2s" is WRONG (it bounds the scheduled deadline,
+  not delivery) and "never lost" covers scheduling only. Full text in the archive.
+- TASK 7 BUILT by Codex: 51f6fc6 (P1 + 4 minors) + bffbf56 (shell UI, +631). I
+  VERIFIED MYSELF, not from its report: swift test exit 0 (59), xcodebuild exit
+  0, `coalesce-10x` mutant DIES (5.0≠0.5). Constraints hold; consumer registered
+  before `start()` (M2's contract). SMOKE PASSED — P1036163/P1036170 Published,
+  "Earlier" group present; screenshot in ledger `qa/` + docs archive. Codex
+  wrongly called its own HANDOFF.md rewrite "pre-existing" (its hook, 14:07:55);
+  reverted, not staged in either commit.
 - CODEX SANDBOX FIXED (memory `codex-swift-sandbox-fix`). EVERY Swift dispatch
   carries BOTH flags: `swift build/test --disable-sandbox`, `xcodebuild
   OTHER_SWIFT_FLAGS='-disable-sandbox'`.
@@ -37,23 +41,19 @@ main = this checkpoint's own commit, pushed; WT = c4a10d1.
 - Pinning main's sha here — the commit writing it invalidates it instantly.
 
 ## In flight
-- TASK 7 DISPATCHED to Codex (gpt-5.6-sol xhigh) via Orca terminal
-  `term_a5d7f539-e1da-4c1e-98c3-8193e8e8aa2c`, brief `task-7-dispatch.md`. Two
-  commits expected: A = P1/M1-M4 core cleanup, B = shell UI. A background
-  watcher polls for `task-7-report.md` (100min cap).
-- WT=~/orca/workspaces/.../plan2-printworks-app (HEAD c4a10d1); ledger
+- Nothing running. The built app may still be open (read-only; do NOT click
+  Reprocess — it runs the pipeline on live photo data).
+- WT=~/orca/workspaces/.../plan2-printworks-app (HEAD bffbf56); ledger
   $WT/.superpowers/sdd/2026-08-12-printworks-app/ is GITIGNORED but now ARCHIVED
   through Task 6 to `docs/superpowers/sdd-archive/2026-08-12-printworks-app/`
   (f8546a4, on origin). Task 7's files are NOT yet archived.
-- Finished reviewer terminal left open for scrollback: term_403cb16f-…-34a2d1ba5b5d
 
 ## Next
-1. When `task-7-report.md` lands: verify BOTH gates myself (exit code, not grep)
-   and that commit A really kills the `coalesce-10x` mutant, then REVIEW the diff
-   (Opus). Codex implements, I review — user re-confirmed 2026-08-15.
-2. Then Step 3 IS MINE, not Codex's: smoke the built app with computer-use —
-   grid shows P1036163/P1036170 Published, sidebar has the "Earlier" group.
-   Screenshot for Task 11's QA set. A green build is not this claim.
-3. Then Task 8. Briefs 8/9/10 are 23-25 lines and need spec §5-§8, the AppModel
+1. RE-REVIEW Task 7 (`c4a10d1..bffbf56`) — the only step left on it. Dispatch an
+   Opus reviewer per the Orca method; tell it commit A closes the Task 6
+   carry-forwards and B is the shell UI, and that I already ran both gates and
+   the P1 mutant myself. UNCONFIRMED, ask it to look: the left grid card's
+   "Published" text renders dimmer than the right's for the same state.
+2. Then Task 8. Briefs 8/9/10 are 23-25 lines and need spec §5-§8, the AppModel
    surface, Task 7's view files, the sandbox flags. Task 11 pins `-destination`.
-   Refresh the docs/ archive when Plan 2 completes.
+   Refresh the docs/ archive (incl. qa/) when Plan 2 completes.
