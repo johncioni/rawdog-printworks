@@ -3,8 +3,8 @@
 ## Goal
 RAWdog Printworks. Plan 1 (pipeline `--json`) is MERGED to main; its golden
 fixtures are the binding contract. NOW EXECUTING Plan 2 — the macOS SwiftUI app
-(RAW-2) in an Orca worktree. Tasks 1-5/11 done; Task 6's fix round 1 is on disk
-but UNCOMMITTED. main = 7f20c01.
+(RAW-2) in an Orca worktree. Tasks 1-5/11 done; Task 6 fix round 1 UNCOMMITTED,
+pending the under-load gate. main = 8b8660b.
 
 ## Done
 - Tasks 1-4 done, reviews clean: 0bff85d scaffold, 3378ea9 models, e47ad9c
@@ -22,38 +22,38 @@ but UNCOMMITTED. main = 7f20c01.
 - RECONSTRUCTED the missing `task-6-fix-round-1.md` from the crashed job's
   transcript + diff; claims tagged [claimed] vs [verified]. FOR THE RE-REVIEW:
   the fix adds two `#if DEBUG` seams to production RepoWatcher.swift.
-- MODEL POLICY: Codex Sol 5.6 xhigh IMPLEMENTS, Opus 5 xhigh REVIEWS (Fable
-  exhausted). Codex's writable root is the CWD THAT LAUNCHES IT — `cd $WT` first.
-  It rewrites HANDOFF.md (its own Stop hook wins) — revert, don't argue.
+- GATE ROUND 1 FAILED 1/25 at loadavg 150 (coalesce test saw 0 emissions).
+  ADJUDICATED A TEST DEFECT, NOT A PRODUCT BUG: `pendingChange` stays true and
+  the newest work item holds the current generation, so an emission can only be
+  LATE (bounded by `maxCoalesceWait = 2.0s`), never lost. I1 IS genuinely closed.
+- I REWROTE that test (controller-authored, NOT Codex; production file untouched):
+  absence assert keeps its fixed wait, arrival polls to 5s, ADDED a settle assert
+  for "exactly once". Mutation-checked: per-change emit trips all 3 (30≠0,30≠1,31≠1).
+- MODEL POLICY: Codex xhigh IMPLEMENTS, Opus 5 xhigh REVIEWS. Codex's writable
+  root is the CWD THAT LAUNCHES IT (`cd $WT` first); it rewrites HANDOFF.md.
 
 ## Ruled out
-- Requiring `expected_review_revision`; widening `_state_stamps()` — adjudicated.
-- Moving Task 6's refresh gate out of Task 5 — spec §7's watcher-storm rule
-  verbatim, re-confirmed by its reviewer.
+- Settled, don't reopen: Task 6's refresh gate (§7), `_state_stamps()` (§4.2).
 - Two Task 6 minors (kqueue blind to in-place edits; `Output/photos/<stem>/`
-  unwatched) — deferred to the whole-branch review.
-- Redirecting Xcode caches to /tmp — 5 variants failed; the manifest cache is
-  not redirectable. Fixed properly instead.
+  unwatched) — deferred to whole-branch review.
+- Redirecting Xcode caches to /tmp — the manifest cache is not redirectable.
 - `danger-full-access` for Codex — would expose the main repo's live photo data.
+- Chasing the 1/25 flake by repro — 0/20 in isolation; read the code instead.
 
 ## In flight
 - WT=~/orca/workspaces/rawdog-printworks/plan2-printworks-app (HEAD b3fcf2a,
   branch johncioni/…). Ledger: $WT/.superpowers/sdd/2026-08-12-printworks-app/
-- TASK 6 FIX ROUND 1 COMPLETE BUT UNCOMMITTED: 3 files, +451/-29 (RepoWatcher,
-  RepoWatcherTests, AppModelTests); all 7 findings map to new tests. Backup:
-  <scratchpad>/codex-task6-fixround1.patch. xcodebuild BUILD SUCCEEDED + 58
-  XCTests pass (verified by me).
-- UNDER-LOAD GATE RUNNING in background (25x `swift test` vs 20 spinners on 10
-  cores, exit code as oracle). Check `tail <scratchpad>/under-load-gate.out` and
-  `pgrep -f under-load-gate.sh`. At checkpoint: 14/25 GREEN. Re-runnable script:
-  <scratchpad>/under-load-gate.sh. Task 7's dispatch was LOST with the crashed
-  scratchpad; rewrite it from task-7-brief.md.
+- UNCOMMITTED in WT: Codex's fix round (+451/-29 over 3 files) PLUS my test
+  rewrite. Backup of Codex's original: <scratchpad>/codex-task6-fixround1.patch
+- GATE ROUND 2 RUNNING in background (25x `swift test` vs 20 spinners, exit code
+  as oracle). Check `tail <scratchpad>/under-load-gate.out`; round 1's log is
+  under-load-gate-round1.out. Script: <scratchpad>/under-load-gate.sh
+- Task 7's dispatch was LOST with the crashed scratchpad; rewrite from brief.
 
 ## Next
 1. On `GATE PASS`: `cd $WT && git add -A && git commit` the fix round for Codex
    (include task-6-fix-round-1.md). On FAIL, read the failing run-N.log first.
-2. Then the scoped re-review of b3fcf2a..HEAD. USER DECISION PENDING: inline as
-   Opus, or dispatch a subagent — asked, not yet answered.
-3. Then Task 7; Tasks 8/9/10 dispatches must add spec §5-§8, the AppModel
-   surface, Task 7's view files, and the sandbox flags. Task 11 pins
-   `-destination`. Deferred minors ride the whole-branch review. USER: swift-lsp.
+2. Then the scoped re-review of b3fcf2a..HEAD; tell it the test file is now
+   controller-authored. USER DECISION PENDING: inline as Opus, or subagent.
+3. Then Task 7; Tasks 8/9/10 dispatches add spec §5-§8, AppModel surface, Task
+   7's view files, sandbox flags. Task 11 pins `-destination`. USER: swift-lsp.
