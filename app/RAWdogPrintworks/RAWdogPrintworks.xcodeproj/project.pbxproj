@@ -7,15 +7,23 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		2B8E1124FD6637511E671575 /* ErrorBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8A0259826B63F3D422ECB93 /* ErrorBanner.swift */; };
+		53AD4CEDA3ED9B9DB4F12FBF /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8488AC88AADDEF83C91D87C /* SidebarView.swift */; };
 		753ABA92C72ECC870AE900F3 /* PrintworksApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3CB3B941DFCAD38A0263C82 /* PrintworksApp.swift */; };
 		BE5A825A7AF83E5ADCD3A283 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFC7998A937FE9922A71CC94 /* Theme.swift */; };
+		D1AD8D0793F2B7CB4E59E046 /* MainWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = D932305A2A209F9D6B4925B9 /* MainWindow.swift */; };
+		DBBE77FA40C7C017B7839141 /* GridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58B319B94EFAF5323E2AF00C /* GridView.swift */; };
 		F10AE85930F9809C6ACE9C69 /* PrintworksCore in Frameworks */ = {isa = PBXBuildFile; productRef = 5F2F223FCE8C3C94A140DB9A /* PrintworksCore */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		58B319B94EFAF5323E2AF00C /* GridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridView.swift; sourceTree = "<group>"; };
 		676BC75110657924D2B3FB9F /* PrintworksCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = PrintworksCore; path = ../PrintworksCore; sourceTree = SOURCE_ROOT; };
 		A3CB3B941DFCAD38A0263C82 /* PrintworksApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrintworksApp.swift; sourceTree = "<group>"; };
+		A8A0259826B63F3D422ECB93 /* ErrorBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ErrorBanner.swift; sourceTree = "<group>"; };
 		BCFF02D96323B290067ABBBB /* RAWdogPrintworks.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RAWdogPrintworks.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C8488AC88AADDEF83C91D87C /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
+		D932305A2A209F9D6B4925B9 /* MainWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWindow.swift; sourceTree = "<group>"; };
 		EFC7998A937FE9922A71CC94 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -59,7 +67,11 @@
 		9B54E6DFBF3BFCFFB2E26188 /* Sources */ = {
 			isa = PBXGroup;
 			children = (
+				A8A0259826B63F3D422ECB93 /* ErrorBanner.swift */,
+				58B319B94EFAF5323E2AF00C /* GridView.swift */,
+				D932305A2A209F9D6B4925B9 /* MainWindow.swift */,
 				A3CB3B941DFCAD38A0263C82 /* PrintworksApp.swift */,
+				C8488AC88AADDEF83C91D87C /* SidebarView.swift */,
 				EFC7998A937FE9922A71CC94 /* Theme.swift */,
 			);
 			path = Sources;
@@ -125,7 +137,11 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				2B8E1124FD6637511E671575 /* ErrorBanner.swift in Sources */,
+				DBBE77FA40C7C017B7839141 /* GridView.swift in Sources */,
+				D1AD8D0793F2B7CB4E59E046 /* MainWindow.swift in Sources */,
 				753ABA92C72ECC870AE900F3 /* PrintworksApp.swift in Sources */,
+				53AD4CEDA3ED9B9DB4F12FBF /* SidebarView.swift in Sources */,
 				BE5A825A7AF83E5ADCD3A283 /* Theme.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
