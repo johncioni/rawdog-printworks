@@ -4,7 +4,7 @@
 RAWdog Printworks. Plan 1 (pipeline `--json`) is MERGED to main; its golden
 fixtures are the binding contract. NOW EXECUTING Plan 2 — the macOS SwiftUI app
 (RAW-2) in an Orca worktree. Tasks 1-6/11 implemented; Task 6 is COMMITTED and
-green, awaiting only its scoped re-review. main = 8bd3407.
+green, awaiting only its scoped re-review. main = 23fcd7e; WT = c4a10d1.
 
 ## Done
 - Tasks 1-4 done, reviews clean: 0bff85d scaffold, 3378ea9 models, e47ad9c
