@@ -1,6 +1,9 @@
 import Darwin
 import Foundation
 
+/// Watches the repo inputs that can change review state.
+/// Call `start()` and `stop()` from a single actor so lifecycle operations are
+/// serialized even if a future cancellation handler takes unusually long.
 public final class RepoWatcher: @unchecked Sendable {
     private static let maxCoalesceWait = 2.0
 
@@ -49,6 +52,10 @@ public final class RepoWatcher: @unchecked Sendable {
     private var continuations: [UInt64: AsyncStream<Void>.Continuation] = [:]
     private var nextConsumerID: UInt64 = 0
 
+    /// Each access registers an independent stream. Cancelling one consumer
+    /// finishes only that stream; `stop()` finishes every registered stream.
+    /// Re-read this property after a stop/restart or a cancelled iteration, and
+    /// establish the consumer before `start()` to observe the first changes.
     public var changes: AsyncStream<Void> {
         AsyncStream(bufferingPolicy: .bufferingNewest(1)) { [weak self] continuation in
             guard let self else {
@@ -143,7 +150,7 @@ public final class RepoWatcher: @unchecked Sendable {
         }
         if !onOwnQueue {
             for watch in stopped.2 {
-                watch.closed.wait()
+                _ = watch.closed.wait(timeout: .now() + 2)
             }
         }
         for continuation in stopped.3 {
@@ -194,6 +201,10 @@ public final class RepoWatcher: @unchecked Sendable {
     var openFileDescriptors: [Int32] {
         lock.withLock { watches.values.map(\.fileDescriptor) }
     }
+
+    /// Visible to `@testable` tests so the configured coalesce window can be
+    /// pinned without relying on a wall-clock upper-bound assertion.
+    var effectiveCoalesceDelay: Double { coalesceDelay }
 
     private func retryMissingDirectories(pollingGeneration: UInt64) {
         for relativePath in Self.watchedDirectories {
@@ -321,10 +332,15 @@ public final class RepoWatcher: @unchecked Sendable {
             guard generation == coalesceGeneration, pendingChange else {
                 return nil
             }
+            let currentContinuations = Array(continuations.values)
+            guard !currentContinuations.isEmpty else {
+                pendingCoalesce = nil
+                return []
+            }
             pendingChange = false
             firstPendingChangeAt = nil
             pendingCoalesce = nil
-            return Array(continuations.values)
+            return currentContinuations
         }
         guard let currentContinuations else { return }
         for continuation in currentContinuations {

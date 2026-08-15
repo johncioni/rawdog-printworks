@@ -4,19 +4,30 @@ import XCTest
 /// Scriptable fake: every call pops the next canned envelope.
 /// (Envelopes are wrapped in CommandResult with an empty stderrTail.)
 final class FakeClient: PipelineRunning, @unchecked Sendable {
-    private let mutateLogLock = NSLock()
+    private let stateLock = NSLock()
     private var storedMutateLog: [[String]] = []
-    var statusQueue: [Envelope<StatusSnapshot>] = []
-    var statusCalls = 0
+    private var storedStatusQueue: [Envelope<StatusSnapshot>] = []
+    private var storedStatusCalls = 0
+
+    var statusQueue: [Envelope<StatusSnapshot>] {
+        get { stateLock.withLock { storedStatusQueue } }
+        set { stateLock.withLock { storedStatusQueue = newValue } }
+    }
+    var statusCalls: Int {
+        stateLock.withLock { storedStatusCalls }
+    }
     var mutateLog: [[String]] {
-        mutateLogLock.withLock { storedMutateLog }
+        stateLock.withLock { storedMutateLog }
     }
     var mutateHandler: ((_ args: [String]) -> Any)!
     var asyncMutateHandler: ((_ args: [String]) async -> Any)?
 
     func status() async -> CommandResult<StatusSnapshot> {
-        statusCalls += 1
-        return CommandResult(envelope: statusQueue.removeFirst(), stderrTail: "")
+        let envelope = stateLock.withLock {
+            storedStatusCalls += 1
+            return storedStatusQueue.removeFirst()
+        }
+        return CommandResult(envelope: envelope, stderrTail: "")
     }
     func crops(stem: String) async -> CommandResult<CropsResult> {
         CommandResult(envelope: Envelope(ok: true, result: CropsResult(
@@ -26,7 +37,7 @@ final class FakeClient: PipelineRunning, @unchecked Sendable {
     func mutate<R>(_ type: R.Type, args: [String],
                    onEvent: (@Sendable (ProgressEvent) -> Void)?) async
     -> CommandResult<R> {
-        mutateLogLock.withLock { storedMutateLog.append(args) }
+        stateLock.withLock { storedMutateLog.append(args) }
         let response = if let asyncMutateHandler {
             await asyncMutateHandler(args)
         } else {

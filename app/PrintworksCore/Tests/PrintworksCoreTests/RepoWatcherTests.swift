@@ -17,6 +17,16 @@ final class RepoWatcherTests: XCTestCase {
         "run",
     ]
 
+    func testEffectiveCoalesceDelayReflectsDefaultAndInjectedDuration() {
+        let repo = URL(fileURLWithPath: "/unused")
+
+        XCTAssertEqual(RepoWatcher(repo: repo).effectiveCoalesceDelay, 0.5)
+        XCTAssertEqual(
+            RepoWatcher(repo: repo, coalesce: .milliseconds(200))
+                .effectiveCoalesceDelay,
+            0.2)
+    }
+
     func testCoalescedChangeEmission() async throws {
         let repo = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
