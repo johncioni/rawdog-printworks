@@ -56,6 +56,6 @@ then cleanup. main = this checkpoint; fix worktree = `plan2-fixes`.
    behalf (its `.git` is read-only); check `git status -- HANDOFF.md` first.
 2. Dispatch batch 3 to a FRESH Codex terminal (create → wait tui-idle → read →
    send → read, confirm the prompt took → arm a watcher).
-3. PR the fix branch; user merges.
-4. Cleanup: `defaults delete com.john.rawdog-printworks repoPath` and
-   `… pythonPath`, delete smoke-repo, archive the fix-round ledger.
+3. PR the fix branch; user merges. Then cleanup: `defaults delete
+   com.john.rawdog-printworks repoPath` and `… pythonPath`, delete smoke-repo,
+   archive the fix-round ledger.
