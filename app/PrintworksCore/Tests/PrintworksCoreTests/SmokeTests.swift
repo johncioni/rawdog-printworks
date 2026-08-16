@@ -4,11 +4,11 @@ import XCTest
 
 @MainActor
 final class SmokeTests: XCTestCase {
-    private static let initialStatusJSON = #"{"ok":true,"result":{"repo":"/fixture","toolchain":{"ok":true,"failures":[]},"lock":{"held":false,"stale":false,"pid":null},"styles":["natural"],"photos":[{"stem":"P1","state":"review_required","delivery_id":"fixture-delivery","ingested_at":"2026-08-12T12:00:00Z","review_revision":"r1","previews":{"natural":"previews/P1-natural.jpg"},"preview_hashes":{"natural":"p1-r1"},"stale_previews":[],"adjustments":{},"crops":{"8x10":{"x":0.1,"y":0.1,"w":0.8,"h":0.8,"source":"persisted"}},"expression_audit":[],"published":{"version":null,"path":null,"artifact_count":null}},{"stem":"P2","state":"review_required","delivery_id":"fixture-delivery","ingested_at":"2026-08-12T12:00:01Z","review_revision":"p2-r1","previews":{"natural":"previews/P2-natural.jpg"},"preview_hashes":{"natural":"p2-r1"},"stale_previews":[],"adjustments":{},"crops":{"8x10":{"x":0.1,"y":0.1,"w":0.8,"h":0.8,"source":"persisted"}},"expression_audit":[],"published":{"version":null,"path":null,"artifact_count":null}}]}}"#
+    private static let initialStatusJSON = #"{"ok":true,"result":{"repo":"/fixture","toolchain":{"ok":true,"failures":[]},"lock":{"held":false,"stale":false,"pid":null},"styles":["natural"],"photos":[{"stem":"P1","state":"review_required","delivery_id":"fixture-delivery","ingested_at":"2026-08-12T12:00:00Z","review_revision":"r1","previews":{"natural":"previews/P1-natural.jpg"},"preview_hashes":{"natural":"p1-r1"},"stale_previews":[],"adjustments":{},"crops":{"8x10":{"x":0.1,"y":0.1,"w":0.8,"h":0.8,"source":"persisted"},"5x7":{"x":0.2,"y":0.15,"w":0.6,"h":0.7,"source":"persisted"}},"expression_audit":[],"published":{"version":null,"path":null,"artifact_count":null}},{"stem":"P2","state":"review_required","delivery_id":"fixture-delivery","ingested_at":"2026-08-12T12:00:01Z","review_revision":"p2-r1","previews":{"natural":"previews/P2-natural.jpg"},"preview_hashes":{"natural":"p2-r1"},"stale_previews":[],"adjustments":{},"crops":{"8x10":{"x":0.1,"y":0.1,"w":0.8,"h":0.8,"source":"persisted"}},"expression_audit":[],"published":{"version":null,"path":null,"artifact_count":null}}]}}"#
 
-    private static let adjustedStatusJSON = #"{"ok":true,"result":{"repo":"/fixture","toolchain":{"ok":true,"failures":[]},"lock":{"held":false,"stale":false,"pid":null},"styles":["natural"],"photos":[{"stem":"P1","state":"review_required","delivery_id":"fixture-delivery","ingested_at":"2026-08-12T12:00:00Z","review_revision":"r2","previews":{"natural":"previews/P1-natural.jpg"},"preview_hashes":{"natural":"p1-r2"},"stale_previews":[],"adjustments":{"natural":{"temperature":{"value":5600,"source":"sidecar"},"exposure":{"value":null,"source":"camera"}}},"crops":{"8x10":{"x":0.1,"y":0.1,"w":0.8,"h":0.8,"source":"persisted"}},"expression_audit":[],"published":{"version":null,"path":null,"artifact_count":null}},{"stem":"P2","state":"review_required","delivery_id":"fixture-delivery","ingested_at":"2026-08-12T12:00:01Z","review_revision":"p2-r1","previews":{"natural":"previews/P2-natural.jpg"},"preview_hashes":{"natural":"p2-r1"},"stale_previews":[],"adjustments":{},"crops":{"8x10":{"x":0.1,"y":0.1,"w":0.8,"h":0.8,"source":"persisted"}},"expression_audit":[],"published":{"version":null,"path":null,"artifact_count":null}}]}}"#
+    private static let adjustedStatusJSON = #"{"ok":true,"result":{"repo":"/fixture","toolchain":{"ok":true,"failures":[]},"lock":{"held":false,"stale":false,"pid":null},"styles":["natural"],"photos":[{"stem":"P1","state":"review_required","delivery_id":"fixture-delivery","ingested_at":"2026-08-12T12:00:00Z","review_revision":"r2","previews":{"natural":"previews/P1-natural.jpg"},"preview_hashes":{"natural":"p1-r2"},"stale_previews":[],"adjustments":{"natural":{"temperature":{"value":5600,"source":"sidecar"},"exposure":{"value":null,"source":"camera"}}},"crops":{"8x10":{"x":0.1,"y":0.1,"w":0.8,"h":0.8,"source":"persisted"},"5x7":{"x":0.2,"y":0.15,"w":0.6,"h":0.7,"source":"persisted"}},"expression_audit":[],"published":{"version":null,"path":null,"artifact_count":null}},{"stem":"P2","state":"review_required","delivery_id":"fixture-delivery","ingested_at":"2026-08-12T12:00:01Z","review_revision":"p2-r1","previews":{"natural":"previews/P2-natural.jpg"},"preview_hashes":{"natural":"p2-r1"},"stale_previews":[],"adjustments":{},"crops":{"8x10":{"x":0.1,"y":0.1,"w":0.8,"h":0.8,"source":"persisted"}},"expression_audit":[],"published":{"version":null,"path":null,"artifact_count":null}}]}}"#
 
-    private static let finalStatusJSON = #"{"ok":true,"result":{"repo":"/fixture","toolchain":{"ok":true,"failures":[]},"lock":{"held":false,"stale":false,"pid":null},"styles":["natural"],"photos":[{"stem":"P1","state":"published","delivery_id":"fixture-delivery","ingested_at":"2026-08-12T12:00:00Z","review_revision":"r3","previews":{"natural":"previews/P1-natural.jpg"},"preview_hashes":{"natural":"p1-r2"},"stale_previews":[],"adjustments":{"natural":{"temperature":{"value":5600,"source":"sidecar"},"exposure":{"value":null,"source":"camera"}}},"crops":{"8x10":{"x":0.1,"y":0.1,"w":0.8,"h":0.8,"source":"persisted"}},"expression_audit":["eyes open — all: pass","expressions natural: pass","no blinks in crops: pass"],"published":{"version":"v001","path":"Output/photos/P1","artifact_count":29}},{"stem":"P2","state":"review_required","delivery_id":"fixture-delivery","ingested_at":"2026-08-12T12:00:01Z","review_revision":"p2-r1","previews":{"natural":"previews/P2-natural.jpg"},"preview_hashes":{"natural":"p2-r1"},"stale_previews":[],"adjustments":{},"crops":{"8x10":{"x":0.1,"y":0.1,"w":0.8,"h":0.8,"source":"persisted"}},"expression_audit":[],"published":{"version":null,"path":null,"artifact_count":null}}]}}"#
+    private static let finalStatusJSON = #"{"ok":true,"result":{"repo":"/fixture","toolchain":{"ok":true,"failures":[]},"lock":{"held":false,"stale":false,"pid":null},"styles":["natural"],"photos":[{"stem":"P1","state":"published","delivery_id":"fixture-delivery","ingested_at":"2026-08-12T12:00:00Z","review_revision":"r3","previews":{"natural":"previews/P1-natural.jpg"},"preview_hashes":{"natural":"p1-r2"},"stale_previews":[],"adjustments":{"natural":{"temperature":{"value":5600,"source":"sidecar"},"exposure":{"value":null,"source":"camera"}}},"crops":{"8x10":{"x":0.1,"y":0.1,"w":0.8,"h":0.8,"source":"persisted"},"5x7":{"x":0.2,"y":0.15,"w":0.6,"h":0.7,"source":"persisted"}},"expression_audit":["eyes open — all: pass","expressions natural: pass","no blinks in crops: pass"],"published":{"version":"v001","path":"Output/photos/P1","artifact_count":29}},{"stem":"P2","state":"review_required","delivery_id":"fixture-delivery","ingested_at":"2026-08-12T12:00:01Z","review_revision":"p2-r1","previews":{"natural":"previews/P2-natural.jpg"},"preview_hashes":{"natural":"p2-r1"},"stale_previews":[],"adjustments":{},"crops":{"8x10":{"x":0.1,"y":0.1,"w":0.8,"h":0.8,"source":"persisted"}},"expression_audit":[],"published":{"version":null,"path":null,"artifact_count":null}}]}}"#
 
     private static let adjustJSON = #"{"ok":true,"result":{"stem":"P1","style":"natural","preview":"previews/P1-natural.jpg","temperature":{"value":5600,"source":"sidecar"},"exposure":{"value":null,"source":"camera"},"review_revision_before":"r1","review_revision_after":"r2"}}"#
     private static let previewJSON = #"{"ok":true,"result":{"stem":"P1","style":"natural","preview":"previews/P1-natural.jpg","temperature":{"value":5600,"source":"sidecar"},"exposure":{"value":null,"source":"camera"},"review_revision_before":"r1","review_revision_after":"r2"}}"#
@@ -19,6 +19,7 @@ final class SmokeTests: XCTestCase {
         let repo = try makeFixtureRepo()
         defer { try? FileManager.default.removeItem(at: repo) }
         let stub = try makeStubPython(at: repo)
+        let repoBeforeFlow = try snapshotFixtureRepo(at: repo)
         let client = PipelineClient(
             config: PipelineConfig(repo: repo, python: stub),
             executableOverride: stub)
@@ -64,11 +65,25 @@ final class SmokeTests: XCTestCase {
             "expressions natural: pass",
             "no blinks in crops: pass",
         ])
+        let crops = try XCTUnwrap(
+            review["crops"] as? [String: [String: Any]])
+        XCTAssertEqual(Set(crops.keys), Set(["8x10", "5x7"]))
+        try assertCrop(crops["8x10"], x: 0.1, y: 0.1, w: 0.8, h: 0.8)
+        try assertCrop(crops["5x7"], x: 0.2, y: 0.15, w: 0.6, h: 0.7)
 
         XCTAssertEqual(model.snapshot?.photos.first { $0.stem == "P1" }?.state,
                        "published")
         XCTAssertEqual(model.snapshot?.photos.first { $0.stem == "P1" }?
             .published.version, "v001")
+
+        var repoAfterFlow = try snapshotFixtureRepo(at: repo)
+        let stubArtifacts = Set([
+            "stub-calls.log", "stub-review.json", "adjust-seen", "run-seen",
+        ])
+        XCTAssertEqual(Set(repoAfterFlow.keys).subtracting(repoBeforeFlow.keys),
+                       stubArtifacts)
+        for path in stubArtifacts { repoAfterFlow.removeValue(forKey: path) }
+        XCTAssertEqual(repoAfterFlow, repoBeforeFlow)
     }
 
     private func makeFixtureRepo() throws -> URL {
@@ -93,6 +108,46 @@ final class SmokeTests: XCTestCase {
                 to: repo.appendingPathComponent("previews/\(stem)-natural.jpg"))
         }
         return repo
+    }
+
+    private struct FixtureEntry: Equatable {
+        let isDirectory: Bool
+        let contents: Data?
+    }
+
+    private func snapshotFixtureRepo(at repo: URL) throws
+    -> [String: FixtureEntry] {
+        let keys: Set<URLResourceKey> = [.isDirectoryKey]
+        guard let enumerator = FileManager.default.enumerator(
+            at: repo, includingPropertiesForKeys: Array(keys))
+        else { throw CocoaError(.fileReadUnknown) }
+
+        var snapshot: [String: FixtureEntry] = [:]
+        let rootPath = repo.resolvingSymlinksInPath().path + "/"
+        for case let url as URL in enumerator {
+            let values = try url.resourceValues(forKeys: keys)
+            let itemPath = url.resolvingSymlinksInPath().path
+            guard itemPath.hasPrefix(rootPath) else {
+                throw CocoaError(.fileReadUnknown)
+            }
+            let relativePath = String(itemPath.dropFirst(rootPath.count))
+            let isDirectory = values.isDirectory == true
+            snapshot[relativePath] = FixtureEntry(
+                isDirectory: isDirectory,
+                contents: isDirectory ? nil : try Data(contentsOf: url))
+        }
+        return snapshot
+    }
+
+    private func assertCrop(_ value: [String: Any]?, x: Double, y: Double,
+                            w: Double, h: Double) throws {
+        let crop = try XCTUnwrap(value)
+        XCTAssertEqual(Set(crop.keys), Set(["x", "y", "w", "h"]))
+        XCTAssertNil(crop["source"])
+        XCTAssertEqual(try XCTUnwrap(crop["x"] as? NSNumber).doubleValue, x)
+        XCTAssertEqual(try XCTUnwrap(crop["y"] as? NSNumber).doubleValue, y)
+        XCTAssertEqual(try XCTUnwrap(crop["w"] as? NSNumber).doubleValue, w)
+        XCTAssertEqual(try XCTUnwrap(crop["h"] as? NSNumber).doubleValue, h)
     }
 
     private func makeStubPython(at repo: URL) throws -> URL {

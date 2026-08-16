@@ -1007,10 +1007,26 @@ public final class AppModel {
             Task { @MainActor [weak self] in
                 guard let self, generation == self.commandGeneration,
                       let key = event.stem ?? defaultStem else { return }
-                self.renderProgress[key] = event
+                self.renderProgress[key] = Self.progressEventPreservingFraction(
+                    current: self.renderProgress[key], incoming: event)
                 self.progressKeys.insert(key)
             }
         }
+    }
+
+    /// Stage events do not carry a fraction. Once determinate rendering has
+    /// started, keep its last value instead of snapping the bar back to zero.
+    static func progressEventPreservingFraction(
+        current: ProgressEvent?, incoming: ProgressEvent
+    ) -> ProgressEvent {
+        let currentHasFraction = current?.index != nil
+            && current?.total != nil && (current?.total ?? 0) > 0
+        let incomingHasFraction = incoming.index != nil
+            && incoming.total != nil && (incoming.total ?? 0) > 0
+        if currentHasFraction && !incomingHasFraction, let current {
+            return current
+        }
+        return incoming
     }
 
     private static func number(_ value: Double, decimals: Int) -> String {

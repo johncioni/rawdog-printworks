@@ -368,6 +368,18 @@ final class AppModelTests: XCTestCase {
         XCTAssertTrue(model.busyExternally)
     }
 
+    func testProgressStageKeepsLastDeterminateFraction() {
+        let landed = ProgressEvent(event: "progress", stem: "P1", stage: nil,
+                                   index: 29, total: 29, detail: nil)
+        let verify = ProgressEvent(event: "stage", stem: "P1", stage: "verify",
+                                   index: nil, total: nil, detail: nil)
+
+        XCTAssertEqual(AppModel.progressEventPreservingFraction(
+            current: landed, incoming: verify), landed)
+        XCTAssertEqual(AppModel.progressEventPreservingFraction(
+            current: nil, incoming: verify), verify)
+    }
+
     func testApproveChainsRunAndSendsReviewFile() async throws {
         let fake = FakeClient()
         fake.statusQueue = [snap([photo(stem: "P1", revision: "r1")]),

@@ -6,6 +6,7 @@ xcodebuild -project app/RAWdogPrintworks/RAWdogPrintworks.xcodeproj \
   -scheme RAWdogPrintworks -configuration Release \
   -derivedDataPath app/build build
 APP="app/build/Build/Products/Release/RAWdogPrintworks.app"
-codesign --force --deep --sign - "$APP"
+codesign --force --sign - "$APP"
+codesign --verify --strict "$APP"
 echo "Built + ad-hoc signed: $APP"
 echo "Install: cp -R \"$APP\" /Applications/"
