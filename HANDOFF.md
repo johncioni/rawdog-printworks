@@ -2,59 +2,64 @@
 
 ## Goal
 RAWdog Printworks. Plan 1 (pipeline `--json`) is MERGED. **Plan 2 — the macOS
-SwiftUI app (RAW-2) — is COMPLETE and UNMERGED on
-`johncioni/plan2-printworks-app`.** The whole-branch review is DONE and says
-MERGE AS-IS. **PR #5 IS OPEN** (25 commits, 38 files, +7153/−58). Remaining: the
-user merges #5, a 6-item fix round, then cleanup. WT = 839d574.
+SwiftUI app (RAW-2) — is COMPLETE and UNMERGED.** The whole-branch review says
+MERGE AS-IS and **PR #5 is OPEN and MERGEABLE** (conflict resolved). Remaining:
+CI + CodeRabbit land, reconcile, a 6-item fix round, user merges, cleanup.
+WT = 460f72c.
 
 ## Done (this session)
-- **Dispatched the whole-branch review** from the archived brief: new Orca
-  terminal in the plan2 worktree, `claude --model opus --effort xhigh
-  --permission-mode bypassPermissions`. Verified the prompt TOOK, armed a
-  watcher, re-read at completion (the file was still being revised on arrival).
-- **Review completed (19 min). Verdict: MERGE AS-IS.** It re-ran both gates
-  itself — 85 Swift tests exit 0, 295 pytest exit 0 — and left the worktree
-  clean at 839d574. Report archived at
-  `docs/superpowers/sdd-archive/2026-08-12-printworks-app/whole-branch-review.md`.
-  - Keep this correction: `git diff main..HEAD` looks like it deletes ~14k
-    archive lines — that is main moving forward, not the branch. Real change set
-    is `main...HEAD` (base 60facc9): 38 files, +7153/−58 — what PR #5 shows.
+- **Dispatched and completed the whole-branch review** (Opus 5 xhigh in the plan2
+  worktree, 19 min). Verdict **MERGE AS-IS**; it re-ran both gates itself — 85
+  Swift tests exit 0, 295 pytest exit 0 — leaving the worktree clean.
+  Report: `docs/superpowers/sdd-archive/2026-08-12-printworks-app/whole-branch-review.md`
+  - Keep this correction: `git diff main..HEAD` looked like it deleted ~14k
+    archive lines — that was main moving forward, not the branch. Real change set
+    is the three-dot diff: 38 files, +7153/−58 — what PR #5 shows.
   - **SIX fix-now items, none a merge blocker: F1 F2 F3 F4 F5 F6.** Take the list
     from the review's verdict TABLES, not its closing paragraph — the closing
     names only four (it omits F3 = m7 case 3, and F5 = m9). Nothing found can
-    publish or approve pixels the user did not visually approve; that was
-    verified against the pipeline, not assumed.
-- **Pushed main and the branch; opened PR #5** with a body carrying the
-  change-set correction, the four gates, the review verdict and the six items.
+    publish or approve pixels the user did not visually approve.
+- Pushed main and the branch; **opened PR #5**.
+- **Unblocked PR #5** (`460f72c`): it was CONFLICTING on one file, `HANDOFF.md`
+  — branch stop-hook churn vs main's checkpoint. Merged origin/main into the
+  branch taking MAIN's copy (authoritative by convention); verified the merge
+  brought in **no `app/` or `scripts/` changes**, only main's docs archive.
+  PR is now MERGEABLE and **the `tests` CI gate fired for the first time** —
+  before this it had never run, because GitHub cannot build a merge ref for a
+  conflicting PR.
+- **The fix round has NOT started** — deliberately, pending CodeRabbit.
 
-## Carried forward (prior sessions, still true)
+## Carried forward (still true)
 - All 11 tasks verified by the controller (exit code + a mutation per new test).
   THREE tests that COULD NOT FAIL were caught that way (Tasks 6, 9, 11) — the
   recurring failure mode here, so always mutate a new test.
-- VISUAL QA PASSED (`task-11-visual-qa-note.md`): full loop on the scratch repo
-  → v002 published, 29 artifacts, v001 pruned, only pipeline-owned files written.
+- VISUAL QA PASSED: full loop on the scratch repo → v002 published, v001 pruned.
 - USER DECISION (m12, standing): `runMutating` is intentionally UNCANCELLABLE —
   cancelling would SIGTERM RawTherapee mid-write into `staging/`. Do not "fix".
 
 ## Ruled out
 - Squashing Plan 2 — this history carries the Task 7 arc, the `--force` catch
-  and m12, as Plan 1's 16 commits did. PR #5 asks for a merge commit.
+  and m12. PR #5 asks for a merge commit.
 - Making `runMutating` cancellable (m12). F2's fix is a confirmation, not cancel.
-- Widening Codex's writable roots — controller-commits-after-verifying IS the gate.
-- Smoking mutating features against the real repo — scratch repo instead.
+- **Starting the fix round before CodeRabbit lands** — its findings must be
+  reconciled against F1–F6 first, or we double-fix or reopen dismissed items.
+- Rebasing the branch onto main to clear the conflict — a merge commit keeps the
+  25 per-task commits intact and the checkout is shared with agents.
 
 ## In flight
-- **Nothing running.** Reviewer terminal `term_274c8aef…` is finished (safe to
-  close); the OLD Codex terminal `term_4d74c3eb…` is at 56% — do NOT send to it.
+- **Watcher armed on PR #5's checks** (scratchpad `watch-pr5.sh`, bg
+  `bm3a8q852`): polls every 30s, exits when nothing is `pending`, times out at
+  ~45 min. Manual check: `gh pr checks 5`.
+- `pytest` (macOS runner) in progress; **CodeRabbit re-queued** by the new commit.
 - **THE APP POINTS AT THE SCRATCH REPO** `~/orca/workspaces/rawdog-printworks/
-  smoke-repo` (P1036163 there is published v002 from the QA).
+  smoke-repo`. Cleanup at the very end.
 
 ## Next
-1. **USER MERGES https://github.com/johncioni/rawdog-printworks/pull/5** — the
-   only open question; nothing else blocks. `gh pr merge 5 --merge` (NOT squash).
-   Do not merge it on the user's behalf.
-2. Fix round for all SIX (F1 F2 F3 F4 F5 F6) — dispatch via the Orca loop per
-   memory `orca-agent-dispatch`; the review gives file:line and a concrete
-   failure scenario for each, so the brief is a copy-out.
-3. Cleanup: `defaults delete com.john.rawdog-printworks repoPath` and
+1. Read the watcher result. If `pytest` fails, that is a real regression — CI has
+   never run on this branch before, so treat a failure as new information.
+2. Reconcile CodeRabbit's findings against F1–F6 into ONE fix-vs-dismiss list
+   before any code changes.
+3. Fix round for the reconciled list — dispatch per memory `orca-agent-dispatch`.
+4. User merges #5: `gh pr merge 5 --merge` (NOT squash). Not on their behalf.
+5. Cleanup: `defaults delete com.john.rawdog-printworks repoPath` and
    `… pythonPath`, delete smoke-repo, re-refresh the archive.
