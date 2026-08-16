@@ -4,8 +4,9 @@
 RAWdog Printworks. Plan 1 (pipeline `--json`) is MERGED. **Plan 2 — the macOS
 SwiftUI app (RAW-2) — is COMPLETE: 25 commits on
 `johncioni/plan2-printworks-app`, UNMERGED.** The whole-branch review is DONE and
-says MERGE AS-IS. Remaining: the user's merge decision, a 6-item fix round, then
-cleanup. main = this checkpoint's own commit, **NOT YET PUSHED**; WT = 839d574.
+says MERGE AS-IS. **PR #5 IS OPEN** (25 commits, 38 files, +7153/−58). Remaining:
+the user merges #5, a 6-item fix round, then cleanup. Branch + main are both on
+origin; WT = 839d574.
 
 ## Done
 - All 11 tasks complete. Branch-tip gates: **85 Swift tests exit 0**, xcodebuild
@@ -50,10 +51,10 @@ cleanup. main = this checkpoint's own commit, **NOT YET PUSHED**; WT = 839d574.
   delete smoke-repo.
 
 ## Next
-1. **USER DECIDES THE MERGE — the only open question; nothing else blocks.**
-   Recommend a PR preserving the 25 per-task commits (Plan 1's pattern), then the
-   fixes as a follow-up: holding does not make them safer.
-   Also pending the user's word: `git push origin main` (2 local docs commits).
+1. **USER MERGES https://github.com/johncioni/rawdog-printworks/pull/5** — the
+   only open question; nothing else blocks. Use a MERGE COMMIT, not squash
+   (`gh pr merge 5 --merge`), preserving the 25 per-task commits per Plan 1's
+   pattern. Do not merge it on the user's behalf.
 2. Fix round for all SIX (F1 F2 F3 F4 F5 F6) — dispatch via the Orca loop per
    memory `orca-agent-dispatch`; the review already gives file:line and a
    concrete failure scenario for each, so the brief is a copy-out.
