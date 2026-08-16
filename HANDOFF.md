@@ -10,12 +10,11 @@ resting point — the next session starts new work, not a continuation.
 - **Whole-branch review** of Plan 2 (Opus 5 xhigh): verdict MERGE AS-IS, six
   fix-now items. **Read F1–F6 off its verdict TABLES**, not its closing
   paragraph, which names only four.
-- **PR #5 (Plan 2, 25 commits) merged** as `3919b99`. It was CONFLICTING on
-  `HANDOFF.md` alone; fixing that fired the `tests` CI gate **for the first
-  time** — GitHub cannot build a merge ref for a conflicting PR.
-- **PR #6 (fix round, 4 commits) merged** as `2a6b97a`: `f93ec85` gating
-  (F1–F6), `964d708` weak tests, `852b0e5` concurrency, `1e60c72` CodeRabbit's
-  two findings on #6.
+- **PR #5 (Plan 2, 25 commits) merged** as `3919b99` — it was CONFLICTING on
+  `HANDOFF.md` alone, and fixing that fired the `tests` CI gate **for the first
+  time**: GitHub cannot build a merge ref for a conflicting PR.
+- **PR #6 (fix round, 4 commits) merged** as `2a6b97a`: `f93ec85` gating (F1–F6),
+  `964d708` weak tests, `852b0e5` concurrency, `1e60c72` CodeRabbit's #6 findings.
 - **CodeRabbit: 32 findings on #5** (could NOT post inline — GitHub limit) plus 2
   on #6, reconciled and archived. It found a weak-test cluster the human review
   missed, and missed F1/F2/F6 entirely.
@@ -28,9 +27,8 @@ resting point — the next session starts new work, not a continuation.
   Approve stayed disabled.
 - **Merged main verified locally** (CI could not run): swift test 100, pytest
   **296**, `xcodebuild` Release BUILD SUCCEEDED.
-- **Cleanup**: both `defaults` keys deleted, `smoke-repo` deleted (after checking
-  its RAW was byte-identical to `archive/`), both worktrees removed, both remote
-  branches deleted.
+- **Cleanup**: both `defaults` keys deleted, `smoke-repo` deleted (its RAW was
+  byte-identical to `archive/`), both worktrees and remote branches removed.
 
 ## Ruled out
 - Making `runMutating` cancellable (m12), including CodeRabbit's watchdog→SIGKILL.
