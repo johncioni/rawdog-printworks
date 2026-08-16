@@ -17,7 +17,8 @@ public protocol PipelineRunning: Sendable {
     func status() async -> CommandResult<StatusSnapshot>
     func mutate<R: Codable & Sendable & Equatable>(
         _ type: R.Type, args: [String],
-        onEvent: (@Sendable (ProgressEvent) -> Void)?
+        onEvent: (@Sendable (ProgressEvent) -> Void)?,
+        onLongRunning: (@Sendable (Duration) -> Void)?
     ) async -> CommandResult<R>
     func crops(stem: String) async -> CommandResult<CropsResult>
 }
@@ -35,9 +36,11 @@ extension PipelineClient: PipelineRunning {
 
     public func mutate<R: Codable & Sendable & Equatable>(
         _ type: R.Type, args: [String],
-        onEvent: (@Sendable (ProgressEvent) -> Void)?
+        onEvent: (@Sendable (ProgressEvent) -> Void)?,
+        onLongRunning: (@Sendable (Duration) -> Void)?
     ) async -> CommandResult<R> {
-        await runMutating(type, args: args, onEvent: onEvent)
+        await runMutating(type, args: args, onEvent: onEvent,
+                          onLongRunning: onLongRunning)
     }
 }
 
@@ -50,6 +53,41 @@ public enum BannerAction: String, Sendable, Equatable {
     case retry
     case openSettings
     case reReview
+}
+
+public struct ReprocessAllConfirmation: Sendable, Equatable {
+    public let photoCount: Int
+
+    public var title: String {
+        "Reprocess all \(photoCount) photos?"
+    }
+
+    public var message: String {
+        "This re-renders every photo and publishes a new version of each."
+    }
+}
+
+public struct LongRunningCommandStatus: Sendable, Equatable {
+    public let command: String
+    public let stem: String?
+    public let elapsed: Duration
+    public let revealURL: URL
+
+    public var message: String {
+        let subject = switch command {
+        case "run", "preview": "Rendering"
+        case "ingest": "Ingesting"
+        case "approve": "Approving"
+        case "adjust": "Adjusting"
+        default: "Pipeline command"
+        }
+        let target = stem.map { " \($0)" } ?? ""
+        return "\(subject)\(target) — still running, \(elapsedMinutes) min"
+    }
+
+    public var elapsedMinutes: Int {
+        max(1, Int(elapsed.components.seconds) / 60)
+    }
 }
 
 // MARK: - Review draft
@@ -109,6 +147,7 @@ public final class AppModel {
     @ObservationIgnored private let sliderDebounce: Duration
     @ObservationIgnored private let reviewFileDirectory: URL
     @ObservationIgnored private let onPublished: @MainActor @Sendable ([PublishedPhoto]) -> Void
+    @ObservationIgnored private let inputScanner: @Sendable (URL, StatusSnapshot) -> [String]
 
     // MARK: Published state
 
@@ -131,18 +170,16 @@ public final class AppModel {
     public var activeStem: String?
     /// Latest progress event per stem.
     public var renderProgress: [String: ProgressEvent] = [:]
+    /// Reporting-only state for a mutation that has crossed the watchdog
+    /// threshold. It never changes subprocess or FIFO lifetime.
+    public var longRunningCommand: LongRunningCommandStatus?
 
     public var selectedStem: String?
     public var selectedStyle: String = "natural"
     /// `.none` = browse all deliveries; `.some(nil)` = the "Earlier" group.
     public var selectedDeliveryId: String??
 
-    /// Successes from the most recent run result — applied even when the
-    /// envelope failed with `PARTIAL_FAILURE` (drives Task 10's notifications).
-    public var lastPublished: [PublishedPhoto] = []
-    /// State advances from the most recent result and unresolved per-stem
-    /// failures accumulated across targeted runs.
-    public var lastAdvanced: [AdvancedPhoto] = []
+    /// Unresolved per-stem failures accumulated across targeted runs.
     public var lastFailures: [String: StemFailure] = [:]
     /// Per-file failures from the most recent ingest result.
     public var lastIngestFailures: [String: FileFailure] = [:]
@@ -235,6 +272,7 @@ public final class AppModel {
         self.sliderDebounce = sliderDebounce
         self.reviewFileDirectory = FileManager.default.temporaryDirectory
         self.onPublished = onPublished
+        self.inputScanner = Self.findPendingInputFiles
     }
 
     /// Test seam for the review-file write failure path. Production always
@@ -246,6 +284,20 @@ public final class AppModel {
         self.sliderDebounce = sliderDebounce
         self.reviewFileDirectory = reviewFileDirectory
         self.onPublished = { _ in }
+        self.inputScanner = Self.findPendingInputFiles
+    }
+
+    /// Test seam proving the directory scan runs outside MainActor isolation.
+    init(
+        client: any PipelineRunning, repo: URL, sliderDebounce: Duration,
+        inputScanner: @escaping @Sendable (URL, StatusSnapshot) -> [String]
+    ) {
+        self.client = client
+        self.repo = repo
+        self.sliderDebounce = sliderDebounce
+        self.reviewFileDirectory = FileManager.default.temporaryDirectory
+        self.onPublished = { _ in }
+        self.inputScanner = inputScanner
     }
 
     // MARK: - Snapshot
@@ -283,8 +335,11 @@ public final class AppModel {
             return
         }
         self.snapshot = snapshot
-        pendingInputFiles = Self.findPendingInputFiles(repo: repo,
-                                                       snapshot: snapshot)
+        let repo = repo
+        let inputScanner = inputScanner
+        pendingInputFiles = await Task.detached(priority: .utility) {
+            inputScanner(repo, snapshot)
+        }.value
         for photo in snapshot.photos where lastFailures[photo.stem] != nil {
             let current = FailureStamp(photo: photo)
             guard let failedAt = failureStamps[photo.stem] else {
@@ -300,7 +355,7 @@ public final class AppModel {
         reconcileDrafts(snapshot, capturedDuring: capture)
     }
 
-    private static func findPendingInputFiles(
+    private nonisolated static func findPendingInputFiles(
         repo: URL, snapshot: StatusSnapshot
     ) -> [String] {
         let knownStems = Set(snapshot.photos.map(\.stem))
@@ -325,6 +380,10 @@ public final class AppModel {
     /// order. A nil ID denotes the delivery-less "Earlier" group.
     public func photos(inDeliveryOf deliveryID: String?) -> [PhotoStatus] {
         (snapshot?.photos ?? []).filter { $0.deliveryId == deliveryID }
+    }
+
+    public var reprocessAllConfirmation: ReprocessAllConfirmation {
+        ReprocessAllConfirmation(photoCount: snapshot?.photos.count ?? 0)
     }
 
     /// Read-only crop suggestions/persisted windows, cached only while the
@@ -524,6 +583,8 @@ public final class AppModel {
     public func canApprove(stem: String) -> Bool {
         guard let draft = drafts[stem], !draft.isStale,
               let photo = photo(stem), photo.stalePreviews.isEmpty,
+              photo.workflowState == .previewReady
+                || photo.workflowState == .reviewRequired,
               activeCommand == nil, !busyExternally
         else { return false }
         return ReviewDraft.checkKeys.allSatisfy { draft.checks[$0] == true }
@@ -775,6 +836,22 @@ public final class AppModel {
     public func ingest(paths: [String]) async {
         guard !paths.isEmpty else { return }
         beginCommand("ingest", stem: nil)
+        await performIngest(paths: paths)
+    }
+
+    /// Drop entry point. The command reservation happens synchronously so a
+    /// second drop in the same event-loop turn sees `activeCommand` and is
+    /// visibly refused by `dropDestination`.
+    @discardableResult
+    public func ingestDropped(paths: [String]) -> Bool {
+        guard !paths.isEmpty, activeCommand == nil, !busyExternally
+        else { return false }
+        beginCommand("ingest", stem: nil)
+        Task { await performIngest(paths: paths) }
+        return true
+    }
+
+    private func performIngest(paths: [String]) async {
         let args = ["ingest", "--from"] + paths
             + ["--delivery-id", UUID().uuidString, "--json"]
         let ingested = await send(IngestResult.self, args: args,
@@ -804,7 +881,9 @@ public final class AppModel {
         }
 
         if let error = ingested.envelope.error {
-            surface(error, details: ingested.stderrTail,
+            surface(error, details: Self.ingestFailureDetails(
+                result: ingested.envelope.result,
+                stderrTail: ingested.stderrTail),
                     retry: { [weak self] in await self?.ingest(paths: paths) })
         } else if let error = runError {
             surface(error, details: runDetails,
@@ -847,7 +926,9 @@ public final class AppModel {
         }
 
         if let error = ingest.envelope.error {
-            surface(error, details: ingest.stderrTail,
+            surface(error, details: Self.ingestFailureDetails(
+                result: ingest.envelope.result,
+                stderrTail: ingest.stderrTail),
                     retry: { [weak self] in await self?.ingestPending() })
         } else if let error = runError {
             surface(error, details: runDetails,
@@ -899,11 +980,9 @@ public final class AppModel {
 
     private func applyRunResult(_ result: RunResult?) {
         guard let result else { return }
-        lastPublished = result.published
         if !result.published.isEmpty {
             onPublished(result.published)
         }
-        lastAdvanced = result.advanced
         for stem in result.published.map(\.stem) + result.advanced.map(\.stem) {
             lastFailures.removeValue(forKey: stem)
             failureStamps.removeValue(forKey: stem)
@@ -924,6 +1003,17 @@ public final class AppModel {
             failures, failure in
             failures[failure.file] = failure
         }
+    }
+
+    private static func ingestFailureDetails(
+        result: IngestResult?, stderrTail: String
+    ) -> String {
+        let failures = (result?.failed ?? [])
+            .map { "\($0.file): \($0.message)" }
+            .joined(separator: "\n")
+        return [failures, stderrTail]
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n\n")
     }
 
     // MARK: - Banner
@@ -977,6 +1067,7 @@ public final class AppModel {
         commandGeneration &+= 1
         activeCommand = name
         activeStem = stem
+        longRunningCommand = nil
         clearBanner()
     }
 
@@ -986,6 +1077,7 @@ public final class AppModel {
     private func endCommand() async {
         activeCommand = nil
         activeStem = nil
+        longRunningCommand = nil
         for key in progressKeys { renderProgress.removeValue(forKey: key) }
         progressKeys.removeAll()
         await refresh()
@@ -997,7 +1089,25 @@ public final class AppModel {
         lastMutatingArgs = args
         let handler = streamProgress
             ? progressHandler(defaultStem: activeStem) : nil
-        return await client.mutate(type, args: args, onEvent: handler)
+        return await client.mutate(
+            type, args: args, onEvent: handler,
+            onLongRunning: longRunningHandler())
+    }
+
+    private func longRunningHandler() -> (@Sendable (Duration) -> Void) {
+        let generation = commandGeneration
+        let command = activeCommand ?? "pipeline"
+        let stem = activeStem
+        let revealURL = repo.appendingPathComponent("run", isDirectory: true)
+        return { [weak self] elapsed in
+            Task { @MainActor [weak self] in
+                guard let self, generation == self.commandGeneration,
+                      self.activeCommand != nil else { return }
+                self.longRunningCommand = LongRunningCommandStatus(
+                    command: command, stem: stem, elapsed: elapsed,
+                    revealURL: revealURL)
+            }
+        }
     }
 
     private func progressHandler(defaultStem: String?)

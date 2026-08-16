@@ -1,24 +1,13 @@
 import SwiftUI
 import PrintworksCore
 
-struct PhotoStateAppearance {
-    let color: Color
-    let label: String
-
-    init(state: String) {
-        switch state {
-        case "verified":
-            color = Theme.statusPublished
-            label = "Published"
-        case "preview_ready", "review_required":
-            color = Theme.statusReview
-            label = "Needs review"
-        case "approved", "rendered":
-            color = Theme.accent
-            label = "Rendering"
-        default:
-            color = Theme.statusIngested
-            label = "Ingested"
+extension PhotoStateAppearance {
+    var color: Color {
+        switch self {
+        case .published: Theme.statusPublished
+        case .needsReview: Theme.statusReview
+        case .rendering: Theme.accent
+        case .ingested: Theme.statusIngested
         }
     }
 }
@@ -40,10 +29,19 @@ struct GridView: View {
             ScrollView {
                 LazyVGrid(columns: columns, spacing: 16) {
                     ForEach(visiblePhotos, id: \.stem) { photo in
-                        photoCard(photo)
-                            .onTapGesture(count: 2) {
+                        ZStack(alignment: .topTrailing) {
+                            Button {
                                 openReview(photo.stem)
+                            } label: {
+                                photoCard(photo)
                             }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Open \(photo.stem) for review")
+
+                            if model.lastFailures[photo.stem] != nil {
+                                failureBadge(photo)
+                            }
+                        }
                     }
                 }
                 .padding(20)
@@ -70,28 +68,6 @@ struct GridView: View {
                                 in: RoundedRectangle(cornerRadius: 8))
                     .padding(10)
 
-                if model.lastFailures[photo.stem] != nil {
-                    HStack(spacing: 8) {
-                        Label("Render failed",
-                              systemImage: "exclamationmark.triangle.fill")
-                        Button("Retry") {
-                            Task { await model.retryRender(stem: photo.stem) }
-                        }
-                        .buttonStyle(.borderless)
-                        .disabled(model.busyExternally
-                                  || model.activeCommand != nil)
-                    }
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 9)
-                    .padding(.vertical, 6)
-                    .background(Color.red,
-                                in: RoundedRectangle(cornerRadius: 8))
-                    .frame(maxWidth: .infinity, maxHeight: .infinity,
-                           alignment: .topTrailing)
-                    .padding(10)
-                }
-
                 if let progress = model.renderProgress[photo.stem] {
                     VStack {
                         Spacer()
@@ -116,6 +92,24 @@ struct GridView: View {
                 .stroke(Theme.hairline, lineWidth: 1)
         }
         .contentShape(RoundedRectangle(cornerRadius: 10))
+    }
+
+    private func failureBadge(_ photo: PhotoStatus) -> some View {
+        HStack(spacing: 8) {
+            Label("Render failed",
+                  systemImage: "exclamationmark.triangle.fill")
+            Button("Retry") {
+                Task { await model.retryRender(stem: photo.stem) }
+            }
+            .buttonStyle(.borderless)
+            .disabled(model.busyExternally || model.activeCommand != nil)
+        }
+        .font(.caption.weight(.semibold))
+        .foregroundStyle(.white)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 6)
+        .background(Color.red, in: RoundedRectangle(cornerRadius: 8))
+        .padding(20)
     }
 
     private var visiblePhotos: [PhotoStatus] {

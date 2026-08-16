@@ -6,6 +6,7 @@ import Foundation
 /// serialized even if a future cancellation handler takes unusually long.
 public final class RepoWatcher: @unchecked Sendable {
     private static let maxCoalesceWait = 2.0
+    private static let totalStopWait = 2.0
 
     private static let watchedDirectories = [
         "Input",
@@ -149,9 +150,8 @@ public final class RepoWatcher: @unchecked Sendable {
             watch.source.cancel()
         }
         if !onOwnQueue {
-            for watch in stopped.2 {
-                _ = watch.closed.wait(timeout: .now() + 2)
-            }
+            Self.waitForCancellationHandlers(
+                stopped.2.map(\.closed), totalWait: Self.totalStopWait)
         }
         for continuation in stopped.3 {
             continuation.finish()
@@ -160,6 +160,25 @@ public final class RepoWatcher: @unchecked Sendable {
             stopsInFlight -= 1
         }
     }
+
+    /// All descriptors share one deadline. A stalled serial cancel handler
+    /// therefore costs at most `totalWait`, regardless of watch count.
+    private static func waitForCancellationHandlers(
+        _ closedSignals: [DispatchSemaphore], totalWait: Double
+    ) {
+        let deadline = DispatchTime.now() + totalWait
+        for signal in closedSignals {
+            if signal.wait(timeout: deadline) == .timedOut { break }
+        }
+    }
+
+    #if DEBUG
+    static func _waitForCancellationHandlersForTesting(
+        _ closedSignals: [DispatchSemaphore], totalWait: Double
+    ) {
+        waitForCancellationHandlers(closedSignals, totalWait: totalWait)
+    }
+    #endif
 
     /// Emits a change each interval until cancelled. Each tick also retries
     /// sources for directories that did not exist at the preceding start.
@@ -196,8 +215,8 @@ public final class RepoWatcher: @unchecked Sendable {
         task?.cancel()
     }
 
-    /// Visible to `@testable` tests so descriptor closure can be asserted at
-    /// the OS boundary with `fcntl(F_GETFD)` after `stop()` returns.
+    /// Visible to `@testable` tests so watcher lifecycle can be asserted from
+    /// the descriptors still owned by this instance.
     var openFileDescriptors: [Int32] {
         lock.withLock { watches.values.map(\.fileDescriptor) }
     }

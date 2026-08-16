@@ -1,9 +1,11 @@
+import AppKit
 import SwiftUI
 import PrintworksCore
 
 struct MainWindow: View {
     @Bindable var model: AppModel
     @State private var showingReview = false
+    @State private var showingReprocessAllConfirmation = false
 
     var body: some View {
         NavigationSplitView {
@@ -32,7 +34,9 @@ struct MainWindow: View {
             }
             .background(Theme.windowBase)
             .overlay(alignment: .bottom) {
-                if model.busyExternally {
+                if let status = model.longRunningCommand {
+                    longRunningPanel(status)
+                } else if model.busyExternally {
                     Label("Pipeline busy (CLI)", systemImage: "lock.fill")
                         .font(.callout.weight(.medium))
                         .padding(.horizontal, 14)
@@ -47,10 +51,47 @@ struct MainWindow: View {
         }
         .preferredColorScheme(.dark)
         .toolbar { toolbarContent }
-        .dropDestination(for: URL.self) { urls, _ in
-            Task { await model.ingest(paths: urls.map(\.path)) }
-            return true
+        .confirmationDialog(
+            model.reprocessAllConfirmation.title,
+            isPresented: $showingReprocessAllConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Reprocess All Photos", role: .destructive) {
+                Task { await model.reprocessAll() }
+            }
+            Button("Cancel", role: .cancel) {}
+                .keyboardShortcut(.defaultAction)
+        } message: {
+            Text(model.reprocessAllConfirmation.message)
         }
+        .dropDestination(for: URL.self) { urls, _ in
+            model.ingestDropped(paths: urls.map(\.path))
+        }
+    }
+
+    private func longRunningPanel(
+        _ status: LongRunningCommandStatus
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Label(status.message, systemImage: "clock.badge.exclamationmark")
+                .font(.callout.weight(.semibold))
+            Text("The app is still waiting and will not stop the pipeline. "
+                 + "If you judge it stuck, inspect or end the process in Activity Monitor.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Button("Reveal Run Folder in Finder") {
+                NSWorkspace.shared.activateFileViewerSelecting([status.revealURL])
+            }
+            .controlSize(.small)
+        }
+        .padding(12)
+        .frame(maxWidth: 520, alignment: .leading)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Theme.hairline, lineWidth: 1)
+        }
+        .padding(.bottom, 16)
     }
 
     @ToolbarContentBuilder
@@ -83,7 +124,7 @@ struct MainWindow: View {
                 .disabled(model.selectedStem == nil)
 
                 Button("All Photos") {
-                    Task { await model.reprocessAll() }
+                    showingReprocessAllConfirmation = true
                 }
             } label: {
                 Label("Reprocess", systemImage: "arrow.clockwise")
@@ -129,8 +170,7 @@ struct MainWindow: View {
     }
 
     private var needsReviewCount: Int {
-        toolbarPhotos.count {
-            PhotoStateAppearance(state: $0.state).label == "Needs review"
-        }
+        PhotoStateAppearance.needsReviewCount(
+            states: toolbarPhotos.map(\.state))
     }
 }

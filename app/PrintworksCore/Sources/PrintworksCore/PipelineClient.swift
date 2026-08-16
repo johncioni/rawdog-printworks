@@ -16,13 +16,34 @@ public struct CommandResult<R: Codable & Sendable & Equatable>: Sendable {
 }
 
 public actor PipelineClient {
+    private static let defaultLongRunningThreshold: Duration = .seconds(600)
+    private static let defaultLongRunningUpdateInterval: Duration = .seconds(60)
+
     private let config: PipelineConfig
     private let executableOverride: URL?
+    private let longRunningThreshold: Duration
+    private let longRunningUpdateInterval: Duration
     private var tail: Task<Void, Never> = Task {}
 
     public init(config: PipelineConfig, executableOverride: URL? = nil) {
         self.config = config
         self.executableOverride = executableOverride
+        self.longRunningThreshold = Self.defaultLongRunningThreshold
+        self.longRunningUpdateInterval = Self.defaultLongRunningUpdateInterval
+    }
+
+    /// Test seam for exercising the reporting watchdog without waiting ten
+    /// minutes. Production always uses the public initializer above.
+    init(
+        config: PipelineConfig,
+        executableOverride: URL?,
+        longRunningThreshold: Duration,
+        longRunningUpdateInterval: Duration
+    ) {
+        self.config = config
+        self.executableOverride = executableOverride
+        self.longRunningThreshold = longRunningThreshold
+        self.longRunningUpdateInterval = longRunningUpdateInterval
     }
 
     public func run<R: Codable & Sendable & Equatable>(
@@ -34,7 +55,8 @@ public actor PipelineClient {
 
     public func runMutating<R: Codable & Sendable & Equatable>(
         _ resultType: R.Type, args: [String],
-        onEvent: (@Sendable (ProgressEvent) -> Void)? = nil
+        onEvent: (@Sendable (ProgressEvent) -> Void)? = nil,
+        onLongRunning: (@Sendable (Duration) -> Void)? = nil
     ) async -> CommandResult<R> {
         // Mutations are intentionally uncancellable. The unstructured `work`
         // task keeps each caller in the FIFO until its whole command finishes,
@@ -48,7 +70,9 @@ public actor PipelineClient {
         let prior = tail
         let work = Task { () -> CommandResult<R> in
             await prior.value
-            return await self.execute(resultType, args: args, onEvent: onEvent)
+            return await self.execute(
+                resultType, args: args, onEvent: onEvent,
+                onLongRunning: onLongRunning)
         }
         tail = Task { _ = await work.value }
         return await work.value
@@ -56,13 +80,16 @@ public actor PipelineClient {
 
     private func execute<R: Codable & Sendable & Equatable>(
         _ resultType: R.Type, args: [String],
-        onEvent: (@Sendable (ProgressEvent) -> Void)?
+        onEvent: (@Sendable (ProgressEvent) -> Void)?,
+        onLongRunning: (@Sendable (Duration) -> Void)? = nil
     ) async -> CommandResult<R> {
         let process = Process()
         let cancellation = ProcessCancellation(process: process)
         return await withTaskCancellationHandler {
-            await execute(resultType, args: args, onEvent: onEvent,
-                          process: process, cancellation: cancellation)
+            await execute(
+                resultType, args: args, onEvent: onEvent,
+                onLongRunning: onLongRunning,
+                process: process, cancellation: cancellation)
         } onCancel: {
             cancellation.cancel()
         }
@@ -70,7 +97,8 @@ public actor PipelineClient {
 
     private func execute<R: Codable & Sendable & Equatable>(
         _ resultType: R.Type, args: [String],
-        onEvent: (@Sendable (ProgressEvent) -> Void)?, process: Process,
+        onEvent: (@Sendable (ProgressEvent) -> Void)?,
+        onLongRunning: (@Sendable (Duration) -> Void)?, process: Process,
         cancellation: ProcessCancellation
     ) async -> CommandResult<R> {
         if let override = executableOverride {
@@ -146,6 +174,20 @@ public actor PipelineClient {
         let decoder = ContractDecoder.make()
         let collector = LineCollector()
         let errCollector = LineCollector()
+        let startedAt = ContinuousClock.now
+        let longRunningReporter = Task { [longRunningThreshold,
+                                         longRunningUpdateInterval] in
+            guard let onLongRunning else { return }
+            do {
+                try await Task.sleep(for: longRunningThreshold)
+                while !Task.isCancelled {
+                    onLongRunning(startedAt.duration(to: .now))
+                    try await Task.sleep(for: longRunningUpdateInterval)
+                }
+            } catch {
+                // Natural process completion cancels this reporting-only task.
+            }
+        }
 
         async let stdoutDone: Void = drain(out.fileHandleForReading, into: collector) { line in
             if line.contains("\"event\""),
@@ -157,6 +199,8 @@ public actor PipelineClient {
         async let stderrDone: Void = drain(err.fileHandleForReading, into: errCollector, onLine: nil)
         async let terminated: Void = termination.wait()
         _ = await (stdoutDone, stderrDone, terminated)
+        longRunningReporter.cancel()
+        _ = await longRunningReporter.value
 
         let stderrTail = errCollector.allLines.suffix(50).joined(separator: "\n")
         // Contract: the final envelope is the LAST non-empty stdout line.
@@ -288,16 +332,16 @@ final class TerminationSignal: @unchecked Sendable {
 /// whatever's left in the buffer (a final line with no trailing newline)
 /// into `allLines` — call it once, after the reader sees EOF.
 final class LineCollector: @unchecked Sendable {
-    private var buffer = ""
+    private var buffer = Data()
     private var lines: [String] = []
 
     var allLines: [String] { lines }
 
     func completeLines(appending data: Data) -> [String] {
-        buffer += String(decoding: data, as: UTF8.self)
+        buffer.append(data)
         var completed: [String] = []
-        while let newline = buffer.firstIndex(of: "\n") {
-            completed.append(String(buffer[..<newline]))
+        while let newline = buffer.firstIndex(of: 0x0A) {
+            completed.append(String(decoding: buffer[..<newline], as: UTF8.self))
             buffer.removeSubrange(...newline)
         }
         lines.append(contentsOf: completed)
@@ -306,8 +350,8 @@ final class LineCollector: @unchecked Sendable {
 
     func flushRemainder() {
         if !buffer.isEmpty {
-            lines.append(buffer)
-            buffer = ""
+            lines.append(String(decoding: buffer, as: UTF8.self))
+            buffer.removeAll(keepingCapacity: true)
         }
     }
 }

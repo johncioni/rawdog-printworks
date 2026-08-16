@@ -57,6 +57,21 @@ final class ContractTests: XCTestCase {
         XCTAssertNotEqual(waiting.cropRetryToken, previewReady.cropRetryToken)
     }
 
+    func testNeedsReviewCountUsesTypedAppearanceCase() {
+        let states = [
+            "ingested", "preview_ready", "review_required", "approved",
+            "rendered", "verified",
+        ]
+
+        XCTAssertEqual(PhotoStateAppearance.needsReviewCount(states: states), 2)
+        XCTAssertEqual(PhotoStateAppearance(state: "preview_ready"),
+                       .needsReview)
+        XCTAssertEqual(PhotoStateAppearance(state: "review_required"),
+                       .needsReview)
+        XCTAssertNotEqual(PhotoStateAppearance(state: "verified"),
+                          .needsReview)
+    }
+
     func testDecodesAdjustCropsApproveIngestRun() throws {
         _ = try ContractDecoder.make().decode(
             Envelope<AdjustResult>.self, from: fixture("adjust_ok.json"))

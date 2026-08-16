@@ -68,7 +68,8 @@ final class FakeClient: PipelineRunning, @unchecked Sendable {
         return response
     }
     func mutate<R>(_ type: R.Type, args: [String],
-                   onEvent: (@Sendable (ProgressEvent) -> Void)?) async
+                   onEvent: (@Sendable (ProgressEvent) -> Void)?,
+                   onLongRunning: (@Sendable (Duration) -> Void)?) async
     -> CommandResult<R> {
         stateLock.withLock { storedMutateLog.append(args) }
         let response = if let asyncMutateHandler {
@@ -115,7 +116,8 @@ final class SlowStatusClient: PipelineRunning, @unchecked Sendable {
     }
 
     func mutate<R>(_ type: R.Type, args: [String],
-                   onEvent: (@Sendable (ProgressEvent) -> Void)?) async
+                   onEvent: (@Sendable (ProgressEvent) -> Void)?,
+                   onLongRunning: (@Sendable (Duration) -> Void)?) async
     -> CommandResult<R> {
         fatalError("unused")
     }
@@ -188,7 +190,8 @@ final class DeferredReconcileClient: PipelineRunning, @unchecked Sendable {
     }
 
     func mutate<R>(_ type: R.Type, args: [String],
-                   onEvent: (@Sendable (ProgressEvent) -> Void)?) async
+                   onEvent: (@Sendable (ProgressEvent) -> Void)?,
+                   onLongRunning: (@Sendable (Duration) -> Void)?) async
     -> CommandResult<R> {
         await mutationStarted.open()
         await mutationCanFinish.wait()
@@ -345,6 +348,56 @@ final class AppModelTests: XCTestCase {
         XCTAssertTrue(model.canApprove(stem: "P1"))
         model.drafts["P1"]!.isStale = true
         XCTAssertFalse(model.canApprove(stem: "P1"))
+    }
+
+    func testVerifiedPhotoCannotBeApproved() async {
+        let fake = FakeClient()
+        fake.statusQueue = [snap([photo(
+            stem: "P1", revision: "r1", state: "verified", version: "v001")])]
+        let model = AppModel(
+            client: fake, repo: URL(fileURLWithPath: "/r"),
+            sliderDebounce: .zero)
+        await model.refresh()
+        model.startDraft(stem: "P1")
+        for key in ReviewDraft.checkKeys {
+            model.setDraftCheck(stem: "P1", key: key, isChecked: true)
+        }
+
+        XCTAssertFalse(model.canApprove(stem: "P1"))
+    }
+
+    func testReprocessAllConfirmationNamesPhotoCount() async {
+        let fake = FakeClient()
+        fake.statusQueue = [snap([
+            photo(stem: "P1", revision: "r1"),
+            photo(stem: "P2", revision: "r1"),
+            photo(stem: "P3", revision: "r1"),
+        ])]
+        let model = AppModel(
+            client: fake, repo: URL(fileURLWithPath: "/r"),
+            sliderDebounce: .zero)
+        await model.refresh()
+
+        XCTAssertEqual(model.reprocessAllConfirmation.title,
+                       "Reprocess all 3 photos?")
+        XCTAssertEqual(
+            model.reprocessAllConfirmation.message,
+            "This re-renders every photo and publishes a new version of each.")
+    }
+
+    func testDropIsRefusedWhileMutationOrExternalLockIsActive() async {
+        let fake = FakeClient()
+        let model = AppModel(
+            client: fake, repo: URL(fileURLWithPath: "/r"),
+            sliderDebounce: .zero)
+
+        model.activeCommand = "run"
+        XCTAssertFalse(model.ingestDropped(paths: ["/incoming/P1.rw2"]))
+
+        model.activeCommand = nil
+        model.busyExternally = true
+        XCTAssertFalse(model.ingestDropped(paths: ["/incoming/P2.rw2"]))
+        XCTAssertTrue(fake.mutateLog.isEmpty)
     }
 
     func testStalePreviewsBlockApprove() async {
@@ -1095,12 +1148,17 @@ final class AppModelTests: XCTestCase {
                 error: PipelineErrorInfo(code: "PARTIAL_FAILURE",
                                          message: "1 of 2 failed"))
         }
-        let model = AppModel(client: fake, repo: URL(fileURLWithPath: "/r"),
-                             sliderDebounce: .zero)
+        var notified: [PublishedPhoto] = []
+        let model = AppModel(
+            client: fake, repo: URL(fileURLWithPath: "/r"),
+            sliderDebounce: .zero,
+            onPublished: { notified = $0 })
         await model.refresh()
+        model.lastFailures["P3"] = StemFailure(
+            stem: "P3", code: "RENDER_FAILED", message: "old")
         await model.reprocessAll()
-        XCTAssertEqual(model.lastPublished.map(\.stem), ["P1"])  // result first
-        XCTAssertEqual(model.lastAdvanced.map(\.stem), ["P3"])
+        XCTAssertEqual(notified.map(\.stem), ["P1"])             // result first
+        XCTAssertNil(model.lastFailures["P3"])
         XCTAssertEqual(model.lastFailures["P2"], StemFailure(
             stem: "P2", code: "VERIFY_FAILED", message: "bad"))
         XCTAssertEqual(model.banner?.code, "PARTIAL_FAILURE")    // then error
@@ -1273,6 +1331,32 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.banner?.code, "PARTIAL_FAILURE")
     }
 
+    func testPartialIngestBannerDetailsListFilenameAndReason() async {
+        let fake = FakeClient()
+        fake.statusQueue = [snap([])]
+        fake.mutateHandler = { _ in
+            Envelope(ok: false, result: IngestResult(
+                ingested: [], skipped: [], conflicts: [], failed: [
+                    FileFailure(file: "bad-a.rw2", code: "BAD_INPUT",
+                                message: "corrupt header"),
+                    FileFailure(file: "bad-b.rw2", code: "BAD_INPUT",
+                                message: "unsupported compression"),
+                ]), error: PipelineErrorInfo(
+                    code: "PARTIAL_FAILURE", message: "2 files failed"))
+        }
+        let model = AppModel(
+            client: fake, repo: URL(fileURLWithPath: "/r"),
+            sliderDebounce: .zero)
+
+        await model.ingest(paths: [
+            "/incoming/bad-a.rw2", "/incoming/bad-b.rw2",
+        ])
+
+        XCTAssertEqual(
+            model.bannerDetails,
+            "bad-a.rw2: corrupt header\nbad-b.rw2: unsupported compression")
+    }
+
     func testPendingInputFilesListsRawFilesMissingFromSnapshot() async throws {
         let repo = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
@@ -1291,6 +1375,74 @@ final class AppModelTests: XCTestCase {
         await model.refresh()
 
         XCTAssertEqual(model.pendingInputFiles, ["P2.rw2", "P3.Rw2"])
+    }
+
+    func testPendingInputScanRunsOffMainActor() async {
+        let fake = FakeClient()
+        fake.statusQueue = [snap([])]
+        let probe = ThreadProbe()
+        let model = AppModel(
+            client: fake, repo: URL(fileURLWithPath: "/r"),
+            sliderDebounce: .zero
+        ) { _, _ in
+            probe.recordCurrentThread()
+            return []
+        }
+
+        await model.refresh()
+
+        XCTAssertFalse(probe.ranOnMainThread)
+    }
+
+    func testLongRunningMutationSurfacesWithoutStoppingSubprocess() async throws {
+        let repo = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(
+            at: repo.appendingPathComponent("run"),
+            withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: repo) }
+        let script = repo.appendingPathComponent("long-running-stub.sh")
+        try """
+        #!/bin/sh
+        case "$1" in
+          run)
+            echo started > "$PWD/started"
+            trap 'echo stopped > "$PWD/stopped"; exit 0' TERM
+            while [ ! -f "$PWD/release" ]; do sleep 0.01; done
+            echo '{"ok":true,"result":{"published":[],"advanced":[],"failed":[]}}'
+            ;;
+          status)
+            echo '{"ok":true,"result":{"repo":"/r","toolchain":{"ok":true,"failures":[]},"lock":{"held":false,"stale":false,"pid":null},"styles":[],"photos":[]}}'
+            ;;
+        esac
+        """.write(to: script, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755],
+                                              ofItemAtPath: script.path)
+        let client = PipelineClient(
+            config: PipelineConfig(repo: repo, python: script),
+            executableOverride: script,
+            longRunningThreshold: .milliseconds(40),
+            longRunningUpdateInterval: .milliseconds(20))
+        let model = AppModel(client: client, repo: repo,
+                             sliderDebounce: .zero)
+        let command = Task { await model.reprocess(stem: "P1") }
+
+        for _ in 0..<200 where model.longRunningCommand == nil {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        let surfaced = model.longRunningCommand
+        XCTAssertNotNil(surfaced)
+        XCTAssertTrue(surfaced?.message.contains(
+            "Rendering P1 — still running") == true)
+        XCTAssertEqual(surfaced?.revealURL,
+                       repo.appendingPathComponent("run", isDirectory: true))
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: repo.appendingPathComponent("stopped").path),
+            "the reporting threshold must not stop the subprocess")
+
+        try Data().write(to: repo.appendingPathComponent("release"))
+        await command.value
+        XCTAssertNil(model.longRunningCommand)
     }
 
     func testIngestPendingSendsDeliveryIDThenRuns() async {
@@ -1413,5 +1565,18 @@ final class AppModelTests: XCTestCase {
 
         await model.retryBannerAction()
         XCTAssertTrue(fake.mutateLog.isEmpty)
+    }
+}
+
+private final class ThreadProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedRanOnMainThread = false
+
+    var ranOnMainThread: Bool {
+        lock.withLock { storedRanOnMainThread }
+    }
+
+    func recordCurrentThread() {
+        lock.withLock { storedRanOnMainThread = Thread.isMainThread }
     }
 }

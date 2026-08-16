@@ -71,6 +71,19 @@ struct SettingsSheet: View {
             Label(message, systemImage: "exclamationmark.triangle.fill")
                 .foregroundStyle(Theme.statusReview)
                 .textSelection(.enabled)
+        case .transientError(let message):
+            VStack(alignment: .leading, spacing: 4) {
+                Label("Status is temporarily unavailable.",
+                      systemImage: "exclamationmark.arrow.trianglehead.2.clockwise.rotate.90")
+                    .foregroundStyle(Theme.statusReview)
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                Text("You can still save these paths and retry status from the app.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
     }
 
@@ -99,13 +112,16 @@ struct SettingsSheet: View {
         let result = await client.status()
         guard !Task.isCancelled, self.candidate == candidate else { return }
 
-        if result.envelope.ok, result.envelope.result != nil {
+        switch SettingsStatusValidation.classify(result) {
+        case .valid:
             validatedCandidate = candidate
             validation = .valid
-        } else {
+        case .invalid(let message):
             validatedCandidate = nil
-            validation = .invalid(
-                result.envelope.error?.message ?? "Status returned no result.")
+            validation = .invalid(message)
+        case .transientError(let message):
+            validatedCandidate = candidate
+            validation = .transientError(message)
         }
     }
 
@@ -123,4 +139,5 @@ private enum Validation: Equatable {
     case checking
     case valid
     case invalid(String)
+    case transientError(String)
 }
