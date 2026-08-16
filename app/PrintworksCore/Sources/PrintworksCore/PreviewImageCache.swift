@@ -10,11 +10,40 @@ public struct DownsampledPreview: @unchecked Sendable {
     }
 }
 
+private actor DecodeConcurrencyGate {
+    private var permits: Int
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    init(limit: Int) {
+        precondition(limit > 0)
+        self.permits = limit
+    }
+
+    func acquire() async {
+        if permits > 0 {
+            permits -= 1
+            return
+        }
+        await withCheckedContinuation { continuation in
+            waiters.append(continuation)
+        }
+    }
+
+    func release() {
+        guard !waiters.isEmpty else {
+            permits += 1
+            return
+        }
+        waiters.removeFirst().resume()
+    }
+}
+
 public actor PreviewImageCache {
     public static let shared = PreviewImageCache()
 
     private static let countLimit = 40
     private static let totalCostLimit = 256 * 1024 * 1024
+    static let maxConcurrentDecodes = 16
 
     private struct Key: Hashable, Sendable {
         let contentHash: String
@@ -32,14 +61,19 @@ public actor PreviewImageCache {
     private var recency: [Key] = []
     private var totalCost = 0
     private var inFlight: [Key: Task<DownsampledPreview?, Never>] = [:]
+    private let decodeGate: DecodeConcurrencyGate
     private let decoder: Decoder
 
     public init() {
+        self.decodeGate = DecodeConcurrencyGate(
+            limit: Self.maxConcurrentDecodes)
         self.decoder = Self.decode
     }
 
     /// Test seam for deterministically controlling decode duration.
-    init(decoder: @escaping Decoder) {
+    init(maxConcurrentDecodes: Int = PreviewImageCache.maxConcurrentDecodes,
+         decoder: @escaping Decoder) {
+        self.decodeGate = DecodeConcurrencyGate(limit: maxConcurrentDecodes)
         self.decoder = decoder
     }
 
@@ -57,18 +91,25 @@ public actor PreviewImageCache {
         }
 
         let task: Task<DownsampledPreview?, Never>
+        let ownsTask: Bool
         if let existing = inFlight[key] {
             task = existing
+            ownsTask = false
         } else {
             let decoder = decoder
+            let decodeGate = decodeGate
             task = Task.detached(priority: .utility) {
-                decoder(url, maxPixelSize)
+                await decodeGate.acquire()
+                let preview = decoder(url, maxPixelSize)
+                await decodeGate.release()
+                return preview
             }
             inFlight[key] = task
+            ownsTask = true
         }
 
         let decoded = await task.value
-        inFlight.removeValue(forKey: key)
+        if ownsTask { inFlight.removeValue(forKey: key) }
         guard !Task.isCancelled, let decoded else { return nil }
 
         // Another waiter for the same key may have populated the cache while

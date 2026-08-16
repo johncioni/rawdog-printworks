@@ -15,8 +15,27 @@ final class SettingsStatusValidationTests: XCTestCase {
                 error: PipelineErrorInfo(
                     code: "TOOLCHAIN_FAILED", message: "RawTherapee missing")),
             stderrTail: "")
+        let launchFailure = CommandResult<StatusSnapshot>(
+            envelope: Envelope(
+                ok: false, result: nil,
+                error: PipelineErrorInfo(
+                    code: "INTERNAL",
+                    message: "could not launch: Python executable missing")),
+            stderrTail: "")
 
-        XCTAssertTrue(SettingsStatusValidation.classify(transient).allowsSave)
-        XCTAssertFalse(SettingsStatusValidation.classify(invalid).allowsSave)
+        let transientState = SettingsStatusValidation.classify(transient)
+        XCTAssertEqual(transientState,
+                       .transientError("temporary status read failed"))
+        XCTAssertTrue(transientState.allowsSave)
+
+        let invalidState = SettingsStatusValidation.classify(invalid)
+        XCTAssertEqual(invalidState, .invalid("RawTherapee missing"))
+        XCTAssertFalse(invalidState.allowsSave)
+
+        let launchFailureState = SettingsStatusValidation.classify(launchFailure)
+        XCTAssertEqual(
+            launchFailureState,
+            .invalid("could not launch: Python executable missing"))
+        XCTAssertFalse(launchFailureState.allowsSave)
     }
 }
