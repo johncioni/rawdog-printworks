@@ -56,6 +56,5 @@ remain. Fix worktree `plan2-fixes` = `1e60c72`.
 2. Cleanup after merge: `defaults delete com.john.rawdog-printworks repoPath`
    and `… pythonPath`, delete `~/orca/workspaces/rawdog-printworks/smoke-repo`,
    remove the `plan2-printworks-app` and `plan2-fixes` worktrees.
-3. Optional follow-up: the filed items — CR Minors/Trivials, m6 coalesce reset,
-   PreviewImageCache cancellation propagation, and driving the crop drag once
-   there is a way to deliver real input events.
+3. Filed for later: CR Minors/Trivials, m6 coalesce reset, PreviewImageCache
+   cancellation propagation, and the crop drag once real input can be delivered.
