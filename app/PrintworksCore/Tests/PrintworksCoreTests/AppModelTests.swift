@@ -622,13 +622,17 @@ final class AppModelTests: XCTestCase {
                              sliderDebounce: .zero)
         await model.refresh()
 
-        for photo in photos {
+        for photo in photos.prefix(40) {
             _ = await model.crops(stem: photo.stem)
         }
         _ = await model.crops(stem: "P0")
+        XCTAssertEqual(fake.cropsLog.count, 40, "P0 must be a cache hit")
+        _ = await model.crops(stem: "P40")
+        _ = await model.crops(stem: "P0")
+        _ = await model.crops(stem: "P1")
 
         XCTAssertEqual(fake.cropsLog.count, 42)
-        XCTAssertEqual(fake.cropsLog.suffix(2), ["P40", "P0"])
+        XCTAssertEqual(fake.cropsLog.suffix(2), ["P40", "P1"])
     }
 
     func testCropsRequestsAllowAtMostEightConcurrentQueries() async {
@@ -674,6 +678,54 @@ final class AppModelTests: XCTestCase {
         _ = await ninthLoad.value
         XCTAssertEqual(fake.cropsLog.count, 9)
         XCTAssertEqual(fake.maxConcurrentCrops, 8)
+    }
+
+    func testCropsStayAtEightAcrossRevisionChurn() async {
+        let fake = FakeClient()
+        let stems = (0..<8).map { "P\($0)" }
+        fake.statusQueue = (1...4).map { revision in
+            snap(stems.map { photo(stem: $0, revision: "r\(revision)") })
+        }
+        let waveStarted = (0..<4).map { _ in AsyncGate() }
+        let stateLock = NSLock()
+        nonisolated(unsafe) var callCount = 0
+        nonisolated(unsafe) var shouldFinish = false
+        fake.asyncCropsHandler = { stem in
+            let call = stateLock.withLock {
+                callCount += 1
+                return callCount
+            }
+            if call.isMultiple(of: 8) {
+                await waveStarted[(call / 8) - 1].open()
+            }
+            while !Task.isCancelled && stateLock.withLock({ !shouldFinish }) {
+                try? await Task.sleep(for: .milliseconds(5))
+            }
+            return CommandResult(envelope: Envelope(
+                ok: true,
+                result: CropsResult(stem: stem, basis: "faces", windows: [:]),
+                error: nil), stderrTail: "")
+        }
+        let model = AppModel(client: fake, repo: URL(fileURLWithPath: "/r"),
+                             sliderDebounce: .zero)
+        var loads: [Task<CropsResult?, Never>] = []
+
+        for wave in 0..<4 {
+            await model.refresh()
+            loads += stems.map { stem in
+                Task { @MainActor in await model.crops(stem: stem) }
+            }
+            await waveStarted[wave].wait()
+        }
+
+        let observedCalls = fake.cropsLog.count
+        let observedPeak = fake.maxConcurrentCrops
+        stateLock.withLock { shouldFinish = true }
+        for load in loads { _ = await load.value }
+
+        XCTAssertEqual(observedCalls, 32)
+        XCTAssertEqual(observedPeak, 8,
+                       "revision churn must not orphan running crop queries")
     }
 
     func testDebouncersAreKeyedPerStemAndStyle() async {
@@ -1035,6 +1087,27 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.banner?.code, "PARTIAL_FAILURE")    // then error
     }
 
+    func testRunResultPublishesThroughNotificationHook() async {
+        let fake = FakeClient()
+        fake.statusQueue = [snap([])]
+        fake.mutateHandler = { _ in
+            Envelope(ok: true, result: RunResult(
+                published: [PublishedPhoto(
+                    stem: "P1", version: "v004", artifactCount: 29)],
+                advanced: [], failed: []), error: nil)
+        }
+        var notified: [PublishedPhoto] = []
+        let model = AppModel(
+            client: fake, repo: URL(fileURLWithPath: "/r"),
+            sliderDebounce: .zero,
+            onPublished: { notified = $0 })
+
+        await model.reprocess(stem: "P1")
+
+        XCTAssertEqual(notified, [PublishedPhoto(
+            stem: "P1", version: "v004", artifactCount: 29)])
+    }
+
     /// `run --stem P1 --force` on a published photo: the render fails, the
     /// pipeline restores the manifest to `verified` (driver.py
     /// `_restore_forced`), so the terminal refresh sees `verified` and the
@@ -1179,6 +1252,52 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.lastIngestFailures["bad.rw2"], FileFailure(
             file: "bad.rw2", code: "BAD_INPUT", message: "corrupt"))
         XCTAssertEqual(model.banner?.code, "PARTIAL_FAILURE")
+    }
+
+    func testPendingInputFilesListsRawFilesMissingFromSnapshot() async throws {
+        let repo = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        let input = repo.appendingPathComponent("Input", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: input, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: repo) }
+        for name in ["P1.RW2", "P2.rw2", "P3.RW2", "notes.txt"] {
+            try Data().write(to: input.appendingPathComponent(name))
+        }
+
+        let fake = FakeClient()
+        fake.statusQueue = [snap([photo(stem: "P1", revision: "r1")])]
+        let model = AppModel(client: fake, repo: repo, sliderDebounce: .zero)
+
+        await model.refresh()
+
+        XCTAssertEqual(model.pendingInputFiles, ["P2.rw2", "P3.RW2"])
+    }
+
+    func testIngestPendingSendsDeliveryIDThenRuns() async {
+        let fake = FakeClient()
+        fake.statusQueue = [snap([])]
+        fake.mutateHandler = { args in
+            if args.first == "ingest" {
+                return Envelope(ok: true, result: IngestResult(
+                    ingested: [], skipped: [], conflicts: [], failed: []),
+                    error: nil) as Any
+            }
+            return Envelope(ok: true, result: RunResult(
+                published: [], advanced: [], failed: []), error: nil) as Any
+        }
+        let model = AppModel(client: fake, repo: URL(fileURLWithPath: "/r"),
+                             sliderDebounce: .zero)
+
+        await model.ingestPending()
+
+        XCTAssertEqual(fake.mutateLog.count, 2)
+        let ingestArgs = fake.mutateLog[0]
+        XCTAssertEqual(ingestArgs.count, 4)
+        XCTAssertEqual(ingestArgs[0...1], ["ingest", "--delivery-id"])
+        XCTAssertNotNil(UUID(uuidString: ingestArgs[2]))
+        XCTAssertEqual(ingestArgs[3], "--json")
+        XCTAssertEqual(fake.mutateLog[1], ["run", "--json"])
     }
 
     func testIngestRunFailureRetryDoesNotForceWholeRepo() async {

@@ -108,6 +108,7 @@ public final class AppModel {
     @ObservationIgnored private let client: any PipelineRunning
     @ObservationIgnored private let sliderDebounce: Duration
     @ObservationIgnored private let reviewFileDirectory: URL
+    @ObservationIgnored private let onPublished: @MainActor @Sendable ([PublishedPhoto]) -> Void
 
     // MARK: Published state
 
@@ -145,6 +146,8 @@ public final class AppModel {
     public var lastFailures: [String: StemFailure] = [:]
     /// Per-file failures from the most recent ingest result.
     public var lastIngestFailures: [String: FileFailure] = [:]
+    /// RAW files already present in Input but not represented by status yet.
+    public private(set) var pendingInputFiles: [String] = []
 
     /// Args of the most recently dispatched mutating command.
     public private(set) var lastMutatingArgs: [String]?
@@ -222,12 +225,16 @@ public final class AppModel {
         let activeStem: String?
     }
 
-    public init(client: any PipelineRunning, repo: URL,
-                sliderDebounce: Duration = .seconds(2)) {
+    public init(
+        client: any PipelineRunning, repo: URL,
+        sliderDebounce: Duration = .seconds(2),
+        onPublished: @escaping @MainActor @Sendable ([PublishedPhoto]) -> Void = { _ in }
+    ) {
         self.client = client
         self.repo = repo
         self.sliderDebounce = sliderDebounce
         self.reviewFileDirectory = FileManager.default.temporaryDirectory
+        self.onPublished = onPublished
     }
 
     /// Test seam for the review-file write failure path. Production always
@@ -238,6 +245,7 @@ public final class AppModel {
         self.repo = repo
         self.sliderDebounce = sliderDebounce
         self.reviewFileDirectory = reviewFileDirectory
+        self.onPublished = { _ in }
     }
 
     // MARK: - Snapshot
@@ -275,6 +283,8 @@ public final class AppModel {
             return
         }
         self.snapshot = snapshot
+        pendingInputFiles = Self.findPendingInputFiles(repo: repo,
+                                                       snapshot: snapshot)
         for photo in snapshot.photos where lastFailures[photo.stem] != nil {
             let current = FailureStamp(photo: photo)
             guard let failedAt = failureStamps[photo.stem] else {
@@ -288,6 +298,23 @@ public final class AppModel {
         }
         busyExternally = snapshot.lock.held && activeCommand == nil
         reconcileDrafts(snapshot, capturedDuring: capture)
+    }
+
+    private static func findPendingInputFiles(
+        repo: URL, snapshot: StatusSnapshot
+    ) -> [String] {
+        let knownStems = Set(snapshot.photos.map(\.stem))
+        let input = repo.appendingPathComponent("Input", isDirectory: true)
+        guard let files = try? FileManager.default.contentsOfDirectory(
+            at: input, includingPropertiesForKeys: nil,
+            options: [.skipsHiddenFiles])
+        else { return [] }
+        return files.compactMap { file in
+            guard file.pathExtension == "rw2" || file.pathExtension == "RW2",
+                  !knownStems.contains(file.deletingPathExtension().lastPathComponent)
+            else { return nil }
+            return file.lastPathComponent
+        }.sorted()
     }
 
     public func photo(_ stem: String) -> PhotoStatus? {
@@ -312,11 +339,22 @@ public final class AppModel {
         }
 
         let request: CropRequest
-        if let pending = cropRequests[stem], pending.revision == revision {
-            request = pending
+        if let pending = cropRequests[stem] {
+            if pending.revision == revision {
+                request = pending
+            } else {
+                // A stem can move revisions while its read-only query is still
+                // running. Keep the old request accounted for until its task
+                // (and PipelineClient subprocess) has actually stopped, then
+                // retry against the current revision instead of orphaning it.
+                pending.task.cancel()
+                _ = await pending.task.value
+                removeCropRequest(stem: stem, id: pending.id)
+                guard !Task.isCancelled else { return nil }
+                return await crops(stem: stem)
+            }
         } else {
-            if cropRequests[stem] == nil,
-               cropRequests.count >= Self.cropRequestLimit,
+            if cropRequests.count >= Self.cropRequestLimit,
                let oldestStem = cropRequestOrder.first,
                let oldest = cropRequests[oldestStem] {
                 _ = await oldest.task.value
@@ -335,7 +373,7 @@ public final class AppModel {
 
         let response = await request.task.value
         removeCropRequest(stem: stem, id: request.id)
-        guard !Task.isCancelled else { return nil }
+        guard !Task.isCancelled, !request.task.isCancelled else { return nil }
         guard response.envelope.ok, let result = response.envelope.result else {
             let error = response.envelope.error
                 ?? PipelineErrorInfo(code: "INTERNAL",
@@ -781,6 +819,31 @@ public final class AppModel {
         await endCommand()
     }
 
+    /// Ingests RAW files that appeared directly in Input, then runs the batch
+    /// so newly-created recipes receive previews and enter review.
+    public func ingestPending() async {
+        beginCommand("ingest", stem: nil)
+        let ingest = await send(
+            IngestResult.self,
+            args: ["ingest", "--delivery-id", UUID().uuidString, "--json"],
+            streamProgress: true)
+        applyIngestResult(ingest.envelope.result)
+
+        activeCommand = "run"
+        let run = await send(RunResult.self, args: ["run", "--json"],
+                             streamProgress: true)
+        applyRunResult(run.envelope.result)
+
+        if let error = ingest.envelope.error {
+            surface(error, details: ingest.stderrTail,
+                    retry: { [weak self] in await self?.ingestPending() })
+        } else {
+            surface(run.envelope.error, details: run.stderrTail,
+                    retry: { [weak self] in await self?.runAll() })
+        }
+        await endCommand()
+    }
+
     /// Reprocess menu: `run --stem S --force --json`.
     public func reprocess(stem: String) async {
         await runCycle(stem: stem,
@@ -821,6 +884,9 @@ public final class AppModel {
     private func applyRunResult(_ result: RunResult?) {
         guard let result else { return }
         lastPublished = result.published
+        if !result.published.isEmpty {
+            onPublished(result.published)
+        }
         lastAdvanced = result.advanced
         for stem in result.published.map(\.stem) + result.advanced.map(\.stem) {
             lastFailures.removeValue(forKey: stem)

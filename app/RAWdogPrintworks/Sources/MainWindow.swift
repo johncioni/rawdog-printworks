@@ -20,10 +20,15 @@ struct MainWindow: View {
                     })
                 }
 
-                if let banner = model.banner {
-                    ErrorBanner(model: model, info: banner)
-                        .padding()
+                VStack(spacing: 12) {
+                    if let banner = model.banner {
+                        ErrorBanner(model: model, info: banner)
+                    }
+                    if !model.pendingInputFiles.isEmpty {
+                        IngestBanner(model: model)
+                    }
                 }
+                .padding()
             }
             .background(Theme.windowBase)
             .overlay(alignment: .bottom) {

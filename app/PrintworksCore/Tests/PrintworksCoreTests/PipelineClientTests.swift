@@ -132,6 +132,34 @@ final class PipelineClientTests: XCTestCase {
         }
     }
 
+    func testCancellingRunTerminatesTheSubprocess() async throws {
+        let (client, dir) = try makeStub("""
+        echo started > "$PWD/started"
+        trap 'echo terminated > "$PWD/terminated"; exit 0' TERM
+        while [ ! -f "$PWD/release" ]; do sleep 0.02; done
+        echo '{"ok":true,"result":{"stem":"P1","basis":"faces","windows":{}}}'
+        """)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let run = Task {
+            await client.run(CropsResult.self, args: ["crops", "--json"])
+        }
+        let started = dir.appendingPathComponent("started")
+        for _ in 0..<100 where !FileManager.default.fileExists(atPath: started.path) {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: started.path))
+
+        run.cancel()
+        try await Task.sleep(for: .milliseconds(250))
+        let terminatedBeforeRelease = FileManager.default.fileExists(
+            atPath: dir.appendingPathComponent("terminated").path)
+        try Data().write(to: dir.appendingPathComponent("release"))
+        _ = await run.value
+
+        XCTAssertTrue(terminatedBeforeRelease,
+                      "task cancellation must terminate the live subprocess")
+    }
+
     func testHighVolumeBurstDeliversEveryEventInOrder() async throws {
         // Regression guard for the readabilityHandler race (Finding 1,
         // review round 1): Foundation's FileHandle.readabilityHandler runs

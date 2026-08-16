@@ -52,6 +52,20 @@ public actor PipelineClient {
         onEvent: (@Sendable (ProgressEvent) -> Void)?
     ) async -> CommandResult<R> {
         let process = Process()
+        let cancellation = ProcessCancellation(process: process)
+        return await withTaskCancellationHandler {
+            await execute(resultType, args: args, onEvent: onEvent,
+                          process: process, cancellation: cancellation)
+        } onCancel: {
+            cancellation.cancel()
+        }
+    }
+
+    private func execute<R: Codable & Sendable & Equatable>(
+        _ resultType: R.Type, args: [String],
+        onEvent: (@Sendable (ProgressEvent) -> Void)?, process: Process,
+        cancellation: ProcessCancellation
+    ) async -> CommandResult<R> {
         if let override = executableOverride {
             process.executableURL = override
             process.arguments = args
@@ -80,6 +94,7 @@ public actor PipelineClient {
         process.terminationHandler = { _ in termination.markTerminated() }
         do {
             try process.run()
+            cancellation.didStart()
         } catch {
             process.terminationHandler = nil
             return CommandResult(
@@ -184,6 +199,39 @@ public actor PipelineClient {
     private func synthetic<R>(_ message: String) -> Envelope<R> {
         Envelope(ok: false, result: nil,
                  error: PipelineErrorInfo(code: "INTERNAL", message: message))
+    }
+}
+
+/// Bridges structured-concurrency cancellation to Foundation.Process while
+/// closing the race where cancellation arrives just before `process.run()`.
+private final class ProcessCancellation: @unchecked Sendable {
+    private let lock = NSLock()
+    private let process: Process
+    private var started = false
+    private var cancellationRequested = false
+
+    init(process: Process) {
+        self.process = process
+    }
+
+    func didStart() {
+        let shouldTerminate = lock.withLock {
+            started = true
+            return cancellationRequested
+        }
+        if shouldTerminate, process.isRunning {
+            process.terminate()
+        }
+    }
+
+    func cancel() {
+        let shouldTerminate = lock.withLock {
+            cancellationRequested = true
+            return started
+        }
+        if shouldTerminate, process.isRunning {
+            process.terminate()
+        }
     }
 }
 

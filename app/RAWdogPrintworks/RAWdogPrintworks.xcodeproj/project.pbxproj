@@ -13,8 +13,10 @@
 		901973283AEAF7846AA41145 /* PreviewImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DB3FFC02930C9ACFD2BD4FF /* PreviewImage.swift */; };
 		9225267E64DC4F3ED0D1DC44 /* ReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7823D48DA9C17AA0BE34B21 /* ReviewView.swift */; };
 		A339D445CE02AA706E7D6C5B /* CropOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9BCB815EE12B041AFE34A45 /* CropOverlayView.swift */; };
+		BBBD1847AE0EEBF5BF593272 /* SettingsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAD615337BB62083B108C459 /* SettingsSheet.swift */; };
 		BE5A825A7AF83E5ADCD3A283 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFC7998A937FE9922A71CC94 /* Theme.swift */; };
 		BFC8C6E1D71B3F325BA0C36C /* InspectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F35A4156DCF5CB8087CF3846 /* InspectorView.swift */; };
+		D0BB633ADAD34F2E049C6250 /* IngestBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F42439BD7E89BED9A95A50E /* IngestBanner.swift */; };
 		D1AD8D0793F2B7CB4E59E046 /* MainWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = D932305A2A209F9D6B4925B9 /* MainWindow.swift */; };
 		DBBE77FA40C7C017B7839141 /* GridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58B319B94EFAF5323E2AF00C /* GridView.swift */; };
 		E11FA9A37D20E3614E7D39C0 /* CompareView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A66969C57597321F01914C7E /* CompareView.swift */; };
@@ -22,12 +24,14 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		2F42439BD7E89BED9A95A50E /* IngestBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IngestBanner.swift; sourceTree = "<group>"; };
 		58B319B94EFAF5323E2AF00C /* GridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridView.swift; sourceTree = "<group>"; };
 		676BC75110657924D2B3FB9F /* PrintworksCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = PrintworksCore; path = ../PrintworksCore; sourceTree = SOURCE_ROOT; };
 		7DB3FFC02930C9ACFD2BD4FF /* PreviewImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewImage.swift; sourceTree = "<group>"; };
 		A3CB3B941DFCAD38A0263C82 /* PrintworksApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrintworksApp.swift; sourceTree = "<group>"; };
 		A66969C57597321F01914C7E /* CompareView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompareView.swift; sourceTree = "<group>"; };
 		A8A0259826B63F3D422ECB93 /* ErrorBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ErrorBanner.swift; sourceTree = "<group>"; };
+		AAD615337BB62083B108C459 /* SettingsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsSheet.swift; sourceTree = "<group>"; };
 		BCFF02D96323B290067ABBBB /* RAWdogPrintworks.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RAWdogPrintworks.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C8488AC88AADDEF83C91D87C /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
 		C9BCB815EE12B041AFE34A45 /* CropOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CropOverlayView.swift; sourceTree = "<group>"; };
@@ -81,11 +85,13 @@
 				C9BCB815EE12B041AFE34A45 /* CropOverlayView.swift */,
 				A8A0259826B63F3D422ECB93 /* ErrorBanner.swift */,
 				58B319B94EFAF5323E2AF00C /* GridView.swift */,
+				2F42439BD7E89BED9A95A50E /* IngestBanner.swift */,
 				F35A4156DCF5CB8087CF3846 /* InspectorView.swift */,
 				D932305A2A209F9D6B4925B9 /* MainWindow.swift */,
 				7DB3FFC02930C9ACFD2BD4FF /* PreviewImage.swift */,
 				A3CB3B941DFCAD38A0263C82 /* PrintworksApp.swift */,
 				D7823D48DA9C17AA0BE34B21 /* ReviewView.swift */,
+				AAD615337BB62083B108C459 /* SettingsSheet.swift */,
 				C8488AC88AADDEF83C91D87C /* SidebarView.swift */,
 				EFC7998A937FE9922A71CC94 /* Theme.swift */,
 			);
@@ -156,11 +162,13 @@
 				A339D445CE02AA706E7D6C5B /* CropOverlayView.swift in Sources */,
 				2B8E1124FD6637511E671575 /* ErrorBanner.swift in Sources */,
 				DBBE77FA40C7C017B7839141 /* GridView.swift in Sources */,
+				D0BB633ADAD34F2E049C6250 /* IngestBanner.swift in Sources */,
 				BFC8C6E1D71B3F325BA0C36C /* InspectorView.swift in Sources */,
 				D1AD8D0793F2B7CB4E59E046 /* MainWindow.swift in Sources */,
 				901973283AEAF7846AA41145 /* PreviewImage.swift in Sources */,
 				753ABA92C72ECC870AE900F3 /* PrintworksApp.swift in Sources */,
 				9225267E64DC4F3ED0D1DC44 /* ReviewView.swift in Sources */,
+				BBBD1847AE0EEBF5BF593272 /* SettingsSheet.swift in Sources */,
 				53AD4CEDA3ED9B9DB4F12FBF /* SidebarView.swift in Sources */,
 				BE5A825A7AF83E5ADCD3A283 /* Theme.swift in Sources */,
 			);

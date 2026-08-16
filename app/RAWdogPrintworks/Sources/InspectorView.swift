@@ -51,14 +51,9 @@ struct InspectorView: View {
             guard showingCrops || photo.crops.isEmpty else { return }
             let result = await model.crops(stem: stem)
             guard !Task.isCancelled,
-                  model.selectedStem == stem,
-                  model.photo(stem)?.reviewRevision == photo.reviewRevision
+                  model.selectedStem == stem
             else { return }
             cropResult = result
-        }
-        .onChange(of: model.selectedStyle) { _, _ in
-            guard let photo else { return }
-            configureControls(from: photo)
         }
     }
 
@@ -300,7 +295,7 @@ struct InspectorView: View {
 
     private var cropSelectionKey: String {
         guard let photo else { return "none|\(showingCrops)" }
-        return "\(photo.stem)|\(photo.reviewRevision)|\(showingCrops)"
+        return "\(photo.stem)|\(showingCrops)"
     }
 
     private var staleStylesText: String? {
