@@ -16,9 +16,10 @@ open as PR #6** — 3 commits, 23 files, +1114/−263. Remaining: the user merge
 - **CodeRabbit on #5: 32 findings** it could NOT post inline (GitHub limit) —
   they live in the COMMENTED review body. Reconciled and archived; it found a
   weak-test cluster the review missed, and missed F1/F2/F6 entirely.
-- **Fix round batches 1–3 committed** — `f93ec85` gating, `964d708` weak tests,
-  `852b0e5` concurrency. Gates re-run by ME per batch with `xcodebuild` WITHOUT
-  sandbox flags (the production path): swift test 92 → 93 → **99**, all exit 0.
+- **Fix round batches 1–4 committed** — `f93ec85` gating, `964d708` weak tests,
+  `852b0e5` concurrency, `1e60c72` CodeRabbit's 2 findings on #6. Gates re-run by
+  ME per batch with `xcodebuild` WITHOUT sandbox flags (the production path):
+  swift test 92 → 93 → 99 → **100**, all exit 0; pytest 295 throughout.
 - **Mutations re-derived independently, not replayed**, and made stronger —
   notably injecting `process.terminate()` into batch 3's watchdog, which fails
   three assertions. That pins the no-kill property the user chose.
@@ -32,20 +33,20 @@ open as PR #6** — 3 commits, 23 files, +1114/−263. Remaining: the user merge
   filed, not dropped. Squashing either branch — both keep per-batch commits.
 
 ## In flight
-- **PR #6 is GREEN and MERGEABLE** but CodeRabbit posted **2 new findings**, so
-  it is NOT ready to merge yet.
-- **Batch 4 running** on those 2 findings — terminal
-  `term_ca4695f2-5cca-45d8-84ce-63a9ab09ad8f`, watcher bg `b4fhycjvn`, brief
-  `batch-4-brief.md`. USER DECIDED item 1 is **partial on purpose**: bound the
-  decode concurrency (a regression batch 3 introduced — the actor used to
-  serialize decodes) but do NOT build waiter tracking or cancellation
-  propagation. Item 2 is a test asserting only `allowsSave` — a cannot-fail test
-  written during THIS round.
+- **VISUAL QA IS BLOCKED: THE SCREEN IS LOCKED.** `orca computer get-app-state`
+  returns `permission_denied` "visible windows but no accessibility window" even
+  though both permissions are granted — `CGSSessionScreenIsLocked = True` is the
+  real cause, the same thing that produced vacuous smokes last round. **Ask the
+  user to unlock; do not fabricate screenshots.** The app is BUILT (from
+  `1e60c72`), LAUNCHED (pid was 20456), and already pointed at `smoke-repo`,
+  whose two photos are both `verified` — an ideal fixture for F1.
+- PR #6 has batch 4 pushed; pytest passed again (1m12s), CodeRabbit re-reviewing.
 - **APP STILL POINTS AT THE SCRATCH REPO** `smoke-repo`. Cleanup below.
 
 ## Next
-1. Verify batch 4 as with the others — re-run its mutations yourself; the bound
-   test must fail against an unbounded cache. Then all four gates, then commit.
+1. **Ask the user to unlock the screen**, then run the QA in step 2. Verify with
+   `CGSessionCopyCurrentDictionary()['CGSSessionScreenIsLocked']` before trusting
+   any AX read — a locked screen fails as a permission error, not a lock error.
 2. **VISUAL QA before the merge — the user asked for this.** Batch 1 changed the
    crop-grab interaction (no undo) and batch 3 made grid cards Buttons; tests
    pass while an interaction can still be wrong. Drive the app on the SCRATCH
