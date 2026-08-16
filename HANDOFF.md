@@ -30,7 +30,7 @@ open as PR #6** — 3 commits, 23 files, +1114/−263. Remaining: the user merge
   Codex seatbelt workaround, not a build requirement. Confirmed — my
   `xcodebuild` Release gate passes without it.
 - CR Minors/Trivials, and PreviewImageCache cancellation propagation — filed.
-- Squashing either branch; both preserve per-task commits.
+  Squashing either branch, too; both preserve their per-batch commits.
 
 ## In flight
 - **PR #6 is GREEN and MERGEABLE** but CodeRabbit posted **2 new findings**, so
