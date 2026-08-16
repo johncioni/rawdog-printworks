@@ -51,6 +51,8 @@ main = this checkpoint's own commit, pushed; WT = 839d574.
 - WT = 839d574. Ledger is gitignored; the archive on main is the durable copy.
 
 ## Next
+_(This checkpoint was written as a deliberate handoff before a context clear —
+it is a clean stopping point, not a mid-flight snapshot. Nothing is running.)_
 1. Dispatch the whole-branch review (brief above). Verify the agent UI is up and
    the prompt TOOK (context > 0) before trusting `send`; arm a watcher immediately.
 2. Act on its findings — fix round via the Orca loop if it blocks.
