@@ -26,9 +26,9 @@ then cleanup. main = this checkpoint; fix worktree = `plan2-fixes`.
 
 ## Ruled out
 - `scripts/build-app.sh:5-7` (CR Major, "pass `OTHER_SWIFT_FLAGS=…-disable-sandbox`")
-  — **false positive.** That flag is the Codex seatbelt workaround
-  (`codex-swift-sandbox-fix`), not a production build requirement.
-- Squashing Plan 2 — merged with a merge commit, history preserved.
+  — **false positive**: that flag is the Codex seatbelt workaround
+  (`codex-swift-sandbox-fix`), not a production build requirement. Confirmed —
+  my own `xcodebuild` Release gate passes without it.
 - Making `runMutating` cancellable (m12), including via CR's watchdog→SIGKILL.
 - Fixing CR Minors/Trivials in this round — deliberately filed.
 
@@ -46,8 +46,7 @@ then cleanup. main = this checkpoint; fix worktree = `plan2-fixes`.
 - Briefs: `<plan2-fixes>/.superpowers/sdd/2026-08-16-plan2-fixes/` — `README.md`
   (scope contract + out-of-scope list), `batch-1-brief.md` (gating: F1–F6),
   `batch-2-brief.md` (tests that cannot fail), `batch-3-brief.md` (concurrency).
-- **THE APP STILL POINTS AT THE SCRATCH REPO** `~/orca/workspaces/
-  rawdog-printworks/smoke-repo`. Cleanup at the very end.
+- **APP STILL POINTS AT THE SCRATCH REPO** `smoke-repo`. Cleanup at the end.
 
 ## Next
 1. On the watcher: re-run Codex's claimed RED mutations YOURSELF before accepting
