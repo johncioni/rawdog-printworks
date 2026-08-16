@@ -47,11 +47,13 @@ struct InspectorView: View {
                 cropResult = nil
                 return
             }
+            let retryToken = photo.cropRetryToken
             cropResult = nil
             guard showingCrops || photo.crops.isEmpty else { return }
             let result = await model.crops(stem: stem)
             guard !Task.isCancelled,
-                  model.selectedStem == stem
+                  model.selectedStem == stem,
+                  model.photo(stem)?.cropRetryToken == retryToken
             else { return }
             cropResult = result
         }
@@ -295,7 +297,7 @@ struct InspectorView: View {
 
     private var cropSelectionKey: String {
         guard let photo else { return "none|\(showingCrops)" }
-        return "\(photo.stem)|\(showingCrops)"
+        return "\(photo.stem)|\(showingCrops)|\(photo.cropRetryToken)"
     }
 
     private var staleStylesText: String? {

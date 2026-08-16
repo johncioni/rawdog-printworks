@@ -36,8 +36,15 @@ public actor PipelineClient {
         _ resultType: R.Type, args: [String],
         onEvent: (@Sendable (ProgressEvent) -> Void)? = nil
     ) async -> CommandResult<R> {
-        // FIFO over the WHOLE execution — see the Interfaces block for why
-        // a tail that only awaits the previous tail does not serialize.
+        // Mutations are intentionally uncancellable. The unstructured `work`
+        // task keeps each caller in the FIFO until its whole command finishes,
+        // so a cancelled waiter cannot let a later mutation overtake it. More
+        // importantly, propagating cancellation into `execute` would SIGTERM
+        // the subprocess group — including RawTherapee or ImageMagick midway
+        // through a write into staging/<stem>.tmp/. Changing this policy needs
+        // a real Cancel affordance plus an explicit cancellation-safe staging
+        // and recovery contract; only then should caller cancellation be wired
+        // into `work` while preserving this whole-execution FIFO.
         let prior = tail
         let work = Task { () -> CommandResult<R> in
             await prior.value

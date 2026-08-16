@@ -39,10 +39,12 @@ struct ReviewScreen: View {
                 cropResult = nil
                 return
             }
+            let retryToken = photo.cropRetryToken
             cropResult = nil
             let result = await model.crops(stem: photo.stem)
             guard !Task.isCancelled,
-                  model.selectedStem == photo.stem
+                  model.selectedStem == photo.stem,
+                  model.photo(photo.stem)?.cropRetryToken == retryToken
             else { return }
             cropResult = result
         }
@@ -243,7 +245,7 @@ struct ReviewScreen: View {
 
     private var cropLoadKey: String {
         guard let photo = selectedPhoto else { return "none|\(showingCrops)" }
-        return "\(photo.stem)|\(showingCrops)"
+        return "\(photo.stem)|\(showingCrops)|\(photo.cropRetryToken)"
     }
 
     private var selectedPreviewIdentity: String? {

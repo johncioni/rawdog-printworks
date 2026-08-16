@@ -35,6 +35,28 @@ final class ContractTests: XCTestCase {
         XCTAssertNotNil(photo.adjustments.values.first?.temperature.source)
     }
 
+    func testCropRetryTokenTracksReadinessButNotReviewRevision() {
+        func photo(state: String, revision: String,
+                   previews: [String: String?] = [:]) -> PhotoStatus {
+            PhotoStatus(
+                stem: "P1", state: state, deliveryId: "d1", ingestedAt: nil,
+                reviewRevision: revision, previews: previews, previewHashes: [:],
+                stalePreviews: [], adjustments: [:], crops: [:],
+                expressionAudit: [], published: PublishedInfo(
+                    version: nil, path: nil, artifactCount: nil))
+        }
+
+        let waiting = photo(state: "ingested", revision: "r1")
+        let revisionOnly = photo(state: "ingested", revision: "r2")
+        let stateReady = photo(state: "review_required", revision: "r2")
+        let previewReady = photo(
+            state: "ingested", revision: "r2", previews: ["natural": "P1.jpg"])
+
+        XCTAssertEqual(waiting.cropRetryToken, revisionOnly.cropRetryToken)
+        XCTAssertNotEqual(waiting.cropRetryToken, stateReady.cropRetryToken)
+        XCTAssertNotEqual(waiting.cropRetryToken, previewReady.cropRetryToken)
+    }
+
     func testDecodesAdjustCropsApproveIngestRun() throws {
         _ = try ContractDecoder.make().decode(
             Envelope<AdjustResult>.self, from: fixture("adjust_ok.json"))

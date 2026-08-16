@@ -686,17 +686,20 @@ final class AppModelTests: XCTestCase {
         fake.statusQueue = (1...4).map { revision in
             snap(stems.map { photo(stem: $0, revision: "r\(revision)") })
         }
-        let waveStarted = (0..<4).map { _ in AsyncGate() }
+        let waveStarted = (0..<4).map {
+            XCTestExpectation(description: "crop wave \($0 + 1) started")
+        }
         let stateLock = NSLock()
         nonisolated(unsafe) var callCount = 0
         nonisolated(unsafe) var shouldFinish = false
+        defer { stateLock.withLock { shouldFinish = true } }
         fake.asyncCropsHandler = { stem in
             let call = stateLock.withLock {
                 callCount += 1
                 return callCount
             }
             if call.isMultiple(of: 8) {
-                await waveStarted[(call / 8) - 1].open()
+                waveStarted[(call / 8) - 1].fulfill()
             }
             while !Task.isCancelled && stateLock.withLock({ !shouldFinish }) {
                 try? await Task.sleep(for: .milliseconds(5))
@@ -715,7 +718,11 @@ final class AppModelTests: XCTestCase {
             loads += stems.map { stem in
                 Task { @MainActor in await model.crops(stem: stem) }
             }
-            await waveStarted[wave].wait()
+            await fulfillment(of: [waveStarted[wave]], timeout: 5)
+            let expectedCalls = (wave + 1) * stems.count
+            guard stateLock.withLock({ callCount }) >= expectedCalls else {
+                break
+            }
         }
 
         let observedCalls = fake.cropsLog.count
@@ -1261,7 +1268,7 @@ final class AppModelTests: XCTestCase {
         try FileManager.default.createDirectory(
             at: input, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: repo) }
-        for name in ["P1.RW2", "P2.rw2", "P3.RW2", "notes.txt"] {
+        for name in ["P1.RW2", "P2.rw2", "P3.Rw2", "notes.txt"] {
             try Data().write(to: input.appendingPathComponent(name))
         }
 
@@ -1271,7 +1278,7 @@ final class AppModelTests: XCTestCase {
 
         await model.refresh()
 
-        XCTAssertEqual(model.pendingInputFiles, ["P2.rw2", "P3.RW2"])
+        XCTAssertEqual(model.pendingInputFiles, ["P2.rw2", "P3.Rw2"])
     }
 
     func testIngestPendingSendsDeliveryIDThenRuns() async {
@@ -1280,7 +1287,7 @@ final class AppModelTests: XCTestCase {
         fake.mutateHandler = { args in
             if args.first == "ingest" {
                 return Envelope(ok: true, result: IngestResult(
-                    ingested: [], skipped: [], conflicts: [], failed: []),
+                    ingested: ["P1"], skipped: [], conflicts: [], failed: []),
                     error: nil) as Any
             }
             return Envelope(ok: true, result: RunResult(
@@ -1298,6 +1305,26 @@ final class AppModelTests: XCTestCase {
         XCTAssertNotNil(UUID(uuidString: ingestArgs[2]))
         XCTAssertEqual(ingestArgs[3], "--json")
         XCTAssertEqual(fake.mutateLog[1], ["run", "--json"])
+    }
+
+    func testIngestPendingSkipsRunWhenNothingLandsAndSurfacesNotices() async {
+        let fake = FakeClient()
+        fake.statusQueue = [snap([])]
+        fake.mutateHandler = { args in
+            XCTAssertEqual(args.first, "ingest")
+            return Envelope(ok: true, result: IngestResult(
+                ingested: [],
+                skipped: [FileNote(file: "P1.RW2", reason: "duplicate")],
+                conflicts: [], failed: []), error: nil) as Any
+        }
+        let model = AppModel(client: fake, repo: URL(fileURLWithPath: "/r"),
+                             sliderDebounce: .zero)
+
+        await model.ingestPending()
+
+        XCTAssertEqual(fake.mutateLog.count, 1)
+        XCTAssertEqual(model.banner?.code, "INGEST_NOTICE")
+        XCTAssertTrue(model.banner?.message.contains("P1.RW2: duplicate") == true)
     }
 
     func testIngestRunFailureRetryDoesNotForceWholeRepo() async {

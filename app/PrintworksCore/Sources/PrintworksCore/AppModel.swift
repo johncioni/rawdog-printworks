@@ -310,7 +310,7 @@ public final class AppModel {
             options: [.skipsHiddenFiles])
         else { return [] }
         return files.compactMap { file in
-            guard file.pathExtension == "rw2" || file.pathExtension == "RW2",
+            guard file.pathExtension.lowercased() == "rw2",
                   !knownStems.contains(file.deletingPathExtension().lastPathComponent)
             else { return nil }
             return file.lastPathComponent
@@ -829,17 +829,33 @@ public final class AppModel {
             streamProgress: true)
         applyIngestResult(ingest.envelope.result)
 
-        activeCommand = "run"
-        let run = await send(RunResult.self, args: ["run", "--json"],
-                             streamProgress: true)
-        applyRunResult(run.envelope.result)
+        var notices: [String] = []
+        if let result = ingest.envelope.result {
+            notices += result.skipped.map { "\($0.file): \($0.reason)" }
+            notices += result.conflicts.map { "\($0.file): \($0.reason)" }
+        }
+
+        var runError: PipelineErrorInfo?
+        var runDetails = ""
+        if let result = ingest.envelope.result, !result.ingested.isEmpty {
+            activeCommand = "run"
+            let run = await send(RunResult.self, args: ["run", "--json"],
+                                 streamProgress: true)
+            applyRunResult(run.envelope.result)
+            runError = run.envelope.error
+            runDetails = run.stderrTail
+        }
 
         if let error = ingest.envelope.error {
             surface(error, details: ingest.stderrTail,
                     retry: { [weak self] in await self?.ingestPending() })
-        } else {
-            surface(run.envelope.error, details: run.stderrTail,
+        } else if let error = runError {
+            surface(error, details: runDetails,
                     retry: { [weak self] in await self?.runAll() })
+        } else if !notices.isEmpty {
+            surface(PipelineErrorInfo(code: "INGEST_NOTICE",
+                                      message: notices.joined(separator: "\n")),
+                    details: "")
         }
         await endCommand()
     }

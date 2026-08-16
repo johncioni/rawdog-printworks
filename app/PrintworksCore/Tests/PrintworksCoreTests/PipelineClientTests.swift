@@ -132,7 +132,7 @@ final class PipelineClientTests: XCTestCase {
         }
     }
 
-    func testCancellingRunTerminatesTheSubprocess() async throws {
+    func testCancellingReadCommandTerminatesTheSubprocess() async throws {
         let (client, dir) = try makeStub("""
         echo started > "$PWD/started"
         trap 'echo terminated > "$PWD/terminated"; exit 0' TERM
@@ -157,7 +157,38 @@ final class PipelineClientTests: XCTestCase {
         _ = await run.value
 
         XCTAssertTrue(terminatedBeforeRelease,
-                      "task cancellation must terminate the live subprocess")
+                      "read-command cancellation must terminate the subprocess")
+    }
+
+    func testCancellingMutatingCommandDoesNotTerminateTheSubprocess() async throws {
+        let (client, dir) = try makeStub("""
+        echo started > "$PWD/started"
+        trap 'echo terminated > "$PWD/terminated"; exit 0' TERM
+        while [ ! -f "$PWD/release" ]; do sleep 0.02; done
+        echo '{"ok":true,"result":{"stem":"P1","state":"approved","fingerprint":"f"}}'
+        """)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let run = Task {
+            await client.runMutating(ApproveResult.self,
+                                     args: ["approve", "--stem", "P1", "--json"])
+        }
+        let started = dir.appendingPathComponent("started")
+        for _ in 0..<100 where !FileManager.default.fileExists(atPath: started.path) {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: started.path))
+
+        run.cancel()
+        try await Task.sleep(for: .milliseconds(250))
+        let terminatedBeforeRelease = FileManager.default.fileExists(
+            atPath: dir.appendingPathComponent("terminated").path)
+        try Data().write(to: dir.appendingPathComponent("release"))
+        let result = await run.value
+
+        XCTAssertFalse(terminatedBeforeRelease,
+                       "mutating-command cancellation is intentionally ignored")
+        XCTAssertTrue(result.envelope.ok,
+                      "the mutation must run to its natural completion")
     }
 
     func testHighVolumeBurstDeliversEveryEventInOrder() async throws {

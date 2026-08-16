@@ -157,6 +157,15 @@ public struct PhotoStatus: Codable, Sendable, Equatable {
         self.expressionAudit = expressionAudit
         self.published = published
     }
+
+    /// Cheap view identity for retrying a previously unavailable crop query.
+    /// A state transition or the first rendered preview can make crop geometry
+    /// available; ordinary review-revision churn must not refetch it.
+    public var cropRetryToken: String {
+        guard crops.isEmpty else { return "persisted" }
+        let hasRenderedPreview = previews.values.contains { $0 != nil }
+        return "\(state)|preview:\(hasRenderedPreview)"
+    }
 }
 
 public struct StatusSnapshot: Codable, Sendable, Equatable {
