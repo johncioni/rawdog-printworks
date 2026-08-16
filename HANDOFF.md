@@ -37,14 +37,12 @@ green. Remaining: the fix round on `johncioni/plan2-fixes` (3 batches), cleanup.
 - **BATCH 2 DONE and COMMITTED** as `964d708` (6 files, +117/−57). Gates re-run
   by me: swift test **93** exit 0 ×3, xcodebuild Release SUCCEEDED without
   sandbox flags, pytest 295. Two mutations re-derived independently and
-  deliberately stronger than Codex's — deleting Debouncer's cancellation
-  handling outright still fails the cancellation test (which previously
-  exercised none), and per-chunk UTF-8 decoding yields replacement chars.
+  stronger than Codex's — deleting Debouncer's cancellation handling outright
+  still fails the cancellation test (which previously exercised none).
 - **Batch 3 running** in a FRESH terminal
-  `term_8f69f5e5-4f02-4615-a472-ccad08aadadf` (batch 1+2's terminal had reached
-  69% context); watcher bg `b2kg358jm`, `watch-batch3.sh`. An earlier watcher was
-  reaped by the harness while Codex was healthy — if one dies, re-arm and read
-  the terminal, don't assume a stall.
+  `term_8f69f5e5-4f02-4615-a472-ccad08aadadf` (the batch-1+2 terminal hit 69%
+  context); watcher bg `b2kg358jm`. An earlier watcher was reaped by the harness
+  while Codex was healthy — if one dies, re-arm and read the terminal.
 - Briefs: `<plan2-fixes>/.superpowers/sdd/2026-08-16-plan2-fixes/` — `README.md`
   (scope contract + out-of-scope list), `batch-1-brief.md` (gating: F1–F6),
   `batch-2-brief.md` (tests that cannot fail), `batch-3-brief.md` (concurrency).
