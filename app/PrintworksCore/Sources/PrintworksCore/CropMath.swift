@@ -17,6 +17,8 @@ public enum CropMath {
     }
 
     public static func aspectFitRect(image: CGSize, container: CGSize) -> CGRect {
+        guard image.width > 0, image.height > 0,
+              container.width > 0, container.height > 0 else { return .zero }
         let scale = min(container.width / image.width,
                         container.height / image.height)
         let size = CGSize(width: image.width * scale, height: image.height * scale)

@@ -325,6 +325,17 @@ final class RepoWatcherTests: XCTestCase {
         XCTAssertTrue(closed, "stop should release every watched descriptor")
     }
 
+    func testStopCancellationWaitUsesOneTotalDeadline() {
+        let signals = (0..<3).map { _ in DispatchSemaphore(value: 0) }
+        let started = Date()
+
+        RepoWatcher._waitForCancellationHandlersForTesting(
+            signals, totalWait: 0.1)
+
+        XCTAssertLessThan(Date().timeIntervalSince(started), 0.2,
+                          "the timeout must be shared, not paid per watch")
+    }
+
     func testStartAlreadyInFlightCannotOutliveConcurrentStop() async throws {
         let repo = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)

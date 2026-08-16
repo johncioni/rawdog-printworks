@@ -29,6 +29,16 @@ final class CropMathTests: XCTestCase {
         XCTAssertEqual(tall.minY, 150)
     }
 
+    func testAspectFitRectReturnsZeroForDegenerateImage() {
+        let rect = CropMath.aspectFitRect(
+            image: CGSize(width: 0, height: 3000),
+            container: CGSize(width: 800, height: 600))
+
+        XCTAssertEqual(rect, .zero)
+        XCTAssertTrue(rect.origin.x.isFinite)
+        XCTAssertTrue(rect.size.width.isFinite)
+    }
+
     func testGrabOnEightByTenOutlineTargetsEightByTen() {
         let imageRect = CGRect(x: 0, y: 0, width: 1000, height: 1000)
         let windows = [

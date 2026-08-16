@@ -101,7 +101,10 @@ private final class AppRuntime {
         defaults.set(repoPath, forKey: "repoPath")
         defaults.set(pythonPath, forKey: "pythonPath")
 
-        watcher.stop()
+        let retiredWatcher = watcher
+        Task.detached(priority: .utility) {
+            retiredWatcher.stop()
+        }
         model = Self.makeModel(repo: repo, python: python, notifier: notifier)
         watcher = RepoWatcher(repo: repo)
         self.repoPath = repoPath

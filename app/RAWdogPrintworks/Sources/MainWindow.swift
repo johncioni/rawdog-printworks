@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import PrintworksCore
 
@@ -33,7 +34,9 @@ struct MainWindow: View {
             }
             .background(Theme.windowBase)
             .overlay(alignment: .bottom) {
-                if model.busyExternally {
+                if let status = model.longRunningCommand {
+                    longRunningPanel(status)
+                } else if model.busyExternally {
                     Label("Pipeline busy (CLI)", systemImage: "lock.fill")
                         .font(.callout.weight(.medium))
                         .padding(.horizontal, 14)
@@ -64,6 +67,31 @@ struct MainWindow: View {
         .dropDestination(for: URL.self) { urls, _ in
             model.ingestDropped(paths: urls.map(\.path))
         }
+    }
+
+    private func longRunningPanel(
+        _ status: LongRunningCommandStatus
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Label(status.message, systemImage: "clock.badge.exclamationmark")
+                .font(.callout.weight(.semibold))
+            Text("The app is still waiting and will not stop the pipeline. "
+                 + "If you judge it stuck, inspect or end the process in Activity Monitor.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Button("Reveal Run Folder in Finder") {
+                NSWorkspace.shared.activateFileViewerSelecting([status.revealURL])
+            }
+            .controlSize(.small)
+        }
+        .padding(12)
+        .frame(maxWidth: 520, alignment: .leading)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 10))
+        .overlay {
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Theme.hairline, lineWidth: 1)
+        }
+        .padding(.bottom, 16)
     }
 
     @ToolbarContentBuilder

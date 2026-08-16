@@ -17,7 +17,8 @@ public protocol PipelineRunning: Sendable {
     func status() async -> CommandResult<StatusSnapshot>
     func mutate<R: Codable & Sendable & Equatable>(
         _ type: R.Type, args: [String],
-        onEvent: (@Sendable (ProgressEvent) -> Void)?
+        onEvent: (@Sendable (ProgressEvent) -> Void)?,
+        onLongRunning: (@Sendable (Duration) -> Void)?
     ) async -> CommandResult<R>
     func crops(stem: String) async -> CommandResult<CropsResult>
 }
@@ -35,9 +36,11 @@ extension PipelineClient: PipelineRunning {
 
     public func mutate<R: Codable & Sendable & Equatable>(
         _ type: R.Type, args: [String],
-        onEvent: (@Sendable (ProgressEvent) -> Void)?
+        onEvent: (@Sendable (ProgressEvent) -> Void)?,
+        onLongRunning: (@Sendable (Duration) -> Void)?
     ) async -> CommandResult<R> {
-        await runMutating(type, args: args, onEvent: onEvent)
+        await runMutating(type, args: args, onEvent: onEvent,
+                          onLongRunning: onLongRunning)
     }
 }
 
@@ -61,6 +64,29 @@ public struct ReprocessAllConfirmation: Sendable, Equatable {
 
     public var message: String {
         "This re-renders every photo and publishes a new version of each."
+    }
+}
+
+public struct LongRunningCommandStatus: Sendable, Equatable {
+    public let command: String
+    public let stem: String?
+    public let elapsed: Duration
+    public let revealURL: URL
+
+    public var message: String {
+        let subject = switch command {
+        case "run", "preview": "Rendering"
+        case "ingest": "Ingesting"
+        case "approve": "Approving"
+        case "adjust": "Adjusting"
+        default: "Pipeline command"
+        }
+        let target = stem.map { " \($0)" } ?? ""
+        return "\(subject)\(target) — still running, \(elapsedMinutes) min"
+    }
+
+    public var elapsedMinutes: Int {
+        max(1, Int(elapsed.components.seconds) / 60)
     }
 }
 
@@ -121,6 +147,7 @@ public final class AppModel {
     @ObservationIgnored private let sliderDebounce: Duration
     @ObservationIgnored private let reviewFileDirectory: URL
     @ObservationIgnored private let onPublished: @MainActor @Sendable ([PublishedPhoto]) -> Void
+    @ObservationIgnored private let inputScanner: @Sendable (URL, StatusSnapshot) -> [String]
 
     // MARK: Published state
 
@@ -143,6 +170,9 @@ public final class AppModel {
     public var activeStem: String?
     /// Latest progress event per stem.
     public var renderProgress: [String: ProgressEvent] = [:]
+    /// Reporting-only state for a mutation that has crossed the watchdog
+    /// threshold. It never changes subprocess or FIFO lifetime.
+    public var longRunningCommand: LongRunningCommandStatus?
 
     public var selectedStem: String?
     public var selectedStyle: String = "natural"
@@ -242,6 +272,7 @@ public final class AppModel {
         self.sliderDebounce = sliderDebounce
         self.reviewFileDirectory = FileManager.default.temporaryDirectory
         self.onPublished = onPublished
+        self.inputScanner = Self.findPendingInputFiles
     }
 
     /// Test seam for the review-file write failure path. Production always
@@ -253,6 +284,20 @@ public final class AppModel {
         self.sliderDebounce = sliderDebounce
         self.reviewFileDirectory = reviewFileDirectory
         self.onPublished = { _ in }
+        self.inputScanner = Self.findPendingInputFiles
+    }
+
+    /// Test seam proving the directory scan runs outside MainActor isolation.
+    init(
+        client: any PipelineRunning, repo: URL, sliderDebounce: Duration,
+        inputScanner: @escaping @Sendable (URL, StatusSnapshot) -> [String]
+    ) {
+        self.client = client
+        self.repo = repo
+        self.sliderDebounce = sliderDebounce
+        self.reviewFileDirectory = FileManager.default.temporaryDirectory
+        self.onPublished = { _ in }
+        self.inputScanner = inputScanner
     }
 
     // MARK: - Snapshot
@@ -290,8 +335,11 @@ public final class AppModel {
             return
         }
         self.snapshot = snapshot
-        pendingInputFiles = Self.findPendingInputFiles(repo: repo,
-                                                       snapshot: snapshot)
+        let repo = repo
+        let inputScanner = inputScanner
+        pendingInputFiles = await Task.detached(priority: .utility) {
+            inputScanner(repo, snapshot)
+        }.value
         for photo in snapshot.photos where lastFailures[photo.stem] != nil {
             let current = FailureStamp(photo: photo)
             guard let failedAt = failureStamps[photo.stem] else {
@@ -307,7 +355,7 @@ public final class AppModel {
         reconcileDrafts(snapshot, capturedDuring: capture)
     }
 
-    private static func findPendingInputFiles(
+    private nonisolated static func findPendingInputFiles(
         repo: URL, snapshot: StatusSnapshot
     ) -> [String] {
         let knownStems = Set(snapshot.photos.map(\.stem))
@@ -1019,6 +1067,7 @@ public final class AppModel {
         commandGeneration &+= 1
         activeCommand = name
         activeStem = stem
+        longRunningCommand = nil
         clearBanner()
     }
 
@@ -1028,6 +1077,7 @@ public final class AppModel {
     private func endCommand() async {
         activeCommand = nil
         activeStem = nil
+        longRunningCommand = nil
         for key in progressKeys { renderProgress.removeValue(forKey: key) }
         progressKeys.removeAll()
         await refresh()
@@ -1039,7 +1089,25 @@ public final class AppModel {
         lastMutatingArgs = args
         let handler = streamProgress
             ? progressHandler(defaultStem: activeStem) : nil
-        return await client.mutate(type, args: args, onEvent: handler)
+        return await client.mutate(
+            type, args: args, onEvent: handler,
+            onLongRunning: longRunningHandler())
+    }
+
+    private func longRunningHandler() -> (@Sendable (Duration) -> Void) {
+        let generation = commandGeneration
+        let command = activeCommand ?? "pipeline"
+        let stem = activeStem
+        let revealURL = repo.appendingPathComponent("run", isDirectory: true)
+        return { [weak self] elapsed in
+            Task { @MainActor [weak self] in
+                guard let self, generation == self.commandGeneration,
+                      self.activeCommand != nil else { return }
+                self.longRunningCommand = LongRunningCommandStatus(
+                    command: command, stem: stem, elapsed: elapsed,
+                    revealURL: revealURL)
+            }
+        }
     }
 
     private func progressHandler(defaultStem: String?)

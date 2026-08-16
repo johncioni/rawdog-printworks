@@ -68,7 +68,8 @@ final class FakeClient: PipelineRunning, @unchecked Sendable {
         return response
     }
     func mutate<R>(_ type: R.Type, args: [String],
-                   onEvent: (@Sendable (ProgressEvent) -> Void)?) async
+                   onEvent: (@Sendable (ProgressEvent) -> Void)?,
+                   onLongRunning: (@Sendable (Duration) -> Void)?) async
     -> CommandResult<R> {
         stateLock.withLock { storedMutateLog.append(args) }
         let response = if let asyncMutateHandler {
@@ -115,7 +116,8 @@ final class SlowStatusClient: PipelineRunning, @unchecked Sendable {
     }
 
     func mutate<R>(_ type: R.Type, args: [String],
-                   onEvent: (@Sendable (ProgressEvent) -> Void)?) async
+                   onEvent: (@Sendable (ProgressEvent) -> Void)?,
+                   onLongRunning: (@Sendable (Duration) -> Void)?) async
     -> CommandResult<R> {
         fatalError("unused")
     }
@@ -188,7 +190,8 @@ final class DeferredReconcileClient: PipelineRunning, @unchecked Sendable {
     }
 
     func mutate<R>(_ type: R.Type, args: [String],
-                   onEvent: (@Sendable (ProgressEvent) -> Void)?) async
+                   onEvent: (@Sendable (ProgressEvent) -> Void)?,
+                   onLongRunning: (@Sendable (Duration) -> Void)?) async
     -> CommandResult<R> {
         await mutationStarted.open()
         await mutationCanFinish.wait()
@@ -1374,6 +1377,74 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.pendingInputFiles, ["P2.rw2", "P3.Rw2"])
     }
 
+    func testPendingInputScanRunsOffMainActor() async {
+        let fake = FakeClient()
+        fake.statusQueue = [snap([])]
+        let probe = ThreadProbe()
+        let model = AppModel(
+            client: fake, repo: URL(fileURLWithPath: "/r"),
+            sliderDebounce: .zero
+        ) { _, _ in
+            probe.recordCurrentThread()
+            return []
+        }
+
+        await model.refresh()
+
+        XCTAssertFalse(probe.ranOnMainThread)
+    }
+
+    func testLongRunningMutationSurfacesWithoutStoppingSubprocess() async throws {
+        let repo = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(
+            at: repo.appendingPathComponent("run"),
+            withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: repo) }
+        let script = repo.appendingPathComponent("long-running-stub.sh")
+        try """
+        #!/bin/sh
+        case "$1" in
+          run)
+            echo started > "$PWD/started"
+            trap 'echo stopped > "$PWD/stopped"; exit 0' TERM
+            while [ ! -f "$PWD/release" ]; do sleep 0.01; done
+            echo '{"ok":true,"result":{"published":[],"advanced":[],"failed":[]}}'
+            ;;
+          status)
+            echo '{"ok":true,"result":{"repo":"/r","toolchain":{"ok":true,"failures":[]},"lock":{"held":false,"stale":false,"pid":null},"styles":[],"photos":[]}}'
+            ;;
+        esac
+        """.write(to: script, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755],
+                                              ofItemAtPath: script.path)
+        let client = PipelineClient(
+            config: PipelineConfig(repo: repo, python: script),
+            executableOverride: script,
+            longRunningThreshold: .milliseconds(40),
+            longRunningUpdateInterval: .milliseconds(20))
+        let model = AppModel(client: client, repo: repo,
+                             sliderDebounce: .zero)
+        let command = Task { await model.reprocess(stem: "P1") }
+
+        for _ in 0..<200 where model.longRunningCommand == nil {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        let surfaced = model.longRunningCommand
+        XCTAssertNotNil(surfaced)
+        XCTAssertTrue(surfaced?.message.contains(
+            "Rendering P1 — still running") == true)
+        XCTAssertEqual(surfaced?.revealURL,
+                       repo.appendingPathComponent("run", isDirectory: true))
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: repo.appendingPathComponent("stopped").path),
+            "the reporting threshold must not stop the subprocess")
+
+        try Data().write(to: repo.appendingPathComponent("release"))
+        await command.value
+        XCTAssertNil(model.longRunningCommand)
+    }
+
     func testIngestPendingSendsDeliveryIDThenRuns() async {
         let fake = FakeClient()
         fake.statusQueue = [snap([])]
@@ -1494,5 +1565,18 @@ final class AppModelTests: XCTestCase {
 
         await model.retryBannerAction()
         XCTAssertTrue(fake.mutateLog.isEmpty)
+    }
+}
+
+private final class ThreadProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedRanOnMainThread = false
+
+    var ranOnMainThread: Bool {
+        lock.withLock { storedRanOnMainThread }
+    }
+
+    func recordCurrentThread() {
+        lock.withLock { storedRanOnMainThread = Thread.isMainThread }
     }
 }

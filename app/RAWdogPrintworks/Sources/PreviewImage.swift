@@ -1,76 +1,5 @@
-import ImageIO
 import SwiftUI
 import PrintworksCore
-
-private struct DownsampledPreview: @unchecked Sendable {
-    let image: CGImage
-}
-
-private actor PreviewImageCache {
-    static let shared = PreviewImageCache()
-    private static let countLimit = 40
-    private static let totalCostLimit = 256 * 1024 * 1024
-
-    private struct Key: Hashable {
-        let contentHash: String
-        let maxPixelSize: Int
-    }
-
-    private struct Entry {
-        let preview: DownsampledPreview
-        let cost: Int
-    }
-
-    private var images: [Key: Entry] = [:]
-    private var recency: [Key] = []
-    private var totalCost = 0
-
-    func image(
-        contentHash: String,
-        url: URL,
-        maxPixelSize: Int
-    ) -> DownsampledPreview? {
-        guard !Task.isCancelled else { return nil }
-        let key = Key(contentHash: contentHash,
-                      maxPixelSize: maxPixelSize)
-        if let entry = images[key] {
-            recency.removeAll { $0 == key }
-            recency.append(key)
-            return entry.preview
-        }
-
-        let sourceOptions = [kCGImageSourceShouldCache: false] as CFDictionary
-        guard let source = CGImageSourceCreateWithURL(url as CFURL,
-                                                       sourceOptions) else {
-            return nil
-        }
-        let thumbnailOptions = [
-            kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceShouldCacheImmediately: true,
-            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
-        ] as CFDictionary
-        guard let image = CGImageSourceCreateThumbnailAtIndex(
-            source, 0, thumbnailOptions
-        ) else { return nil }
-
-        let preview = DownsampledPreview(image: image)
-        let cost = image.bytesPerRow * image.height
-        guard cost <= Self.totalCostLimit else { return preview }
-        while images.count >= Self.countLimit
-                || totalCost > Self.totalCostLimit - cost {
-            guard let oldest = recency.first else { break }
-            recency.removeFirst()
-            if let evicted = images.removeValue(forKey: oldest) {
-                totalCost -= evicted.cost
-            }
-        }
-        images[key] = Entry(preview: preview, cost: cost)
-        recency.append(key)
-        totalCost += cost
-        return preview
-    }
-}
 
 private struct PreviewRequest: Hashable {
     let contentHash: String
@@ -79,7 +8,8 @@ private struct PreviewRequest: Hashable {
 }
 
 /// Shared hash-keyed preview loader for grid cards, sidebar thumbnails, and
-/// the review canvas. ImageIO work runs on the cache actor, never MainActor.
+/// the review canvas. ImageIO work runs in detached utility tasks; the actor
+/// coordinates only cache state, so unrelated decodes can overlap.
 struct PreviewImage: View {
     let path: String?
     let contentHash: String?
