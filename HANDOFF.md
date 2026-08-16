@@ -17,12 +17,12 @@ resting point — the next session starts new work, not a continuation.
   (F1–F6), `964d708` weak tests, `852b0e5` concurrency, `1e60c72` CodeRabbit's
   two findings on #6.
 - **CodeRabbit: 32 findings on #5** (could NOT post inline — GitHub limit) plus 2
-  on #6, all reconciled and archived. It found a weak-test cluster the human
-  review missed; it missed F1/F2/F6 entirely.
+  on #6, reconciled and archived. It found a weak-test cluster the human review
+  missed, and missed F1/F2/F6 entirely.
 - **Gates re-run by ME per batch**, `xcodebuild` WITHOUT sandbox flags (the
   production path): swift test 92 → 93 → 99 → **100**, all exit 0. Mutations
-  re-derived independently, never replayed — injecting `process.terminate()` into
-  batch 3's watchdog fails three assertions, pinning the no-kill rule.
+  re-derived independently — injecting `process.terminate()` into batch 3's
+  watchdog fails three assertions, pinning the no-kill rule.
 - **Visual QA passed** (`docs/superpowers/sdd-archive/2026-08-16-plan2-fixes/visual-qa-note.md`):
   F1 confirmed live — all three audit boxes ticked on a PUBLISHED photo and
   Approve stayed disabled.
@@ -38,9 +38,9 @@ resting point — the next session starts new work, not a continuation.
   seatbelt workaround and the Release gate passes without it.
 - CR Minors/Trivials, m6 coalesce reset, PreviewImageCache cancellation
   propagation — deliberately filed, listed in the archived fix-round README.
-- More code polish for its own sake: the branch has had a whole-branch review, 34
-  CodeRabbit findings triaged and 4 verified fix batches. The next real signal
-  comes from running an actual delivery, not another sweep.
+- More polish for its own sake: after a whole-branch review, 34 triaged
+  CodeRabbit findings and 4 verified fix batches, the next real signal comes
+  from running an actual delivery, not another sweep.
 
 ## In flight
 - **Nothing running.** No agent terminals, no background jobs, no worktrees.
