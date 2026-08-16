@@ -12,27 +12,22 @@ WT = 460f72c.
   worktree, 19 min). Verdict **MERGE AS-IS**; it re-ran both gates itself — 85
   Swift tests exit 0, 295 pytest exit 0 — leaving the worktree clean.
   Report: `docs/superpowers/sdd-archive/2026-08-12-printworks-app/whole-branch-review.md`
-  - Keep this correction: `git diff main..HEAD` looked like it deleted ~14k
-    archive lines — that was main moving forward, not the branch. Real change set
-    is the three-dot diff: 38 files, +7153/−58 — what PR #5 shows.
+  - Real change set is the three-dot diff — 38 files, +7153/−58, what #5 shows.
   - **SIX fix-now items, none a merge blocker: F1 F2 F3 F4 F5 F6.** Take the list
     from the review's verdict TABLES, not its closing paragraph — the closing
     names only four (it omits F3 = m7 case 3, and F5 = m9). Nothing found can
     publish or approve pixels the user did not visually approve.
 - Pushed main and the branch; **opened PR #5**.
 - **Unblocked PR #5** (`460f72c`): it was CONFLICTING on one file, `HANDOFF.md`
-  — branch stop-hook churn vs main's checkpoint. Merged origin/main into the
-  branch taking MAIN's copy (authoritative by convention); verified the merge
-  brought in **no `app/` or `scripts/` changes**, only main's docs archive.
-  PR is now MERGEABLE and **the `tests` CI gate fired for the first time** —
-  before this it had never run, because GitHub cannot build a merge ref for a
-  conflicting PR.
+  — branch stop-hook churn vs main's checkpoint. Merged origin/main in taking
+  MAIN's copy; verified the merge brought **no `app/` or `scripts/` changes**.
+  Now MERGEABLE and **the `tests` CI gate fired for the first time** — GitHub
+  cannot build a merge ref for a conflicting PR, so it had never run.
 - **The fix round has NOT started** — deliberately, pending CodeRabbit.
 
 ## Carried forward (still true)
-- All 11 tasks verified by the controller (exit code + a mutation per new test).
-  THREE tests that COULD NOT FAIL were caught that way (Tasks 6, 9, 11) — the
-  recurring failure mode here, so always mutate a new test.
+- Every task verified by exit code + a mutation per new test. THREE tests that
+  COULD NOT FAIL were caught that way (Tasks 6, 9, 11) — always mutate.
 - VISUAL QA PASSED: full loop on the scratch repo → v002 published, v001 pruned.
 - USER DECISION (m12, standing): `runMutating` is intentionally UNCANCELLABLE —
   cancelling would SIGTERM RawTherapee mid-write into `staging/`. Do not "fix".
