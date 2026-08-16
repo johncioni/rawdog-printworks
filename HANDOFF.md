@@ -13,8 +13,8 @@ remain. Fix worktree `plan2-fixes` = `1e60c72`.
   Fixing that also fired the `tests` CI gate **for the first time**: GitHub
   cannot build a merge ref for a conflicting PR, so it had never run.
 - **CodeRabbit on #5: 32 findings** it could NOT post inline (GitHub limit).
-  Reconciled and archived; it found a weak-test cluster the review missed and
-  missed F1/F2/F6. On #6 it raised 2 more, both now fixed in batch 4.
+  Archived; it found a weak-test cluster the review missed, missed F1/F2/F6, and
+  raised 2 more on #6 — both fixed in batch 4.
 - **Fix round: 4 batches committed** — `f93ec85` gating, `964d708` weak tests,
   `852b0e5` concurrency, `1e60c72` CodeRabbit's #6 findings. Gates re-run by ME
   per batch with `xcodebuild` WITHOUT sandbox flags (the production path):
