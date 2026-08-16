@@ -9,9 +9,9 @@ remain. Fix worktree `plan2-fixes` = `1e60c72`.
 ## Done (this session)
 - **Whole-branch review** (Opus 5 xhigh): MERGE AS-IS, six fix-now items. **Read
   F1–F6 off its verdict TABLES**, not its closing paragraph, which names four.
-- **Unblocked and merged PR #5** — it was CONFLICTING on `HANDOFF.md` alone.
-  Fixing that also fired the `tests` CI gate **for the first time**: GitHub
-  cannot build a merge ref for a conflicting PR, so it had never run.
+- **Unblocked and merged PR #5** — CONFLICTING on `HANDOFF.md` alone. Fixing that
+  fired the `tests` CI gate **for the first time**: GitHub cannot build a merge
+  ref for a conflicting PR, so it had never run.
 - **CodeRabbit on #5: 32 findings** it could NOT post inline (GitHub limit).
   Archived; it found a weak-test cluster the review missed, missed F1/F2/F6, and
   raised 2 more on #6 — both fixed in batch 4.
