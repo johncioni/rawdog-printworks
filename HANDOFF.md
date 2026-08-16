@@ -39,9 +39,9 @@ then cleanup. main = this checkpoint; fix worktree = `plan2-fixes`.
   mutations, chosen independently. All genuinely RED.
 - **Batch 2 running** in the same Codex terminal
   `term_64e51b11-2734-4516-8a51-8bf403cb5d30`; watcher bg `b5e3c39mm` (scratchpad
-  `watch-batch2.sh`) exits 0 on `batch-2-report.md`, 2 on a 30-min stall. NB the
-  first watcher (`b5e3c39mm`) was reaped by the harness, not by any failure —
-  Codex was healthy; if a watcher dies, re-arm it rather than assume a stall.
+  `watch-batch2.sh`) exits 0 on `batch-2-report.md`, 2 on a 30-min stall. An
+  earlier watcher was reaped by the harness while Codex was perfectly healthy —
+  if a watcher dies, re-arm and check the terminal, don't assume a stall.
   **Codex is at 69% context** — dispatch batch 3 to a FRESH terminal.
 - Briefs: `<plan2-fixes>/.superpowers/sdd/2026-08-16-plan2-fixes/` — `README.md`
   (scope contract + out-of-scope list), `batch-1-brief.md` (gating: F1–F6),
@@ -49,12 +49,11 @@ then cleanup. main = this checkpoint; fix worktree = `plan2-fixes`.
 - **APP STILL POINTS AT THE SCRATCH REPO** `smoke-repo`. Cleanup at the end.
 
 ## Next
-1. On the watcher: re-run Codex's claimed RED mutations YOURSELF before accepting
-   — this repo has shipped three tests that could not fail, and batch 2 is
-   entirely about that failure mode. Restore-point trick: `git add -A` first,
-   mutate, then `git checkout -- <file>` restores from the index without losing
-   Codex's uncommitted work. Then all four gates, then commit on its behalf
-   (its sandbox mounts `.git` read-only); check `git status -- HANDOFF.md` first.
+1. On the watcher: re-run the claimed RED mutations YOURSELF — batch 2 is
+   *entirely* about tests that cannot fail. Restore-point trick: `git add -A`
+   first, mutate, then `git checkout -- <file>` restores from the index without
+   losing Codex's uncommitted work. Then all four gates, then commit on its
+   behalf (its `.git` is read-only); check `git status -- HANDOFF.md` first.
 2. Dispatch batch 3 to a FRESH Codex terminal (create → wait tui-idle → read →
    send → read, confirm the prompt took → arm a watcher).
 3. PR the fix branch; user merges.
