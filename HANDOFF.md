@@ -33,12 +33,10 @@ then cleanup. main = this checkpoint; fix worktree = `plan2-fixes`.
 - Fixing CR Minors/Trivials in this round — deliberately filed.
 
 ## In flight
-- **BATCH 1 DONE and COMMITTED** on `johncioni/plan2-fixes` as `f93ec85` (10
-  files, +426/−85). I re-ran all four gates myself — swift test **92** exit 0,
-  xcodebuild Release BUILD SUCCEEDED *without* sandbox flags, pytest 295 passed
-  — and independently re-ran three of Codex's seven mutations (allowing
-  `.verified` in `canApprove`; restoring filled-interior crop targeting;
-  renaming the display label, which correctly breaks nothing). All genuinely RED.
+- **BATCH 1 DONE and COMMITTED** as `f93ec85` (10 files, +426/−85). I re-ran all
+  four gates myself — swift test **92** exit 0, xcodebuild Release BUILD
+  SUCCEEDED *without* sandbox flags, pytest 295 — plus three of the seven
+  mutations, chosen independently. All genuinely RED.
 - **Batch 2 running** in the same Codex terminal
   `term_64e51b11-2734-4516-8a51-8bf403cb5d30`; watcher bg `b5e3c39mm` (scratchpad
   `watch-batch2.sh`) exits 0 on `batch-2-report.md`, 2 on a 30-min stall. NB the
