@@ -32,8 +32,8 @@ green. Remaining: the fix round on `johncioni/plan2-fixes` (3 batches), cleanup.
 - Fixing CR Minors/Trivials in this round — deliberately filed.
 
 ## In flight
-- **BATCH 1 DONE and COMMITTED** as `f93ec85` (10 files, +426/−85). All four
-  gates re-run by me, plus three of its seven mutations, chosen independently.
+- **BATCH 1 DONE, COMMITTED** `f93ec85` (10 files). All four gates re-run by me,
+  plus three of its seven mutations, chosen independently.
 - **BATCH 2 DONE and COMMITTED** as `964d708` (6 files, +117/−57). Gates re-run
   by me: swift test **93** exit 0 ×3, xcodebuild Release SUCCEEDED without
   sandbox flags, pytest 295. Two mutations re-derived independently and
@@ -49,13 +49,11 @@ green. Remaining: the fix round on `johncioni/plan2-fixes` (3 batches), cleanup.
 - **APP STILL POINTS AT THE SCRATCH REPO** `smoke-repo`. Cleanup at the end.
 
 ## Next
-1. On the watcher: re-run the claimed RED mutations YOURSELF — batch 2 is
-   *entirely* about tests that cannot fail. Restore-point trick: `git add -A`
-   first, mutate, then `git checkout -- <file>` restores from the index without
-   losing Codex's uncommitted work. Then all four gates, then commit on its
-   behalf (its `.git` is read-only); check `git status -- HANDOFF.md` first.
-2. Dispatch batch 3 to a FRESH Codex terminal (create → wait tui-idle → read →
-   send → read, confirm the prompt took → arm a watcher).
-3. PR the fix branch; user merges. Then cleanup: `defaults delete
+1. On the watcher: re-run batch 3's claimed RED mutations YOURSELF, and check
+   item 1 introduced no kill/signal. Restore-point trick: `git add -A` first,
+   mutate, then `git checkout -- <file>` restores from the index without losing
+   Codex's uncommitted work. Then all four gates, then commit on its behalf
+   (its `.git` is read-only); check `git status -- HANDOFF.md` first.
+2. PR the fix branch; user merges. Then cleanup: `defaults delete
    com.john.rawdog-printworks repoPath` and `… pythonPath`, delete smoke-repo,
    archive the fix-round ledger.
