@@ -288,16 +288,16 @@ final class TerminationSignal: @unchecked Sendable {
 /// whatever's left in the buffer (a final line with no trailing newline)
 /// into `allLines` — call it once, after the reader sees EOF.
 final class LineCollector: @unchecked Sendable {
-    private var buffer = ""
+    private var buffer = Data()
     private var lines: [String] = []
 
     var allLines: [String] { lines }
 
     func completeLines(appending data: Data) -> [String] {
-        buffer += String(decoding: data, as: UTF8.self)
+        buffer.append(data)
         var completed: [String] = []
-        while let newline = buffer.firstIndex(of: "\n") {
-            completed.append(String(buffer[..<newline]))
+        while let newline = buffer.firstIndex(of: 0x0A) {
+            completed.append(String(decoding: buffer[..<newline], as: UTF8.self))
             buffer.removeSubrange(...newline)
         }
         lines.append(contentsOf: completed)
@@ -306,8 +306,8 @@ final class LineCollector: @unchecked Sendable {
 
     func flushRemainder() {
         if !buffer.isEmpty {
-            lines.append(buffer)
-            buffer = ""
+            lines.append(String(decoding: buffer, as: UTF8.self))
+            buffer.removeAll(keepingCapacity: true)
         }
     }
 }

@@ -196,8 +196,8 @@ public final class RepoWatcher: @unchecked Sendable {
         task?.cancel()
     }
 
-    /// Visible to `@testable` tests so descriptor closure can be asserted at
-    /// the OS boundary with `fcntl(F_GETFD)` after `stop()` returns.
+    /// Visible to `@testable` tests so watcher lifecycle can be asserted from
+    /// the descriptors still owned by this instance.
     var openFileDescriptors: [Int32] {
         lock.withLock { watches.values.map(\.fileDescriptor) }
     }

@@ -2,20 +2,24 @@ import XCTest
 @testable import PrintworksCore
 
 final class DebouncerTests: XCTestCase {
-    actor CancellationRecorder {
-        private var recorded: Bool?
+    actor ActionRecorder {
+        private var values: [Int] = []
 
-        func record(_ value: Bool) { recorded = value }
-        func value() -> Bool? { recorded }
+        func record(_ value: Int) { values.append(value) }
+        func snapshot() -> [Int] { values }
     }
 
-    func testOnlyLastScheduledActionRuns() async throws {
+    func testOnlyLastScheduledActionRuns() async {
         let debouncer = Debouncer(delay: .milliseconds(50))
-        nonisolated(unsafe) var fired: [Int] = []
-        debouncer.schedule { fired.append(1) }
-        debouncer.schedule { fired.append(2) }
-        try await Task.sleep(for: .milliseconds(150))
-        XCTAssertEqual(fired, [2])
+        let recorder = ActionRecorder()
+        let first = debouncer.schedule { await recorder.record(1) }
+        let second = debouncer.schedule { await recorder.record(2) }
+
+        await first.value
+        await second.value
+
+        let values = await recorder.snapshot()
+        XCTAssertEqual(values, [2])
     }
 
     func testFlushRunsPendingImmediately() async throws {
@@ -28,17 +32,17 @@ final class DebouncerTests: XCTestCase {
         XCTAssertFalse(debouncer.hasPending)
     }
 
-    func testScheduledActionDoesNotRunInCancelledTask() async throws {
-        let debouncer = Debouncer(delay: .milliseconds(20))
-        let recorder = CancellationRecorder()
+    func testScheduledActionDoesNotRunInCancelledTask() async {
+        let debouncer = Debouncer(delay: .seconds(60))
+        let recorder = ActionRecorder()
 
-        debouncer.schedule {
-            let wasCancelled = Task.isCancelled
-            await recorder.record(wasCancelled)
-        }
-        try await Task.sleep(for: .milliseconds(100))
+        let scheduled = debouncer.schedule { await recorder.record(1) }
+        XCTAssertTrue(debouncer.hasPending)
+        scheduled.cancel()
+        await scheduled.value
 
-        let wasCancelled = await recorder.value()
-        XCTAssertEqual(wasCancelled, false)
+        let values = await recorder.snapshot()
+        XCTAssertEqual(values, [])
+        XCTAssertFalse(debouncer.hasPending)
     }
 }

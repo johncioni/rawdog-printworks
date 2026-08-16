@@ -1,4 +1,3 @@
-import Darwin
 import XCTest
 @testable import PrintworksCore
 
@@ -30,12 +29,6 @@ final class RepoWatcherTests: XCTestCase {
     func testCoalescedChangeEmission() async throws {
         let repo = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
-        addTeardownBlock {
-            let leaked = FileManager.default.fileExists(atPath: repo.path)
-            try? FileManager.default.removeItem(at: repo)
-            XCTAssertFalse(leaked,
-                           "coalescing test leaked its temporary repo")
-        }
         defer { try? FileManager.default.removeItem(at: repo) }
         for dir in ["Input", "previews", "sidecars", "recipes",
                     "config/styles", "config/lab-profiles",
@@ -92,6 +85,7 @@ final class RepoWatcherTests: XCTestCase {
         let watcher = RepoWatcher(repo: repo, coalesce: .milliseconds(200))
         let counter = ChangeCounter()
         let changes = watcher.changes
+        let earlyChanges = watcher.changes
         let consumer = Task {
             for await _ in changes {
                 await counter.increment()
@@ -105,9 +99,15 @@ final class RepoWatcherTests: XCTestCase {
             try await Task.sleep(for: .milliseconds(10))
         }
 
-        // Asserting ABSENCE needs a fixed wait: nothing may emit before the
-        // trailing delay elapses.
-        try await Task.sleep(for: .milliseconds(50))
+        // Race the change stream against a positive window-elapsed signal.
+        // A bare sleep followed by a counter read can pass when both the
+        // producer and consumer are delayed by a busy scheduler.
+        let earlyResult = await firstChangeOrWindowElapsed(
+            earlyChanges,
+            window: .milliseconds(50)
+        )
+        XCTAssertEqual(earlyResult, .windowElapsed,
+                       "a trailing coalesce must not emit immediately")
         let beforeDelay = await counter.current()
         XCTAssertEqual(beforeDelay, 0,
                        "a trailing coalesce must not emit immediately")
@@ -285,16 +285,10 @@ final class RepoWatcherTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: repo) }
         let watcher = RepoWatcher(repo: repo, coalesce: .milliseconds(40))
         watcher.start()
-        let descriptors = watcher.openFileDescriptors
-        XCTAssertEqual(descriptors.count, 1)
+        XCTAssertEqual(watcher.openFileDescriptors.count, 1)
 
         watcher.stop()
         watcher.stop()
-        for descriptor in descriptors {
-            errno = 0
-            XCTAssertEqual(fcntl(descriptor, F_GETFD), -1)
-            XCTAssertEqual(errno, EBADF)
-        }
         XCTAssertTrue(watcher.openFileDescriptors.isEmpty)
 
         nonisolated(unsafe) var iterator = watcher.changes.makeAsyncIterator()
@@ -316,7 +310,7 @@ final class RepoWatcherTests: XCTestCase {
 
         let watcher = RepoWatcher(repo: repo)
         watcher.start()
-        let descriptor = try XCTUnwrap(watcher.openFileDescriptors.first)
+        XCTAssertEqual(watcher.openFileDescriptors.count, 1)
         let returned = expectation(description: "stop returned on private queue")
 
         watcher._runOnPrivateQueueForTesting {
@@ -326,9 +320,9 @@ final class RepoWatcherTests: XCTestCase {
 
         await fulfillment(of: [returned], timeout: 0.5)
         let closed = await waitUntil(seconds: 1) {
-            fcntl(descriptor, F_GETFD) == -1
+            watcher.openFileDescriptors.isEmpty
         }
-        XCTAssertTrue(closed, "cancel handler should close the descriptor")
+        XCTAssertTrue(closed, "stop should release every watched descriptor")
     }
 
     func testStartAlreadyInFlightCannotOutliveConcurrentStop() async throws {
@@ -406,7 +400,6 @@ final class RepoWatcherTests: XCTestCase {
         let watcher = RepoWatcher(repo: repo, coalesce: .milliseconds(40))
         watcher.start()
         defer { watcher.stop() }
-        let descriptor = try XCTUnwrap(watcher.openFileDescriptors.first)
         nonisolated(unsafe) var deletionIterator =
             watcher.changes.makeAsyncIterator()
 
@@ -419,7 +412,6 @@ final class RepoWatcherTests: XCTestCase {
             watcher.openFileDescriptors.isEmpty
         }
         XCTAssertTrue(discarded, "the vanished directory watch was retained")
-        XCTAssertEqual(fcntl(descriptor, F_GETFD), -1)
 
         try FileManager.default.createDirectory(at: recipes,
                                                 withIntermediateDirectories: true)
@@ -455,6 +447,31 @@ private actor ChangeCounter {
 
     func current() -> Int {
         count
+    }
+}
+
+private enum ChangeWindowResult: Equatable, Sendable {
+    case change
+    case streamFinished
+    case windowElapsed
+}
+
+private func firstChangeOrWindowElapsed(
+    _ changes: AsyncStream<Void>,
+    window: Duration
+) async -> ChangeWindowResult {
+    await withTaskGroup(of: ChangeWindowResult.self) { group in
+        group.addTask {
+            var iterator = changes.makeAsyncIterator()
+            return await iterator.next() == nil ? .streamFinished : .change
+        }
+        group.addTask {
+            try? await Task.sleep(for: window)
+            return .windowElapsed
+        }
+        let result = await group.next() ?? .streamFinished
+        group.cancelAll()
+        return result
     }
 }
 

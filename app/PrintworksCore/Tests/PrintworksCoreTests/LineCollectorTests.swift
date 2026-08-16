@@ -9,10 +9,28 @@ import XCTest
 final class LineCollectorTests: XCTestCase {
     func testReassemblesLinesAcrossChunkBoundaries() {
         let collector = LineCollector()
-        _ = collector.completeLines(appending: Data("ab".utf8))
-        _ = collector.completeLines(appending: Data("c\nde".utf8))
-        _ = collector.completeLines(appending: Data("f\n".utf8))
+        XCTAssertEqual(collector.completeLines(appending: Data("ab".utf8)), [])
+        XCTAssertEqual(
+            collector.completeLines(appending: Data("c\nde".utf8)),
+            ["abc"]
+        )
+        XCTAssertEqual(collector.completeLines(appending: Data("f\n".utf8)), ["def"])
         XCTAssertEqual(collector.allLines, ["abc", "def"])
+    }
+
+    func testReassemblesUTF8ScalarSplitAcrossChunks() {
+        let collector = LineCollector()
+        let bytes = Array("é\n".utf8)
+
+        XCTAssertEqual(
+            collector.completeLines(appending: Data(bytes.prefix(1))),
+            []
+        )
+        XCTAssertEqual(
+            collector.completeLines(appending: Data(bytes.dropFirst())),
+            ["é"]
+        )
+        XCTAssertEqual(collector.allLines, ["é"])
     }
 
     func testFlushRemainderEmitsTrailingPartialLine() {
