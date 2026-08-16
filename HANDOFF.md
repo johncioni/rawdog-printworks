@@ -2,9 +2,8 @@
 
 ## Goal
 RAWdog Printworks. Plan 1 and **Plan 2 are both MERGED to main** — PR #5 landed
-as `3919b99` with a merge commit preserving the 25 per-task commits, both checks
-green. Remaining: the agreed fix round on `johncioni/plan2-fixes` (3 batches),
-then cleanup. main = this checkpoint; fix worktree = `plan2-fixes`.
+as `3919b99`, a merge commit preserving the 25 per-task commits, both checks
+green. Remaining: the fix round on `johncioni/plan2-fixes` (3 batches), cleanup.
 
 ## Done (this session)
 - **Whole-branch review** done (Opus 5 xhigh); verdict MERGE AS-IS. **SIX
