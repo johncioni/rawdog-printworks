@@ -3,7 +3,7 @@
 ## Goal
 RAWdog Printworks: resumable RAW → print pipeline (Python) plus the macOS SwiftUI
 app that drives it. **Both plans and the fix round are MERGED. Cleanup is done.**
-main = `230b60d`; one worktree, one branch, no scratch state. This is a finished
+main = `0efe335`; one worktree, one branch, no scratch state. This is a finished
 resting point — the next session starts new work, not a continuation.
 
 ## Done (this session)
@@ -26,11 +26,11 @@ resting point — the next session starts new work, not a continuation.
 - **Visual QA passed** (`docs/superpowers/sdd-archive/2026-08-16-plan2-fixes/visual-qa-note.md`):
   F1 confirmed live — all three audit boxes ticked on a PUBLISHED photo and
   Approve stayed disabled.
-- **Merged main verified locally** (CI could not run, see below): swift test 100,
-  pytest **296**, `xcodebuild` Release BUILD SUCCEEDED.
-- **Cleanup**: both `defaults` keys deleted, `smoke-repo` deleted (after
-  confirming its RAW was byte-identical to `archive/`), both worktrees removed,
-  both remote branches deleted.
+- **Merged main verified locally** (CI could not run): swift test 100, pytest
+  **296**, `xcodebuild` Release BUILD SUCCEEDED.
+- **Cleanup**: both `defaults` keys deleted, `smoke-repo` deleted (after checking
+  its RAW was byte-identical to `archive/`), both worktrees removed, both remote
+  branches deleted.
 
 ## Ruled out
 - Making `runMutating` cancellable (m12), including CodeRabbit's watchdog→SIGKILL.
@@ -38,22 +38,26 @@ resting point — the next session starts new work, not a continuation.
   seatbelt workaround and the Release gate passes without it.
 - CR Minors/Trivials, m6 coalesce reset, PreviewImageCache cancellation
   propagation — deliberately filed, listed in the archived fix-round README.
+- More code polish for its own sake: the branch has had a whole-branch review, 34
+  CodeRabbit findings triaged and 4 verified fix batches. The next real signal
+  comes from running an actual delivery, not another sweep.
 
 ## In flight
 - **Nothing running.** No agent terminals, no background jobs, no worktrees.
 - **GITHUB ACTIONS IS BLOCKED ON BILLING — USER ACTION NEEDED.** Every run since
-  ~18:00 fails in 4s: *"The job was not started because recent account payments
-  have failed or your spending limit needs to be increased."* NOT a code failure
-  — PR #6's checks passed before it began, and all three gates pass locally on
-  merged main. Check with `gh run list --branch main --limit 3`.
+  ~18:00 fails in 4s: *"recent account payments have failed or your spending
+  limit needs to be increased."* NOT a code failure — all three gates pass
+  locally on merged main. Check: `gh run list --branch main --limit 3`.
 
 ## Next
-1. Nothing is required. App: `zsh scripts/build-app.sh`. Pipeline gate:
-   `.venv/bin/python -m pytest tests/ -q`. Swift gate:
+1. Nothing is required. App: `zsh scripts/build-app.sh`. Gates:
+   `.venv/bin/python -m pytest tests/ -q` and
    `swift test --package-path app/PrintworksCore`.
 2. Fix billing under GitHub → Billing & plans, then push a trivial commit and
-   confirm `tests` goes green on main again.
-3. Optional, filed: CR Minors/Trivials, m6, PreviewImageCache cancellation
-   propagation, and driving the crop DRAG + arrow-key nudge once real input can
-   be delivered — synthetic keyboard/mouse do not reach this app, so those paths
-   rest on unit tests alone.
+   confirm `tests` goes green on main.
+3. **The lab is still unchosen** — verified, not remembered: `config/lab-profiles/`
+   holds only `generic-v1.yaml`, so everything published so far used the generic
+   profile. Picking a lab means adding a profile YAML per the spec, and it is the
+   only open item that changes rendered OUTPUT rather than code quality.
+4. New RW2s: drop in `Input/`, then `scripts/process.sh ingest` and review in the
+   app. Dusk frames need warming sidecars — `sidecars/P1036170_*.pp3` is the template.
