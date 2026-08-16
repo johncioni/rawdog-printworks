@@ -1,60 +1,60 @@
 # HANDOFF
 
 ## Goal
-RAWdog Printworks. Plan 1 (pipeline `--json`) is MERGED. **Plan 2 — the macOS
-SwiftUI app (RAW-2) — is COMPLETE and UNMERGED.** The whole-branch review says
-MERGE AS-IS and **PR #5 is OPEN and MERGEABLE** (conflict resolved). Remaining:
-CI + CodeRabbit land, reconcile, a 6-item fix round, user merges, cleanup.
-WT = 460f72c.
+RAWdog Printworks. Plan 1 and **Plan 2 are both MERGED to main** — PR #5 landed
+as `3919b99` with a merge commit preserving the 25 per-task commits, both checks
+green. Remaining: the agreed fix round on `johncioni/plan2-fixes` (3 batches),
+then cleanup. main = this checkpoint; fix worktree = `plan2-fixes`.
 
 ## Done (this session)
-- **Dispatched and completed the whole-branch review** (Opus 5 xhigh in the plan2
-  worktree, 19 min). Verdict **MERGE AS-IS**; it re-ran both gates itself — 85
-  Swift tests exit 0, 295 pytest exit 0 — leaving the worktree clean.
-  Report: `docs/superpowers/sdd-archive/2026-08-12-printworks-app/whole-branch-review.md`
-  - Real change set is the three-dot diff — 38 files, +7153/−58, what #5 shows.
-  - **SIX fix-now items, none a merge blocker: F1 F2 F3 F4 F5 F6.** Take the list
-    from the review's verdict TABLES, not its closing paragraph — the closing
-    names only four (it omits F3 = m7 case 3, and F5 = m9). Nothing found can
-    publish or approve pixels the user did not visually approve.
-- Pushed main and the branch; **opened PR #5**.
-- **Unblocked PR #5** (`460f72c`): it was CONFLICTING on one file, `HANDOFF.md`
-  — branch stop-hook churn vs main's checkpoint. Merged origin/main in taking
-  MAIN's copy; verified the merge brought **no `app/` or `scripts/` changes**.
-  Now MERGEABLE and **the `tests` CI gate fired for the first time** — GitHub
-  cannot build a merge ref for a conflicting PR, so it had never run.
-- **The fix round has NOT started** — deliberately, pending CodeRabbit.
-
-## Carried forward (still true)
-- Every task verified by exit code + a mutation per new test. THREE tests that
-  COULD NOT FAIL were caught that way (Tasks 6, 9, 11) — always mutate.
-- VISUAL QA PASSED: full loop on the scratch repo → v002 published, v001 pruned.
-- USER DECISION (m12, standing): `runMutating` is intentionally UNCANCELLABLE —
-  cancelling would SIGTERM RawTherapee mid-write into `staging/`. Do not "fix".
+- **Whole-branch review** dispatched and completed (Opus 5 xhigh, 19 min).
+  Verdict MERGE AS-IS; it re-ran both gates itself. Archived at
+  `docs/superpowers/sdd-archive/2026-08-12-printworks-app/whole-branch-review.md`.
+  **SIX fix-now items F1–F6** — take them from its verdict TABLES, not its
+  closing paragraph, which names only four (omits F3 = m7 case 3, F5 = m9).
+- **Unblocked PR #5**, which was CONFLICTING on `HANDOFF.md` alone (branch
+  stop-hook churn vs main's checkpoint). Merged origin/main in taking MAIN's
+  copy; verified no `app/`/`scripts/` changes came with it. That also fired the
+  `tests` CI gate **for the first time** — GitHub cannot build a merge ref for a
+  conflicting PR, so it had never run. pytest green in 1m4s.
+- **CodeRabbit: 32 findings** (16 Major), which it could NOT post inline (GitHub
+  limit) — they live in the COMMENTED review body, so there are **zero inline
+  comments to reply to**. Reconciled against the review in
+  `docs/superpowers/sdd-archive/2026-08-12-printworks-app/coderabbit-reconciliation.md`.
+  Five overlap with F1–F6; F1/F2/F6 are review-only; CR found a weak-test cluster
+  the review missed.
+- **Merged PR #5**; main's post-merge CI green (1m45s).
+- **USER DECISIONS (standing):** (a) the m12-adjacent FIFO stall is fixed by
+  **surfacing, never killing** — no signal to the subprocess, ever; (b) fix-round
+  scope is **F1–F6 + CR Majors + the weak tests**, excluding CR Minors/Trivials;
+  (c) merge first, fix on a follow-up branch. All three are encoded in the briefs.
 
 ## Ruled out
-- Squashing Plan 2 — this history carries the Task 7 arc, the `--force` catch
-  and m12. PR #5 asks for a merge commit.
-- Making `runMutating` cancellable (m12). F2's fix is a confirmation, not cancel.
-- **Starting the fix round before CodeRabbit lands** — its findings must be
-  reconciled against F1–F6 first, or we double-fix or reopen dismissed items.
-- Rebasing the branch onto main to clear the conflict — a merge commit keeps the
-  25 per-task commits intact and the checkout is shared with agents.
+- `scripts/build-app.sh:5-7` (CR Major, "pass `OTHER_SWIFT_FLAGS=…-disable-sandbox`")
+  — **false positive.** That flag is the Codex seatbelt workaround
+  (`codex-swift-sandbox-fix`), not a production build requirement.
+- Squashing Plan 2 — merged with a merge commit, history preserved.
+- Making `runMutating` cancellable (m12), including via CR's watchdog→SIGKILL.
+- Fixing CR Minors/Trivials in this round — deliberately filed.
 
 ## In flight
-- **Watcher armed on PR #5's checks** (scratchpad `watch-pr5.sh`, bg
-  `bm3a8q852`): polls every 30s, exits when nothing is `pending`, times out at
-  ~45 min. Manual check: `gh pr checks 5`.
-- `pytest` (macOS runner) in progress; **CodeRabbit re-queued** by the new commit.
-- **THE APP POINTS AT THE SCRATCH REPO** `~/orca/workspaces/rawdog-printworks/
-  smoke-repo`. Cleanup at the very end.
+- **Batch 1 dispatched to Codex** (`gpt-5.6-sol` xhigh) in worktree
+  `plan2-fixes`, terminal `term_64e51b11-2734-4516-8a51-8bf403cb5d30`; took.
+- **Watcher armed** (scratchpad `watch-batch1.sh`, bg `bxx0icqbl`): exits 0 when
+  `batch-1-report.md` lands, 2 on a 30-min stall, 3 if the terminal vanishes.
+- Briefs: `<plan2-fixes>/.superpowers/sdd/2026-08-16-plan2-fixes/` — `README.md`
+  (scope contract + out-of-scope list), `batch-1-brief.md` (gating: F1–F6),
+  `batch-2-brief.md` (tests that cannot fail), `batch-3-brief.md` (concurrency).
+- **THE APP STILL POINTS AT THE SCRATCH REPO** `~/orca/workspaces/
+  rawdog-printworks/smoke-repo`. Cleanup at the very end.
 
 ## Next
-1. Read the watcher result. If `pytest` fails, that is a real regression — CI has
-   never run on this branch before, so treat a failure as new information.
-2. Reconcile CodeRabbit's findings against F1–F6 into ONE fix-vs-dismiss list
-   before any code changes.
-3. Fix round for the reconciled list — dispatch per memory `orca-agent-dispatch`.
-4. User merges #5: `gh pr merge 5 --merge` (NOT squash). Not on their behalf.
-5. Cleanup: `defaults delete com.john.rawdog-printworks repoPath` and
-   `… pythonPath`, delete smoke-repo, re-refresh the archive.
+1. On the watcher: re-run Codex's claimed RED mutations YOURSELF before accepting
+   — this repo has shipped three tests that could not fail. Then run all four
+   gates, commit batch 1 on Codex's behalf (its sandbox mounts `.git` read-only),
+   and check `git status` for HANDOFF churn before staging.
+2. Dispatch batch 2, then batch 3, same ritual (create → wait tui-idle → read →
+   send → read, confirm the prompt took → arm a watcher).
+3. PR the fix branch; user merges.
+4. Cleanup: `defaults delete com.john.rawdog-printworks repoPath` and
+   `… pythonPath`, delete smoke-repo, archive the fix-round ledger.
