@@ -3,9 +3,10 @@
 ## Goal
 RAWdog Printworks. Plan 1 (pipeline `--json`) is MERGED. **Plan 2 — the macOS
 SwiftUI app (RAW-2) — is COMPLETE: all 11 tasks built, reviewed and shipped, 25
-commits on `johncioni/plan2-printworks-app`, UNMERGED.** Remaining: the
-whole-branch review, then the user's merge decision, then cleanup.
-main = this checkpoint's own commit, pushed; WT = 839d574.
+commits on `johncioni/plan2-printworks-app`, UNMERGED.** The whole-branch review
+is DONE and says MERGE AS-IS. Remaining: the user's merge decision, a 6-item fix
+round, then cleanup. main = this checkpoint's own commit, NOT YET PUSHED;
+WT = 839d574.
 
 ## Done
 - All 11 tasks complete. Gates on the branch tip: **85 tests exit 0**, xcodebuild
@@ -48,14 +49,19 @@ main = this checkpoint's own commit, pushed; WT = 839d574.
   - Its correction worth keeping: `git diff main..HEAD` LOOKS like it deletes
     ~14k archive lines — that is main moving forward, not the branch. The real
     change set is `main...HEAD` (base 60facc9): 38 files, +7153/−58.
-  - **Fix-now list (4, none a merge blocker):** F1 `canApprove`
+  - **Fix-now list — SIX items, none a merge blocker.** Take this from the
+    review's verdict TABLES, not its closing paragraph: the closing names only
+    four, an internal inconsistency in the report. The six: F1 `canApprove`
     (`AppModel.swift:524-530`) has no `state` gate → re-approving a published
     photo demotes it and republishes v002, rmtree-ing v001; F2 "Reprocess ▸ All
     Photos" is one unconfirmed click into an uncancellable whole-repo
     `run --force` (needs a `.confirmationDialog`, NOT a cancel — m12 stands);
-    F4/n13 the 8×10 crop is undraggable under 5×7 so the mis-grab is approved;
-    F6/n21 `lastIngestFailures` renders nowhere. Plus m9/F5 (counts by
-    display-label string compare) if the round is cheap.
+    **F3 = m7 case 3**, the drop target (`MainWindow.swift:50-53`) is the one
+    mutating affordance with no re-entrancy guard, so two quick drops unlock
+    every busy-gated control mid-ingest; F4/n13 the 8×10 crop is undraggable
+    under 5×7 so the mis-grab is what gets approved; **F5 = m9**, needs-review
+    counts computed by string-comparing a display label in two copies;
+    F6/n21 `lastIngestFailures` renders nowhere.
   - Filed-not-fixed: M1, m6+i5, m8, i11, Task 8 N3, n19, F7 grid a11y, F8
     `.convertFromSnakeCase` on dict keys, F9/F10/F11 nits. Dropped as
     already-fixed or benign: M2, N1, N2/N3, N4, m10, n14/n15/n16, n18, n20, N5.
@@ -74,6 +80,7 @@ main = this checkpoint's own commit, pushed; WT = 839d574.
    (same pattern as Plan 1), then the F1/F2/F4/F6 fix round as a short follow-up.
    The reviewer's argument for merge-then-fix: holding does not make the fixes
    safer, and none of them can publish or approve unapproved pixels.
-2. Fix round for F1/F2/F4/F6 (+F5) — dispatch via the Orca loop, brief from the
-   review's finding sections; each has file:line and a concrete scenario already.
+2. Fix round for all SIX (F1 F2 F3 F4 F5 F6) — dispatch via the Orca loop, brief
+   from the review's finding sections; each has file:line and a concrete
+   scenario already.
 3. Then cleanup: restore the two defaults, delete smoke-repo, re-refresh archive.
