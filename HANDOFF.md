@@ -7,23 +7,18 @@ green. Remaining: the agreed fix round on `johncioni/plan2-fixes` (3 batches),
 then cleanup. main = this checkpoint; fix worktree = `plan2-fixes`.
 
 ## Done (this session)
-- **Whole-branch review** dispatched and completed (Opus 5 xhigh, 19 min).
-  Verdict MERGE AS-IS; it re-ran both gates itself. Archived at
-  `docs/superpowers/sdd-archive/2026-08-12-printworks-app/whole-branch-review.md`.
-  **SIX fix-now items F1–F6** — take them from its verdict TABLES, not its
-  closing paragraph, which names only four (omits F3 = m7 case 3, F5 = m9).
-- **Unblocked PR #5**, which was CONFLICTING on `HANDOFF.md` alone (branch
-  stop-hook churn vs main's checkpoint). Merged origin/main in taking MAIN's
-  copy; verified no `app/`/`scripts/` changes came with it. That also fired the
-  `tests` CI gate **for the first time** — GitHub cannot build a merge ref for a
-  conflicting PR, so it had never run. pytest green in 1m4s.
-- **CodeRabbit: 32 findings** (16 Major), which it could NOT post inline (GitHub
-  limit) — they live in the COMMENTED review body, so there are **zero inline
-  comments to reply to**. Reconciled against the review in
-  `docs/superpowers/sdd-archive/2026-08-12-printworks-app/coderabbit-reconciliation.md`.
-  Five overlap with F1–F6; F1/F2/F6 are review-only; CR found a weak-test cluster
-  the review missed.
-- **Merged PR #5**; main's post-merge CI green (1m45s).
+- **Whole-branch review** done (Opus 5 xhigh); verdict MERGE AS-IS. **SIX
+  fix-now items F1–F6 — read them off its verdict TABLES**, not its closing
+  paragraph, which names only four (omits F3 = m7 case 3, F5 = m9).
+- **Unblocked and merged PR #5.** It was CONFLICTING on `HANDOFF.md` alone;
+  merged origin/main in taking MAIN's copy. That also fired the `tests` CI gate
+  **for the first time** — GitHub cannot build a merge ref for a conflicting PR.
+  pytest green pre-merge (1m4s) and on main after (1m45s).
+- **CodeRabbit: 32 findings** (16 Major) which it could NOT post inline (GitHub
+  limit) — so there are **zero inline comments to reply to**; they live in the
+  COMMENTED review body. Five overlap F1–F6, F1/F2/F6 are review-only, and it
+  found a weak-test cluster the review missed. Both documents are archived under
+  `docs/superpowers/sdd-archive/2026-08-12-printworks-app/`.
 - **USER DECISIONS (standing):** (a) the m12-adjacent FIFO stall is fixed by
   **surfacing, never killing** — no signal to the subprocess, ever; (b) fix-round
   scope is **F1–F6 + CR Majors + the weak tests**, excluding CR Minors/Trivials;
@@ -38,10 +33,16 @@ then cleanup. main = this checkpoint; fix worktree = `plan2-fixes`.
 - Fixing CR Minors/Trivials in this round — deliberately filed.
 
 ## In flight
-- **Batch 1 dispatched to Codex** (`gpt-5.6-sol` xhigh) in worktree
-  `plan2-fixes`, terminal `term_64e51b11-2734-4516-8a51-8bf403cb5d30`; took.
-- **Watcher armed** (scratchpad `watch-batch1.sh`, bg `bxx0icqbl`): exits 0 when
-  `batch-1-report.md` lands, 2 on a 30-min stall, 3 if the terminal vanishes.
+- **BATCH 1 DONE and COMMITTED** on `johncioni/plan2-fixes` as `f93ec85` (10
+  files, +426/−85). I re-ran all four gates myself — swift test **92** exit 0,
+  xcodebuild Release BUILD SUCCEEDED *without* sandbox flags, pytest 295 passed
+  — and independently re-ran three of Codex's seven mutations (allowing
+  `.verified` in `canApprove`; restoring filled-interior crop targeting;
+  renaming the display label, which correctly breaks nothing). All genuinely RED.
+- **Batch 2 running** in the same Codex terminal
+  `term_64e51b11-2734-4516-8a51-8bf403cb5d30`; watcher bg `b5e3c39mm` (scratchpad
+  `watch-batch2.sh`) exits 0 on `batch-2-report.md`, 2 on a 30-min stall.
+  **Codex is at 69% context** — dispatch batch 3 to a FRESH terminal.
 - Briefs: `<plan2-fixes>/.superpowers/sdd/2026-08-16-plan2-fixes/` — `README.md`
   (scope contract + out-of-scope list), `batch-1-brief.md` (gating: F1–F6),
   `batch-2-brief.md` (tests that cannot fail), `batch-3-brief.md` (concurrency).
@@ -50,10 +51,12 @@ then cleanup. main = this checkpoint; fix worktree = `plan2-fixes`.
 
 ## Next
 1. On the watcher: re-run Codex's claimed RED mutations YOURSELF before accepting
-   — this repo has shipped three tests that could not fail. Then run all four
-   gates, commit batch 1 on Codex's behalf (its sandbox mounts `.git` read-only),
-   and check `git status` for HANDOFF churn before staging.
-2. Dispatch batch 2, then batch 3, same ritual (create → wait tui-idle → read →
+   — this repo has shipped three tests that could not fail, and batch 2 is
+   entirely about that failure mode. Restore-point trick: `git add -A` first,
+   mutate, then `git checkout -- <file>` restores from the index without losing
+   Codex's uncommitted work. Then all four gates, then commit on its behalf
+   (its sandbox mounts `.git` read-only); check `git status -- HANDOFF.md` first.
+2. Dispatch batch 3 to a FRESH Codex terminal (create → wait tui-idle → read →
    send → read, confirm the prompt took → arm a watcher).
 3. PR the fix branch; user merges.
 4. Cleanup: `defaults delete com.john.rawdog-printworks repoPath` and
