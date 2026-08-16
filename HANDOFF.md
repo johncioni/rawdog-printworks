@@ -35,15 +35,13 @@ open as PR #6** — 3 commits, 23 files, +1114/−263. Remaining: the user merge
 ## In flight
 - **PR #6 is GREEN and MERGEABLE** (pytest 1m2s, CodeRabbit pass) but CodeRabbit
   posted **2 new findings** on it, so it is NOT ready to merge yet.
-- **Batch 4 running** — those 2 findings — in fresh terminal
-  `term_ca4695f2-5cca-45d8-84ce-63a9ab09ad8f`; watcher bg `b4fhycjvn`.
-  Brief: `batch-4-brief.md`. USER DECIDED item 1 is a **partial** fix on purpose:
-  bound the decode concurrency (a regression batch 3 introduced — the actor used
-  to serialize decodes), but do NOT build waiter tracking or cancellation
-  propagation; that half is deferred, pre-existing, and ImageIO cannot observe
-  cancellation anyway. Item 2 is a test asserting only `allowsSave` — a
-  cannot-fail test written during THIS round.
-- Older terminals idle: `term_64e51b11…` (69%), `term_8f69f5e5…` (70%).
+- **Batch 4 running** on those 2 findings — terminal
+  `term_ca4695f2-5cca-45d8-84ce-63a9ab09ad8f`, watcher bg `b4fhycjvn`, brief
+  `batch-4-brief.md`. USER DECIDED item 1 is **partial on purpose**: bound the
+  decode concurrency (a regression batch 3 introduced — the actor used to
+  serialize decodes) but do NOT build waiter tracking or cancellation
+  propagation. Item 2 is a test asserting only `allowsSave` — a cannot-fail test
+  written during THIS round.
 - **APP STILL POINTS AT THE SCRATCH REPO** `smoke-repo`. Cleanup below.
 
 ## Next
