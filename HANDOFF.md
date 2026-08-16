@@ -10,20 +10,18 @@ open as PR #6** — 3 commits, 23 files, +1114/−263. Remaining: the user merge
 - **Whole-branch review** (Opus 5 xhigh): verdict MERGE AS-IS, six fix-now items.
   **Read F1–F6 off its verdict TABLES**, not its closing paragraph, which names
   only four (omits F3 = m7 case 3, F5 = m9).
-- **Unblocked and merged PR #5.** It was CONFLICTING on `HANDOFF.md` alone;
-  merged origin/main in taking MAIN's copy. That also fired the `tests` CI gate
-  **for the first time** — GitHub cannot build a merge ref for a conflicting PR.
+- **Unblocked and merged PR #5** — it was CONFLICTING on `HANDOFF.md` alone.
+  Resolving it also fired the `tests` CI gate **for the first time**: GitHub
+  cannot build a merge ref for a conflicting PR, so it had never run.
 - **CodeRabbit on #5: 32 findings** it could NOT post inline (GitHub limit) —
   they live in the COMMENTED review body. Reconciled and archived; it found a
   weak-test cluster the review missed, and missed F1/F2/F6 entirely.
-- **Fix round batches 1–3 done, verified, committed** — `f93ec85` gating,
-  `964d708` weak tests, `852b0e5` concurrency. Gates re-run by ME per batch with
-  `xcodebuild` WITHOUT sandbox flags (the production path): swift test
-  92 → 93 → **99**, always exit 0; pytest 295 throughout.
+- **Fix round batches 1–3 committed** — `f93ec85` gating, `964d708` weak tests,
+  `852b0e5` concurrency. Gates re-run by ME per batch with `xcodebuild` WITHOUT
+  sandbox flags (the production path): swift test 92 → 93 → **99**, all exit 0.
 - **Mutations re-derived independently, not replayed**, and made stronger —
-  notably injecting `process.terminate()` into batch 3's new watchdog, which
-  fails three assertions. That pins the no-kill property the user chose.
-- Ledgers archived under `docs/superpowers/sdd-archive/` for both rounds.
+  notably injecting `process.terminate()` into batch 3's watchdog, which fails
+  three assertions. That pins the no-kill property the user chose.
 
 ## Ruled out
 - Making `runMutating` cancellable (m12), including via CodeRabbit's
