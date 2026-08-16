@@ -40,10 +40,28 @@ main = this checkpoint's own commit, pushed; WT = 839d574.
 - Pinning main's sha here — the commit writing it invalidates it instantly.
 
 ## In flight
-- **Nothing running.** The whole-branch review is DISPATCH-READY but NOT started:
-  brief written at `<ledger>/whole-branch-review-dispatch.md` (also archived). It
-  enumerates the ~20 deferred items with a fix-now/file/drop verdict required for
-  each, plus 5 cross-seam questions. Launch per memory `orca-agent-dispatch`.
+- **Nothing running.** The whole-branch review is DONE (2026-08-16, Opus 5 xhigh,
+  19 min). Verdict: **MERGE AS-IS.** Full report archived on main at
+  `docs/superpowers/sdd-archive/2026-08-12-printworks-app/whole-branch-review.md`
+  (ledger copy in the worktree). Worktree left clean, HEAD still 839d574.
+  It re-ran both gates itself: 85 Swift tests exit 0, 295 pytest exit 0.
+  - Its correction worth keeping: `git diff main..HEAD` LOOKS like it deletes
+    ~14k archive lines — that is main moving forward, not the branch. The real
+    change set is `main...HEAD` (base 60facc9): 38 files, +7153/−58.
+  - **Fix-now list (4, none a merge blocker):** F1 `canApprove`
+    (`AppModel.swift:524-530`) has no `state` gate → re-approving a published
+    photo demotes it and republishes v002, rmtree-ing v001; F2 "Reprocess ▸ All
+    Photos" is one unconfirmed click into an uncancellable whole-repo
+    `run --force` (needs a `.confirmationDialog`, NOT a cancel — m12 stands);
+    F4/n13 the 8×10 crop is undraggable under 5×7 so the mis-grab is approved;
+    F6/n21 `lastIngestFailures` renders nowhere. Plus m9/F5 (counts by
+    display-label string compare) if the round is cheap.
+  - Filed-not-fixed: M1, m6+i5, m8, i11, Task 8 N3, n19, F7 grid a11y, F8
+    `.convertFromSnakeCase` on dict keys, F9/F10/F11 nits. Dropped as
+    already-fixed or benign: M2, N1, N2/N3, N4, m10, n14/n15/n16, n18, n20, N5.
+    I1 confirmed as the wanted behaviour.
+- The OLD Codex terminal `term_4d74c3eb…` is idle at 56% context — do NOT send to
+  it. Reviewer terminal `term_274c8aef…` is idle and finished; safe to close.
 - **THE APP POINTS AT THE SCRATCH REPO** `~/orca/workspaces/rawdog-printworks/
   smoke-repo` (P1036163 there is now published v002 from my QA). CLEANUP AT THE
   END: `defaults delete com.john.rawdog-printworks repoPath` and `… pythonPath`,
@@ -51,10 +69,11 @@ main = this checkpoint's own commit, pushed; WT = 839d574.
 - WT = 839d574. Ledger is gitignored; the archive on main is the durable copy.
 
 ## Next
-_(This checkpoint was written as a deliberate handoff before a context clear —
-it is a clean stopping point, not a mid-flight snapshot. Nothing is running.)_
-1. Dispatch the whole-branch review (brief above). Verify the agent UI is up and
-   the prompt TOOK (context > 0) before trusting `send`; arm a watcher immediately.
-2. Act on its findings — fix round via the Orca loop if it blocks.
-3. USER DECIDES THE MERGE. Recommend a PR preserving the 25 per-task commits.
-4. Then cleanup: restore the two defaults, delete smoke-repo, re-refresh archive.
+1. **USER DECIDES THE MERGE — this is the open question, nothing else blocks.**
+   Both the reviewer and I recommend a PR preserving the 25 per-task commits
+   (same pattern as Plan 1), then the F1/F2/F4/F6 fix round as a short follow-up.
+   The reviewer's argument for merge-then-fix: holding does not make the fixes
+   safer, and none of them can publish or approve unapproved pixels.
+2. Fix round for F1/F2/F4/F6 (+F5) — dispatch via the Orca loop, brief from the
+   review's finding sections; each has file:line and a concrete scenario already.
+3. Then cleanup: restore the two defaults, delete smoke-repo, re-refresh archive.
