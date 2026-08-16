@@ -123,6 +123,49 @@ public struct PublishedInfo: Codable, Sendable, Equatable {
     }
 }
 
+public enum PhotoWorkflowState: String, Sendable, Equatable {
+    case ingested
+    case previewReady = "preview_ready"
+    case reviewRequired = "review_required"
+    case approved
+    case rendered
+    case verified
+}
+
+/// Typed presentation state shared by labels and state-based counters.
+public enum PhotoStateAppearance: Sendable, Equatable {
+    case published
+    case needsReview
+    case rendering
+    case ingested
+
+    public init(state: String) {
+        switch PhotoWorkflowState(rawValue: state) {
+        case .verified:
+            self = .published
+        case .previewReady, .reviewRequired:
+            self = .needsReview
+        case .approved, .rendered:
+            self = .rendering
+        case .ingested, nil:
+            self = .ingested
+        }
+    }
+
+    public var label: String {
+        switch self {
+        case .published: "Published"
+        case .needsReview: "Needs review"
+        case .rendering: "Rendering"
+        case .ingested: "Ingested"
+        }
+    }
+
+    public static func needsReviewCount(states: [String]) -> Int {
+        states.count { PhotoStateAppearance(state: $0) == .needsReview }
+    }
+}
+
 public struct PhotoStatus: Codable, Sendable, Equatable {
     public let stem: String
     public let state: String
@@ -165,6 +208,10 @@ public struct PhotoStatus: Codable, Sendable, Equatable {
         guard crops.isEmpty else { return "persisted" }
         let hasRenderedPreview = previews.values.contains { $0 != nil }
         return "\(state)|preview:\(hasRenderedPreview)"
+    }
+
+    public var workflowState: PhotoWorkflowState? {
+        PhotoWorkflowState(rawValue: state)
     }
 }
 

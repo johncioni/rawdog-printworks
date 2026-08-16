@@ -4,6 +4,7 @@ import PrintworksCore
 struct MainWindow: View {
     @Bindable var model: AppModel
     @State private var showingReview = false
+    @State private var showingReprocessAllConfirmation = false
 
     var body: some View {
         NavigationSplitView {
@@ -47,9 +48,21 @@ struct MainWindow: View {
         }
         .preferredColorScheme(.dark)
         .toolbar { toolbarContent }
+        .confirmationDialog(
+            model.reprocessAllConfirmation.title,
+            isPresented: $showingReprocessAllConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Reprocess All Photos", role: .destructive) {
+                Task { await model.reprocessAll() }
+            }
+            Button("Cancel", role: .cancel) {}
+                .keyboardShortcut(.defaultAction)
+        } message: {
+            Text(model.reprocessAllConfirmation.message)
+        }
         .dropDestination(for: URL.self) { urls, _ in
-            Task { await model.ingest(paths: urls.map(\.path)) }
-            return true
+            model.ingestDropped(paths: urls.map(\.path))
         }
     }
 
@@ -83,7 +96,7 @@ struct MainWindow: View {
                 .disabled(model.selectedStem == nil)
 
                 Button("All Photos") {
-                    Task { await model.reprocessAll() }
+                    showingReprocessAllConfirmation = true
                 }
             } label: {
                 Label("Reprocess", systemImage: "arrow.clockwise")
@@ -129,8 +142,7 @@ struct MainWindow: View {
     }
 
     private var needsReviewCount: Int {
-        toolbarPhotos.count {
-            PhotoStateAppearance(state: $0.state).label == "Needs review"
-        }
+        PhotoStateAppearance.needsReviewCount(
+            states: toolbarPhotos.map(\.state))
     }
 }

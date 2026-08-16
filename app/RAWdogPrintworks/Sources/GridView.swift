@@ -1,24 +1,13 @@
 import SwiftUI
 import PrintworksCore
 
-struct PhotoStateAppearance {
-    let color: Color
-    let label: String
-
-    init(state: String) {
-        switch state {
-        case "verified":
-            color = Theme.statusPublished
-            label = "Published"
-        case "preview_ready", "review_required":
-            color = Theme.statusReview
-            label = "Needs review"
-        case "approved", "rendered":
-            color = Theme.accent
-            label = "Rendering"
-        default:
-            color = Theme.statusIngested
-            label = "Ingested"
+extension PhotoStateAppearance {
+    var color: Color {
+        switch self {
+        case .published: Theme.statusPublished
+        case .needsReview: Theme.statusReview
+        case .rendering: Theme.accent
+        case .ingested: Theme.statusIngested
         }
     }
 }

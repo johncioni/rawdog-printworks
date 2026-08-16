@@ -176,8 +176,6 @@ struct SidebarView: View {
     }
 
     private func reviewCount(in photos: [PhotoStatus]) -> Int {
-        photos.count {
-            PhotoStateAppearance(state: $0.state).label == "Needs review"
-        }
+        PhotoStateAppearance.needsReviewCount(states: photos.map(\.state))
     }
 }

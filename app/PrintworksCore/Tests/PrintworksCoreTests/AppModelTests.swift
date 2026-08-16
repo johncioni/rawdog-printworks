@@ -347,6 +347,56 @@ final class AppModelTests: XCTestCase {
         XCTAssertFalse(model.canApprove(stem: "P1"))
     }
 
+    func testVerifiedPhotoCannotBeApproved() async {
+        let fake = FakeClient()
+        fake.statusQueue = [snap([photo(
+            stem: "P1", revision: "r1", state: "verified", version: "v001")])]
+        let model = AppModel(
+            client: fake, repo: URL(fileURLWithPath: "/r"),
+            sliderDebounce: .zero)
+        await model.refresh()
+        model.startDraft(stem: "P1")
+        for key in ReviewDraft.checkKeys {
+            model.setDraftCheck(stem: "P1", key: key, isChecked: true)
+        }
+
+        XCTAssertFalse(model.canApprove(stem: "P1"))
+    }
+
+    func testReprocessAllConfirmationNamesPhotoCount() async {
+        let fake = FakeClient()
+        fake.statusQueue = [snap([
+            photo(stem: "P1", revision: "r1"),
+            photo(stem: "P2", revision: "r1"),
+            photo(stem: "P3", revision: "r1"),
+        ])]
+        let model = AppModel(
+            client: fake, repo: URL(fileURLWithPath: "/r"),
+            sliderDebounce: .zero)
+        await model.refresh()
+
+        XCTAssertEqual(model.reprocessAllConfirmation.title,
+                       "Reprocess all 3 photos?")
+        XCTAssertEqual(
+            model.reprocessAllConfirmation.message,
+            "This re-renders every photo and publishes a new version of each.")
+    }
+
+    func testDropIsRefusedWhileMutationOrExternalLockIsActive() async {
+        let fake = FakeClient()
+        let model = AppModel(
+            client: fake, repo: URL(fileURLWithPath: "/r"),
+            sliderDebounce: .zero)
+
+        model.activeCommand = "run"
+        XCTAssertFalse(model.ingestDropped(paths: ["/incoming/P1.rw2"]))
+
+        model.activeCommand = nil
+        model.busyExternally = true
+        XCTAssertFalse(model.ingestDropped(paths: ["/incoming/P2.rw2"]))
+        XCTAssertTrue(fake.mutateLog.isEmpty)
+    }
+
     func testStalePreviewsBlockApprove() async {
         let fake = FakeClient()
         fake.statusQueue = [snap([photo(stem: "P1", revision: "r1",
@@ -1095,12 +1145,17 @@ final class AppModelTests: XCTestCase {
                 error: PipelineErrorInfo(code: "PARTIAL_FAILURE",
                                          message: "1 of 2 failed"))
         }
-        let model = AppModel(client: fake, repo: URL(fileURLWithPath: "/r"),
-                             sliderDebounce: .zero)
+        var notified: [PublishedPhoto] = []
+        let model = AppModel(
+            client: fake, repo: URL(fileURLWithPath: "/r"),
+            sliderDebounce: .zero,
+            onPublished: { notified = $0 })
         await model.refresh()
+        model.lastFailures["P3"] = StemFailure(
+            stem: "P3", code: "RENDER_FAILED", message: "old")
         await model.reprocessAll()
-        XCTAssertEqual(model.lastPublished.map(\.stem), ["P1"])  // result first
-        XCTAssertEqual(model.lastAdvanced.map(\.stem), ["P3"])
+        XCTAssertEqual(notified.map(\.stem), ["P1"])             // result first
+        XCTAssertNil(model.lastFailures["P3"])
         XCTAssertEqual(model.lastFailures["P2"], StemFailure(
             stem: "P2", code: "VERIFY_FAILED", message: "bad"))
         XCTAssertEqual(model.banner?.code, "PARTIAL_FAILURE")    // then error
@@ -1271,6 +1326,32 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.lastIngestFailures["bad.rw2"], FileFailure(
             file: "bad.rw2", code: "BAD_INPUT", message: "corrupt"))
         XCTAssertEqual(model.banner?.code, "PARTIAL_FAILURE")
+    }
+
+    func testPartialIngestBannerDetailsListFilenameAndReason() async {
+        let fake = FakeClient()
+        fake.statusQueue = [snap([])]
+        fake.mutateHandler = { _ in
+            Envelope(ok: false, result: IngestResult(
+                ingested: [], skipped: [], conflicts: [], failed: [
+                    FileFailure(file: "bad-a.rw2", code: "BAD_INPUT",
+                                message: "corrupt header"),
+                    FileFailure(file: "bad-b.rw2", code: "BAD_INPUT",
+                                message: "unsupported compression"),
+                ]), error: PipelineErrorInfo(
+                    code: "PARTIAL_FAILURE", message: "2 files failed"))
+        }
+        let model = AppModel(
+            client: fake, repo: URL(fileURLWithPath: "/r"),
+            sliderDebounce: .zero)
+
+        await model.ingest(paths: [
+            "/incoming/bad-a.rw2", "/incoming/bad-b.rw2",
+        ])
+
+        XCTAssertEqual(
+            model.bannerDetails,
+            "bad-a.rw2: corrupt header\nbad-b.rw2: unsupported compression")
     }
 
     func testPendingInputFilesListsRawFilesMissingFromSnapshot() async throws {
