@@ -48,14 +48,13 @@ resting point — the next session starts new work, not a continuation.
   locally on merged main. Check: `gh run list --branch main --limit 3`.
 
 ## Next
-1. Nothing is required. App: `zsh scripts/build-app.sh`. Gates:
-   `.venv/bin/python -m pytest tests/ -q` and
-   `swift test --package-path app/PrintworksCore`.
+1. Nothing is required. App: `zsh scripts/build-app.sh`. Gates: `pytest tests/ -q`
+   via `.venv/bin/python`, and `swift test --package-path app/PrintworksCore`.
 2. Fix billing under GitHub → Billing & plans, then push a trivial commit and
    confirm `tests` goes green on main.
 3. **The lab is still unchosen** — verified, not remembered: `config/lab-profiles/`
    holds only `generic-v1.yaml`, so everything published so far used the generic
    profile. Picking a lab means adding a profile YAML per the spec, and it is the
    only open item that changes rendered OUTPUT rather than code quality.
-4. New RW2s: drop in `Input/`, then `scripts/process.sh ingest` and review in the
-   app. Dusk frames need warming sidecars — `sidecars/P1036170_*.pp3` is the template.
+4. New RW2s: drop in `Input/`, `scripts/process.sh ingest`, review in the app.
+   Dusk frames need warming sidecars — `sidecars/P1036170_*.pp3` is the template.
