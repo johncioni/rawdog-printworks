@@ -13,48 +13,53 @@ open as PR #6** — 3 commits, 23 files, +1114/−263. Remaining: the user merge
 - **Unblocked and merged PR #5.** It was CONFLICTING on `HANDOFF.md` alone;
   merged origin/main in taking MAIN's copy. That also fired the `tests` CI gate
   **for the first time** — GitHub cannot build a merge ref for a conflicting PR.
-- **CodeRabbit: 32 findings** (16 Major) which it could NOT post inline (GitHub
-  limit) — **zero inline comments to reply to**; they live in the COMMENTED
-  review body. Reconciled and archived; it found a weak-test cluster the human
-  review missed, and missed F1/F2/F6 entirely.
-- **Fix round: all 3 batches done, verified, committed** — `f93ec85` gating,
-  `964d708` weak tests, `852b0e5` concurrency. Gates re-run by ME per batch, with
-  `xcodebuild` run WITHOUT the sandbox flags (the production path): swift test
+- **CodeRabbit on #5: 32 findings** it could NOT post inline (GitHub limit) —
+  they live in the COMMENTED review body. Reconciled and archived; it found a
+  weak-test cluster the review missed, and missed F1/F2/F6 entirely.
+- **Fix round batches 1–3 done, verified, committed** — `f93ec85` gating,
+  `964d708` weak tests, `852b0e5` concurrency. Gates re-run by ME per batch with
+  `xcodebuild` WITHOUT sandbox flags (the production path): swift test
   92 → 93 → **99**, always exit 0; pytest 295 throughout.
-- **Mutations re-derived independently, not replayed** — and made stronger:
-  deleting Debouncer's cancellation handling outright, restoring filled-interior
-  crop targeting, renaming the display label (correctly breaks nothing), and
-  injecting `process.terminate()` into the new watchdog, which fails three
-  assertions. That last one pins the no-kill property the user chose.
-- Ledgers archived: `docs/superpowers/sdd-archive/2026-08-12-printworks-app/`
-  (review + CodeRabbit reconciliation) and `…/2026-08-16-plan2-fixes/`.
+- **Mutations re-derived independently, not replayed**, and made stronger —
+  notably injecting `process.terminate()` into batch 3's new watchdog, which
+  fails three assertions. That pins the no-kill property the user chose.
+- Ledgers archived under `docs/superpowers/sdd-archive/` for both rounds.
 
 ## Ruled out
 - Making `runMutating` cancellable (m12), including via CodeRabbit's
   watchdog→SIGKILL. Batch 3 surfaces the stall instead and signals nothing.
 - `scripts/build-app.sh:5-7` (CR Major) — **false positive**: that flag is the
-  Codex seatbelt workaround, not a build requirement. Confirmed empirically —
-  my `xcodebuild` Release gate passes without it.
-- Fixing CR Minors/Trivials — filed. Named in the fix round's archived README.
+  Codex seatbelt workaround, not a build requirement. Confirmed — my
+  `xcodebuild` Release gate passes without it.
+- CR Minors/Trivials, and PreviewImageCache cancellation propagation — filed.
 - Squashing either branch; both preserve per-task commits.
 
 ## In flight
-- **Nothing running.** Both Codex terminals are idle and finished:
-  `term_64e51b11…` (batches 1–2, 69% context) and `term_8f69f5e5…` (batch 3).
-- **PR #6 awaits the user.** Its checks were still resolving at handoff —
-  `gh pr checks 6`. Batch 3's HANDOFF churn was reverted before staging (Codex's
-  stop hook rewrote it despite the brief, and its report wrongly claims it did
-  not — always verify with `git status -- HANDOFF.md`).
+- **PR #6 is GREEN and MERGEABLE** (pytest 1m2s, CodeRabbit pass) but CodeRabbit
+  posted **2 new findings** on it, so it is NOT ready to merge yet.
+- **Batch 4 running** — those 2 findings — in fresh terminal
+  `term_ca4695f2-5cca-45d8-84ce-63a9ab09ad8f`; watcher bg `b4fhycjvn`.
+  Brief: `batch-4-brief.md`. USER DECIDED item 1 is a **partial** fix on purpose:
+  bound the decode concurrency (a regression batch 3 introduced — the actor used
+  to serialize decodes), but do NOT build waiter tracking or cancellation
+  propagation; that half is deferred, pre-existing, and ImageIO cannot observe
+  cancellation anyway. Item 2 is a test asserting only `allowsSave` — a
+  cannot-fail test written during THIS round.
+- Older terminals idle: `term_64e51b11…` (69%), `term_8f69f5e5…` (70%).
 - **APP STILL POINTS AT THE SCRATCH REPO** `smoke-repo`. Cleanup below.
 
 ## Next
-1. **USER MERGES https://github.com/johncioni/rawdog-printworks/pull/6** —
-   `gh pr merge 6 --merge`. Do not merge on their behalf. Confirm `gh pr checks 6`
-   is green first; if CodeRabbit re-reviews, reconcile before acting on it.
-2. Cleanup after the merge: `defaults delete com.john.rawdog-printworks repoPath`
-   and `defaults delete com.john.rawdog-printworks pythonPath`, then delete
-   `~/orca/workspaces/rawdog-printworks/smoke-repo`, then remove the
-   `plan2-printworks-app` and `plan2-fixes` worktrees.
-3. Consider a visual QA pass on the fix round before or after merge — batch 1
-   changed the crop-grab interaction and batch 3 changed the grid card into a
-   Button, and neither was exercised against the real app.
+1. Verify batch 4 as with the others — re-run its mutations yourself; the bound
+   test must fail against an unbounded cache. Then all four gates, then commit.
+2. **VISUAL QA before the merge — the user asked for this.** Batch 1 changed the
+   crop-grab interaction (no undo) and batch 3 made grid cards Buttons; tests
+   pass while an interaction can still be wrong. Drive the app on the SCRATCH
+   repo, never the real one: an 8×10 grab must target 8×10, arrow-key nudge must
+   work, cards must be keyboard/VoiceOver operable. Keep the last pass's
+   discipline (`task-11-visual-qa-note.md`): save a shot only after a marker is
+   confirmed on screen AND the image differs from every prior one.
+3. **USER MERGES https://github.com/johncioni/rawdog-printworks/pull/6** —
+   `gh pr merge 6 --merge`. Not on their behalf.
+4. Cleanup after merge: `defaults delete com.john.rawdog-printworks repoPath`
+   and `… pythonPath`, delete `smoke-repo`, remove both worktrees, archive
+   `batch-4-*`.
