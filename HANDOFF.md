@@ -33,8 +33,8 @@ open as PR #6** — 3 commits, 23 files, +1114/−263. Remaining: the user merge
 - Squashing either branch; both preserve per-task commits.
 
 ## In flight
-- **PR #6 is GREEN and MERGEABLE** (pytest 1m2s, CodeRabbit pass) but CodeRabbit
-  posted **2 new findings** on it, so it is NOT ready to merge yet.
+- **PR #6 is GREEN and MERGEABLE** but CodeRabbit posted **2 new findings**, so
+  it is NOT ready to merge yet.
 - **Batch 4 running** on those 2 findings — terminal
   `term_ca4695f2-5cca-45d8-84ce-63a9ab09ad8f`, watcher bg `b4fhycjvn`, brief
   `batch-4-brief.md`. USER DECIDED item 1 is **partial on purpose**: bound the
