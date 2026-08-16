@@ -164,7 +164,7 @@ struct ReviewScreen: View {
 
             Divider()
 
-            InspectorView(model: model)
+            InspectorView(model: model, showingCrops: showingCrops)
         }
         .frame(width: 260)
         .frame(maxHeight: .infinity, alignment: .top)

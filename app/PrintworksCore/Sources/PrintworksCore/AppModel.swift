@@ -158,7 +158,12 @@ public final class AppModel {
     @ObservationIgnored private var inFlightAdjustments: [String: InFlightAdjust] = [:]
     @ObservationIgnored private var failureStamps: [String: FailureStamp] = [:]
     @ObservationIgnored private var cropCache: [String: CachedCrops] = [:]
+    @ObservationIgnored private var cropCacheRecency: [String] = []
     @ObservationIgnored private var cropRequests: [String: CropRequest] = [:]
+    @ObservationIgnored private var cropRequestOrder: [String] = []
+
+    private static let cropCacheLimit = 40
+    private static let cropRequestLimit = 8
 
     /// Re-runs the last retryable failed action (`retryBannerAction`).
     @ObservationIgnored private var lastFailedAction: (@MainActor @Sendable () async -> Void)?
@@ -199,7 +204,7 @@ public final class AppModel {
 
     private struct CachedCrops {
         let revision: String
-        let result: CropsResult
+        let result: CropsResult?
     }
 
     private struct CropRequest {
@@ -298,8 +303,11 @@ public final class AppModel {
     /// Read-only crop suggestions/persisted windows, cached only while the
     /// photo's review revision is unchanged.
     public func crops(stem: String) async -> CropsResult? {
+        guard !Task.isCancelled else { return nil }
         guard let revision = photo(stem)?.reviewRevision else { return nil }
         if let cached = cropCache[stem], cached.revision == revision {
+            cropCacheRecency.removeAll { $0 == stem }
+            cropCacheRecency.append(stem)
             return cached.result
         }
 
@@ -307,29 +315,64 @@ public final class AppModel {
         if let pending = cropRequests[stem], pending.revision == revision {
             request = pending
         } else {
+            if cropRequests[stem] == nil,
+               cropRequests.count >= Self.cropRequestLimit,
+               let oldestStem = cropRequestOrder.first,
+               let oldest = cropRequests[oldestStem] {
+                _ = await oldest.task.value
+                removeCropRequest(stem: oldestStem, id: oldest.id)
+                guard !Task.isCancelled else { return nil }
+                return await crops(stem: stem)
+            }
             let id = UUID()
             let client = client
             let task = Task { await client.crops(stem: stem) }
             request = CropRequest(id: id, revision: revision, task: task)
             cropRequests[stem] = request
+            cropRequestOrder.removeAll { $0 == stem }
+            cropRequestOrder.append(stem)
         }
 
         let response = await request.task.value
-        if cropRequests[stem]?.id == request.id {
-            cropRequests.removeValue(forKey: stem)
-        }
+        removeCropRequest(stem: stem, id: request.id)
+        guard !Task.isCancelled else { return nil }
         guard response.envelope.ok, let result = response.envelope.result else {
-            surface(response.envelope.error
-                    ?? PipelineErrorInfo(code: "INTERNAL",
-                                         message: "crops returned no result"),
-                    details: response.stderrTail)
+            let error = response.envelope.error
+                ?? PipelineErrorInfo(code: "INTERNAL",
+                                     message: "crops returned no result")
+            if error.code == "BAD_INPUT",
+               error.message.contains("render dims not recorded") {
+                storeCrops(nil, stem: stem, revision: revision)
+                return nil
+            }
+            surface(error, details: response.stderrTail)
             return nil
         }
         guard photo(stem)?.reviewRevision == revision else {
+            guard !Task.isCancelled else { return nil }
             return await crops(stem: stem)
         }
-        cropCache[stem] = CachedCrops(revision: revision, result: result)
+        storeCrops(result, stem: stem, revision: revision)
         return result
+    }
+
+    private func removeCropRequest(stem: String, id: UUID) {
+        guard cropRequests[stem]?.id == id else { return }
+        cropRequests.removeValue(forKey: stem)
+        cropRequestOrder.removeAll { $0 == stem }
+    }
+
+    private func storeCrops(_ result: CropsResult?, stem: String,
+                            revision: String) {
+        cropCache.removeValue(forKey: stem)
+        cropCacheRecency.removeAll { $0 == stem }
+        while cropCache.count >= Self.cropCacheLimit,
+              let oldest = cropCacheRecency.first {
+            cropCacheRecency.removeFirst()
+            cropCache.removeValue(forKey: oldest)
+        }
+        cropCache[stem] = CachedCrops(revision: revision, result: result)
+        cropCacheRecency.append(stem)
     }
 
     /// Deliveries newest first, with the delivery-less legacy photos ("Earlier")

@@ -4,6 +4,7 @@ import PrintworksCore
 
 struct InspectorView: View {
     @Bindable var model: AppModel
+    let showingCrops: Bool
 
     @State private var cropResult: CropsResult?
     @State private var warmth = 5500.0
@@ -23,28 +24,41 @@ struct InspectorView: View {
                 if draft?.isStale == true {
                     staleDraftBanner
                 }
-                approveButton
+                approveSection
+                Divider()
+                shortcutLegend
             }
             .padding(18)
         }
         .frame(width: 260)
         .frame(maxHeight: .infinity, alignment: .top)
         .background(Theme.panel)
-        .task(id: selectionKey) {
+        .task(id: controlSelectionKey) {
             guard let stem, let photo else {
-                cropResult = nil
                 return
             }
             if model.drafts[stem] == nil {
                 model.startDraft(stem: stem)
             }
             configureControls(from: photo)
+        }
+        .task(id: cropSelectionKey) {
+            guard let stem, let photo else {
+                cropResult = nil
+                return
+            }
             cropResult = nil
+            guard showingCrops || photo.crops.isEmpty else { return }
             let result = await model.crops(stem: stem)
-            guard model.selectedStem == stem,
+            guard !Task.isCancelled,
+                  model.selectedStem == stem,
                   model.photo(stem)?.reviewRevision == photo.reviewRevision
             else { return }
             cropResult = result
+        }
+        .onChange(of: model.selectedStyle) { _, _ in
+            guard let photo else { return }
+            configureControls(from: photo)
         }
     }
 
@@ -166,16 +180,35 @@ struct InspectorView: View {
                     in: RoundedRectangle(cornerRadius: 8))
     }
 
-    private var approveButton: some View {
-        Button("Approve") {
-            guard let stem else { return }
-            Task { await model.approve(stem: stem) }
+    private var approveSection: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button("Approve") {
+                guard let stem else { return }
+                Task { await model.approve(stem: stem) }
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(Theme.accent)
+            .frame(maxWidth: .infinity)
+            .accessibilityLabel("Approve photo")
+            .disabled(stem.map { !model.canApprove(stem: $0) } ?? true)
+
+            if let staleStylesText {
+                Text("Re-render stale previews: \(staleStylesText)")
+                    .font(.caption)
+                    .foregroundStyle(Theme.statusReview)
+            }
         }
-        .buttonStyle(.borderedProminent)
-        .tint(Theme.accent)
-        .frame(maxWidth: .infinity)
-        .accessibilityLabel("Approve photo")
-        .disabled(stem.map { !model.canApprove(stem: $0) } ?? true)
+    }
+
+    private var shortcutLegend: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("⌘1–⌘4  Switch style")
+            Text("Space  Compare")
+            Text("← / →  Previous / next photo")
+            Text("C  Crop overlay")
+        }
+        .font(.caption)
+        .foregroundStyle(.secondary)
     }
 
     private func auditToggle(_ title: String, key: String) -> some View {
@@ -260,9 +293,20 @@ struct InspectorView: View {
         model.busyExternally || model.activeCommand != nil
     }
 
-    private var selectionKey: String {
+    private var controlSelectionKey: String {
         guard let photo else { return "none|\(model.selectedStyle)" }
         return "\(photo.stem)|\(model.selectedStyle)|\(photo.reviewRevision)"
+    }
+
+    private var cropSelectionKey: String {
+        guard let photo else { return "none|\(showingCrops)" }
+        return "\(photo.stem)|\(photo.reviewRevision)|\(showingCrops)"
+    }
+
+    private var staleStylesText: String? {
+        guard let stale = photo?.stalePreviews, !stale.isEmpty else { return nil }
+        return stale.map { $0 == "bw" ? "B&W" : $0.capitalized }
+            .joined(separator: ", ")
     }
 
     private func configureControls(from photo: PhotoStatus) {
@@ -281,6 +325,10 @@ struct InspectorView: View {
             return source
         }
         if cropResult?.windows[cropName] != nil { return "available" }
+        if let source = photo?.crops[cropName]?.source {
+            return source
+        }
+        if photo?.crops[cropName] != nil { return "available" }
         return "unavailable"
     }
 

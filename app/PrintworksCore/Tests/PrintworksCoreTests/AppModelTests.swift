@@ -8,6 +8,10 @@ final class FakeClient: PipelineRunning, @unchecked Sendable {
     private var storedMutateLog: [[String]] = []
     private var storedStatusQueue: [Envelope<StatusSnapshot>] = []
     private var storedStatusCalls = 0
+    private var storedCropsQueue: [CommandResult<CropsResult>] = []
+    private var storedCropsLog: [String] = []
+    private var activeCrops = 0
+    private var peakCrops = 0
 
     var statusQueue: [Envelope<StatusSnapshot>] {
         get { stateLock.withLock { storedStatusQueue } }
@@ -19,8 +23,20 @@ final class FakeClient: PipelineRunning, @unchecked Sendable {
     var mutateLog: [[String]] {
         stateLock.withLock { storedMutateLog }
     }
+    var cropsQueue: [CommandResult<CropsResult>] {
+        get { stateLock.withLock { storedCropsQueue } }
+        set { stateLock.withLock { storedCropsQueue = newValue } }
+    }
+    var cropsLog: [String] {
+        stateLock.withLock { storedCropsLog }
+    }
+    var maxConcurrentCrops: Int {
+        stateLock.withLock { peakCrops }
+    }
     var mutateHandler: ((_ args: [String]) -> Any)!
     var asyncMutateHandler: ((_ args: [String]) async -> Any)?
+    var asyncCropsHandler: ((_ stem: String) async
+                            -> CommandResult<CropsResult>)?
 
     func status() async -> CommandResult<StatusSnapshot> {
         let envelope = stateLock.withLock {
@@ -30,9 +46,26 @@ final class FakeClient: PipelineRunning, @unchecked Sendable {
         return CommandResult(envelope: envelope, stderrTail: "")
     }
     func crops(stem: String) async -> CommandResult<CropsResult> {
-        CommandResult(envelope: Envelope(ok: true, result: CropsResult(
-            stem: stem, basis: "faces", windows: [:]), error: nil),
-            stderrTail: "")
+        let queued = stateLock.withLock { () -> CommandResult<CropsResult>? in
+            storedCropsLog.append(stem)
+            activeCrops += 1
+            peakCrops = max(peakCrops, activeCrops)
+            return storedCropsQueue.isEmpty
+                ? nil : storedCropsQueue.removeFirst()
+        }
+        let response: CommandResult<CropsResult>
+        if let asyncCropsHandler {
+            response = await asyncCropsHandler(stem)
+        } else if let queued {
+            response = queued
+        } else {
+            response = CommandResult(envelope: Envelope(
+                ok: true,
+                result: CropsResult(stem: stem, basis: "faces", windows: [:]),
+                error: nil), stderrTail: "")
+        }
+        stateLock.withLock { activeCrops -= 1 }
+        return response
     }
     func mutate<R>(_ type: R.Type, args: [String],
                    onEvent: (@Sendable (ProgressEvent) -> Void)?) async
@@ -394,6 +427,56 @@ final class AppModelTests: XCTestCase {
         ]])
     }
 
+    func testSetSliderSendsExposureWithTwoDecimalPlaces() async {
+        let fake = FakeClient()
+        fake.statusQueue = [snap([])]
+        fake.mutateHandler = { _ in
+            Envelope(ok: true, result: AdjustResult(
+                stem: "P1", style: "natural", preview: "p.jpg",
+                temperature: Control(value: nil, source: "camera"),
+                exposure: Control(value: 0.35, source: "sidecar"),
+                reviewRevisionBefore: "r1", reviewRevisionAfter: "r2"),
+                error: nil)
+        }
+        let model = AppModel(client: fake, repo: URL(fileURLWithPath: "/r"),
+                             sliderDebounce: .seconds(60))
+
+        model.setSlider(stem: "P1", style: "natural", temperature: nil,
+                        exposure: 0.35)
+        await model.flushPendingAdjustments(stem: "P1")
+
+        XCTAssertEqual(fake.mutateLog, [[
+            "adjust", "--stem", "P1", "--style", "natural",
+            "--exposure", "0.35", "--json",
+        ]])
+    }
+
+    func testSetSliderComposesBothTouchedControlsInOneCommand() async {
+        let fake = FakeClient()
+        fake.statusQueue = [snap([])]
+        fake.mutateHandler = { _ in
+            Envelope(ok: true, result: AdjustResult(
+                stem: "P1", style: "natural", preview: "p.jpg",
+                temperature: Control(value: 5650, source: "sidecar"),
+                exposure: Control(value: -0.40, source: "sidecar"),
+                reviewRevisionBefore: "r1", reviewRevisionAfter: "r2"),
+                error: nil)
+        }
+        let model = AppModel(client: fake, repo: URL(fileURLWithPath: "/r"),
+                             sliderDebounce: .seconds(60))
+
+        model.setSlider(stem: "P1", style: "natural", temperature: 5650,
+                        exposure: nil)
+        model.setSlider(stem: "P1", style: "natural", temperature: nil,
+                        exposure: -0.40)
+        await model.flushPendingAdjustments(stem: "P1")
+
+        XCTAssertEqual(fake.mutateLog, [[
+            "adjust", "--stem", "P1", "--style", "natural",
+            "--temperature", "5650", "--exposure", "-0.40", "--json",
+        ]])
+    }
+
     func testResetAdjustSendsResetFlag() async {
         let fake = FakeClient()
         fake.statusQueue = [snap([])]
@@ -475,6 +558,122 @@ final class AppModelTests: XCTestCase {
             "crops --stem P1 --json",
             "crops --stem P1 --json",
         ])
+    }
+
+    func testCropsCachesMissingRenderDimensionsWithoutShowingBanner() async {
+        let fake = FakeClient()
+        fake.statusQueue = [snap([photo(stem: "P1", revision: "r1")])]
+        fake.cropsQueue = [CommandResult(
+            envelope: Envelope(
+                ok: false, result: nil,
+                error: PipelineErrorInfo(
+                    code: "BAD_INPUT",
+                    message: "render dims not recorded; generate previews first")),
+            stderrTail: "")]
+        let model = AppModel(client: fake, repo: URL(fileURLWithPath: "/r"),
+                             sliderDebounce: .zero)
+        await model.refresh()
+
+        let first = await model.crops(stem: "P1")
+        let cached = await model.crops(stem: "P1")
+
+        XCTAssertNil(first)
+        XCTAssertNil(cached)
+        XCTAssertNil(model.banner)
+        XCTAssertEqual(fake.cropsLog, ["P1"])
+    }
+
+    func testCancelledCropsLoadDoesNotRetryAfterRevisionChanges() async {
+        let fake = FakeClient()
+        fake.statusQueue = [snap([photo(stem: "P1", revision: "r1")]),
+                            snap([photo(stem: "P1", revision: "r2")])]
+        let requestStarted = AsyncGate()
+        let requestCanFinish = AsyncGate()
+        fake.asyncCropsHandler = { stem in
+            await requestStarted.open()
+            await requestCanFinish.wait()
+            return CommandResult(envelope: Envelope(
+                ok: true,
+                result: CropsResult(stem: stem, basis: "faces", windows: [:]),
+                error: nil), stderrTail: "")
+        }
+        let model = AppModel(client: fake, repo: URL(fileURLWithPath: "/r"),
+                             sliderDebounce: .zero)
+        await model.refresh()
+
+        let load = Task { @MainActor in await model.crops(stem: "P1") }
+        await requestStarted.wait()
+        await model.refresh()
+        load.cancel()
+        await requestCanFinish.open()
+
+        let result = await load.value
+        XCTAssertNil(result)
+        XCTAssertEqual(fake.cropsLog, ["P1"])
+    }
+
+    func testCropsCacheEvictsLeastRecentlyUsedEntryAtForty() async {
+        let fake = FakeClient()
+        let photos = (0...40).map {
+            photo(stem: "P\($0)", revision: "r1")
+        }
+        fake.statusQueue = [snap(photos)]
+        let model = AppModel(client: fake, repo: URL(fileURLWithPath: "/r"),
+                             sliderDebounce: .zero)
+        await model.refresh()
+
+        for photo in photos {
+            _ = await model.crops(stem: photo.stem)
+        }
+        _ = await model.crops(stem: "P0")
+
+        XCTAssertEqual(fake.cropsLog.count, 42)
+        XCTAssertEqual(fake.cropsLog.suffix(2), ["P40", "P0"])
+    }
+
+    func testCropsRequestsAllowAtMostEightConcurrentQueries() async {
+        let fake = FakeClient()
+        let photos = (0..<9).map {
+            photo(stem: "P\($0)", revision: "r1")
+        }
+        fake.statusQueue = [snap(photos)]
+        let firstEightStarted = AsyncGate()
+        let requestsCanFinish = AsyncGate()
+        let startLock = NSLock()
+        nonisolated(unsafe) var started = 0
+        fake.asyncCropsHandler = { stem in
+            let reachedLimit = startLock.withLock {
+                started += 1
+                return started == 8
+            }
+            if reachedLimit { await firstEightStarted.open() }
+            await requestsCanFinish.wait()
+            return CommandResult(envelope: Envelope(
+                ok: true,
+                result: CropsResult(stem: stem, basis: "faces", windows: [:]),
+                error: nil), stderrTail: "")
+        }
+        let model = AppModel(client: fake, repo: URL(fileURLWithPath: "/r"),
+                             sliderDebounce: .zero)
+        await model.refresh()
+
+        let firstLoads = photos.prefix(8).map { photo in
+            Task { @MainActor in await model.crops(stem: photo.stem) }
+        }
+        await firstEightStarted.wait()
+        let ninthLoad = Task { @MainActor in
+            await model.crops(stem: photos[8].stem)
+        }
+        await Task { @MainActor in }.value
+
+        XCTAssertEqual(fake.cropsLog.count, 8)
+        XCTAssertEqual(fake.maxConcurrentCrops, 8)
+
+        await requestsCanFinish.open()
+        for load in firstLoads { _ = await load.value }
+        _ = await ninthLoad.value
+        XCTAssertEqual(fake.cropsLog.count, 9)
+        XCTAssertEqual(fake.maxConcurrentCrops, 8)
     }
 
     func testDebouncersAreKeyedPerStemAndStyle() async {

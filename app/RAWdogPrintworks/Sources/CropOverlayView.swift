@@ -37,18 +37,18 @@ private struct CropWindowOutline: View {
     @State private var translation: CGSize = .zero
 
     var body: some View {
+        let drawnWindow = translatedWindow
         Rectangle()
             .stroke(Theme.accent, style: strokeStyle)
             .frame(width: window.w * imageRect.width,
                    height: window.h * imageRect.height)
+            .contentShape(Rectangle())
             .position(
                 x: imageRect.minX
-                    + (window.x + window.w / 2) * imageRect.width,
+                    + (drawnWindow.x + drawnWindow.w / 2) * imageRect.width,
                 y: imageRect.minY
-                    + (window.y + window.h / 2) * imageRect.height
+                    + (drawnWindow.y + drawnWindow.h / 2) * imageRect.height
             )
-            .offset(translation)
-            .contentShape(Rectangle())
             .gesture(
                 DragGesture()
                     .onChanged { translation = $0.translation }
@@ -68,6 +68,15 @@ private struct CropWindowOutline: View {
             )
             .accessibilityLabel("\(displayName) crop window")
             .accessibilityHint("Drag to reposition the crop")
+    }
+
+    private var translatedWindow: CropWindow {
+        guard imageRect.width > 0, imageRect.height > 0 else { return window }
+        return CropMath.nudged(
+            window,
+            dx: translation.width / imageRect.width,
+            dy: translation.height / imageRect.height
+        )
     }
 
     private var strokeStyle: StrokeStyle {
