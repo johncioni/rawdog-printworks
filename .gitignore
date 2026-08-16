@@ -11,3 +11,6 @@ __pycache__/
 .superpowers/
 .orca
 .claude/worktrees/
+app/**/build/
+app/**/.build/
+app/**/xcuserdata/

@@ -1,0 +1,371 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		2B8E1124FD6637511E671575 /* ErrorBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8A0259826B63F3D422ECB93 /* ErrorBanner.swift */; };
+		53AD4CEDA3ED9B9DB4F12FBF /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C8488AC88AADDEF83C91D87C /* SidebarView.swift */; };
+		753ABA92C72ECC870AE900F3 /* PrintworksApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3CB3B941DFCAD38A0263C82 /* PrintworksApp.swift */; };
+		901973283AEAF7846AA41145 /* PreviewImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7DB3FFC02930C9ACFD2BD4FF /* PreviewImage.swift */; };
+		9225267E64DC4F3ED0D1DC44 /* ReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D7823D48DA9C17AA0BE34B21 /* ReviewView.swift */; };
+		A339D445CE02AA706E7D6C5B /* CropOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9BCB815EE12B041AFE34A45 /* CropOverlayView.swift */; };
+		BBBD1847AE0EEBF5BF593272 /* SettingsSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = AAD615337BB62083B108C459 /* SettingsSheet.swift */; };
+		BE5A825A7AF83E5ADCD3A283 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFC7998A937FE9922A71CC94 /* Theme.swift */; };
+		BFC8C6E1D71B3F325BA0C36C /* InspectorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F35A4156DCF5CB8087CF3846 /* InspectorView.swift */; };
+		D0BB633ADAD34F2E049C6250 /* IngestBanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F42439BD7E89BED9A95A50E /* IngestBanner.swift */; };
+		D1AD8D0793F2B7CB4E59E046 /* MainWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = D932305A2A209F9D6B4925B9 /* MainWindow.swift */; };
+		DBBE77FA40C7C017B7839141 /* GridView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 58B319B94EFAF5323E2AF00C /* GridView.swift */; };
+		E11FA9A37D20E3614E7D39C0 /* CompareView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A66969C57597321F01914C7E /* CompareView.swift */; };
+		F10AE85930F9809C6ACE9C69 /* PrintworksCore in Frameworks */ = {isa = PBXBuildFile; productRef = 5F2F223FCE8C3C94A140DB9A /* PrintworksCore */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		2F42439BD7E89BED9A95A50E /* IngestBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = IngestBanner.swift; sourceTree = "<group>"; };
+		58B319B94EFAF5323E2AF00C /* GridView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GridView.swift; sourceTree = "<group>"; };
+		676BC75110657924D2B3FB9F /* PrintworksCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = PrintworksCore; path = ../PrintworksCore; sourceTree = SOURCE_ROOT; };
+		7DB3FFC02930C9ACFD2BD4FF /* PreviewImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewImage.swift; sourceTree = "<group>"; };
+		A3CB3B941DFCAD38A0263C82 /* PrintworksApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrintworksApp.swift; sourceTree = "<group>"; };
+		A66969C57597321F01914C7E /* CompareView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompareView.swift; sourceTree = "<group>"; };
+		A8A0259826B63F3D422ECB93 /* ErrorBanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ErrorBanner.swift; sourceTree = "<group>"; };
+		AAD615337BB62083B108C459 /* SettingsSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsSheet.swift; sourceTree = "<group>"; };
+		BCFF02D96323B290067ABBBB /* RAWdogPrintworks.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = RAWdogPrintworks.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		C8488AC88AADDEF83C91D87C /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
+		C9BCB815EE12B041AFE34A45 /* CropOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CropOverlayView.swift; sourceTree = "<group>"; };
+		D7823D48DA9C17AA0BE34B21 /* ReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReviewView.swift; sourceTree = "<group>"; };
+		D932305A2A209F9D6B4925B9 /* MainWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainWindow.swift; sourceTree = "<group>"; };
+		EFC7998A937FE9922A71CC94 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		F35A4156DCF5CB8087CF3846 /* InspectorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InspectorView.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		9C83D2CDF647E4BF7A1DFE94 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F10AE85930F9809C6ACE9C69 /* PrintworksCore in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		09A9B19AB7F389F469C91CAA = {
+			isa = PBXGroup;
+			children = (
+				2565F973912BAD15E26E2ED3 /* Packages */,
+				9B54E6DFBF3BFCFFB2E26188 /* Sources */,
+				4F1EAD31CBA2D96DCDBF0BAC /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		2565F973912BAD15E26E2ED3 /* Packages */ = {
+			isa = PBXGroup;
+			children = (
+				676BC75110657924D2B3FB9F /* PrintworksCore */,
+			);
+			name = Packages;
+			sourceTree = "<group>";
+		};
+		4F1EAD31CBA2D96DCDBF0BAC /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				BCFF02D96323B290067ABBBB /* RAWdogPrintworks.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		9B54E6DFBF3BFCFFB2E26188 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				A66969C57597321F01914C7E /* CompareView.swift */,
+				C9BCB815EE12B041AFE34A45 /* CropOverlayView.swift */,
+				A8A0259826B63F3D422ECB93 /* ErrorBanner.swift */,
+				58B319B94EFAF5323E2AF00C /* GridView.swift */,
+				2F42439BD7E89BED9A95A50E /* IngestBanner.swift */,
+				F35A4156DCF5CB8087CF3846 /* InspectorView.swift */,
+				D932305A2A209F9D6B4925B9 /* MainWindow.swift */,
+				7DB3FFC02930C9ACFD2BD4FF /* PreviewImage.swift */,
+				A3CB3B941DFCAD38A0263C82 /* PrintworksApp.swift */,
+				D7823D48DA9C17AA0BE34B21 /* ReviewView.swift */,
+				AAD615337BB62083B108C459 /* SettingsSheet.swift */,
+				C8488AC88AADDEF83C91D87C /* SidebarView.swift */,
+				EFC7998A937FE9922A71CC94 /* Theme.swift */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		4068EFE4BD09673DCF10856A /* RAWdogPrintworks */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 412BC72C6A2D88E710C7EE37 /* Build configuration list for PBXNativeTarget "RAWdogPrintworks" */;
+			buildPhases = (
+				F4C51508E0999826A1479441 /* Sources */,
+				9C83D2CDF647E4BF7A1DFE94 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = RAWdogPrintworks;
+			packageProductDependencies = (
+				5F2F223FCE8C3C94A140DB9A /* PrintworksCore */,
+			);
+			productName = RAWdogPrintworks;
+			productReference = BCFF02D96323B290067ABBBB /* RAWdogPrintworks.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		FDEFA38A93410E7D955726BD /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+				};
+			};
+			buildConfigurationList = A7BDDDD9DC79594378F53DA0 /* Build configuration list for PBXProject "RAWdogPrintworks" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 09A9B19AB7F389F469C91CAA;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				85F6F2C88AF4CF08A45DED1D /* XCLocalSwiftPackageReference "../PrintworksCore" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 4F1EAD31CBA2D96DCDBF0BAC /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				4068EFE4BD09673DCF10856A /* RAWdogPrintworks */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		F4C51508E0999826A1479441 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E11FA9A37D20E3614E7D39C0 /* CompareView.swift in Sources */,
+				A339D445CE02AA706E7D6C5B /* CropOverlayView.swift in Sources */,
+				2B8E1124FD6637511E671575 /* ErrorBanner.swift in Sources */,
+				DBBE77FA40C7C017B7839141 /* GridView.swift in Sources */,
+				D0BB633ADAD34F2E049C6250 /* IngestBanner.swift in Sources */,
+				BFC8C6E1D71B3F325BA0C36C /* InspectorView.swift in Sources */,
+				D1AD8D0793F2B7CB4E59E046 /* MainWindow.swift in Sources */,
+				901973283AEAF7846AA41145 /* PreviewImage.swift in Sources */,
+				753ABA92C72ECC870AE900F3 /* PrintworksApp.swift in Sources */,
+				9225267E64DC4F3ED0D1DC44 /* ReviewView.swift in Sources */,
+				BBBD1847AE0EEBF5BF593272 /* SettingsSheet.swift in Sources */,
+				53AD4CEDA3ED9B9DB4F12FBF /* SidebarView.swift in Sources */,
+				BE5A825A7AF83E5ADCD3A283 /* Theme.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		610329461E10BF607E60C976 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "-";
+				COMBINE_HIDPI_IMAGES = YES;
+				INFOPLIST_FILE = Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "com.john.rawdog-printworks";
+				SDKROOT = macosx;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		668A4D320BFE29EFBA9D3010 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		A7115952F4F00F86574EF132 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		B63AD8F11AC7BC99C1936E5C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "-";
+				COMBINE_HIDPI_IMAGES = YES;
+				INFOPLIST_FILE = Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = "com.john.rawdog-printworks";
+				SDKROOT = macosx;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		412BC72C6A2D88E710C7EE37 /* Build configuration list for PBXNativeTarget "RAWdogPrintworks" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B63AD8F11AC7BC99C1936E5C /* Debug */,
+				610329461E10BF607E60C976 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		A7BDDDD9DC79594378F53DA0 /* Build configuration list for PBXProject "RAWdogPrintworks" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				668A4D320BFE29EFBA9D3010 /* Debug */,
+				A7115952F4F00F86574EF132 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		85F6F2C88AF4CF08A45DED1D /* XCLocalSwiftPackageReference "../PrintworksCore" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../PrintworksCore;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		5F2F223FCE8C3C94A140DB9A /* PrintworksCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = PrintworksCore;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = FDEFA38A93410E7D955726BD /* Project object */;
+}
