@@ -2,32 +2,35 @@
 
 ## Goal
 RAWdog Printworks. Plan 1 (pipeline `--json`) is MERGED; its golden fixtures bind
-Plan 2 — the macOS SwiftUI app (RAW-2), built in the Orca worktree. **Tasks 1-9
-of 11 built**; Task 9's re-review is RUNNING. main = this checkpoint's own
-commit, pushed; WT = e9a16e7.
+Plan 2 — the macOS SwiftUI app (RAW-2), built in the Orca worktree. **Tasks 1-10
+of 11 built; 1-9 SHIPPED through review.** main = this checkpoint's own commit,
+pushed; WT = de1e774.
 
 ## Done
-- Tasks 1-5 clean. TASK 6 SHIPS (c36db76 + c4a10d1). Detail in the docs archive.
-- TASK 7 COMPLETE after 3 rounds: 51f6fc6+bffbf56 built; c9165c2 fixed 3 Majors
-  (⌘N/⌘W killed the watcher; `.id(hash)` was a cache key with NO cache;
-  ingest-Retry escalated to `run --force`); 87511e8 bounded the cache that fix
-  introduced; bf4cbd1 fixed the regression 87511e8 introduced.
-- TASK 8 SHIPS e512205. I reported CompareView broken; the reviewer DISPROVED it
-  in my own process (8/8 Space toggles). My error: unmodified keys route only to a
-  KEY window while ⌘-keys go via the main menu — always pass `--restore-window`.
-- TASK 9 BUILT e9a16e7 (CropOverlayView + InspectorView + 3 model behaviours,
-  test-first) and CLOSED Task 8's M1 (14 accessibilityLabels) and M2
-  (`AppModel.photos(inDeliveryOf:)` replacing 4 drifting copies).
-- TASK 9 SMOKE PASSED on scratch (`qa/task-9-*.png`): overlay draws 8×10 solid +
-  5×7 dashed inside the letterboxed rect, `c` toggles it; Approve correctly
-  disabled. **Full mutate round-trip**: Warmth → `adjust` wrote ONLY pipeline-owned
-  sidecar+recipe (none by the app), photo went verified → review_required, toolbar
-  followed via the watcher.
-- I VERIFY EVERY TASK MYSELF: gates by exit code + a mutation per new test (all
-  went RED when reverted). Codex implements; I commit.
-- CODEX SANDBOX FIXED (memory `codex-swift-sandbox-fix`): every Swift dispatch
-  carries BOTH `--disable-sandbox` flags. DISPATCH IS ORCA (memory
-  `orca-agent-dispatch`); briefs live in the LEDGER, never a session scratchpad.
+- TASKS 1-9 SHIP. Detail in the docs archive; the load-bearing bits: Task 7 took
+  3 rounds (⌘N/⌘W killed the watcher; `.id(hash)` was a cache key with NO cache;
+  ingest-Retry escalated to `run --force`; then its own cache fix was unbounded,
+  then that fix regressed failure-clearing). Task 8: I called CompareView broken,
+  the reviewer disproved it in my own process. Task 9: the crop hit region was the
+  whole canvas — 8×10 undraggable, letterbox drags nudged 5×7 into the draft.
+- TASK 10 BUILT de1e774: IngestBanner, SettingsSheet (live validation, closes
+  i12), publish notifications, pendingInputFiles/ingestPending test-first, and
+  carry-forward m11 (the "8 concurrent crops" bound counted map entries, not
+  running subprocesses — measured 8/16/24/32 across revision waves). 80 tests.
+- TASK 9 SMOKE PASSED on scratch: overlay draws correctly; **full mutate
+  round-trip** — Warmth → `adjust` wrote ONLY pipeline-owned sidecar+recipe (none
+  by the app), photo went verified → review_required, toolbar followed.
+- **THE SCREEN IS LOCKED** (`CGSSessionScreenIsLocked`), so WindowServer delivers
+  no synthesized mouse events — that is why EVERY drag/AX smoke came back vacuous
+  (my splitter control stayed at 250). The reviewer verified M1 anyway by calling
+  `mouseDown/Dragged/Up` directly on the NSHostingView. UNLOCK BEFORE TASK 11 QA.
+- I VERIFY EVERY TASK MYSELF: gates by exit code + a mutation per new test.
+  Codex implements; I commit. NOTE: m11's test fails by HANGING (8min+) rather
+  than asserting — flagged for review; a CI regression there would stall.
+- CODEX SANDBOX FIXED + DISPATCH IS ORCA (memories `codex-swift-sandbox-fix`,
+  `orca-agent-dispatch`): both `--disable-sandbox` flags every time; briefs in the
+  LEDGER. Verify the agent UI is up and the prompt TOOK (context>0) before trusting
+  `send` — a lost prompt once went to a bare zsh after Codex exited.
 - LESSONS: greps confirm the letter, READING the intent; a green suite proves
   what is TESTED not what is correct; `open` does NOT relaunch a running app;
   macOS AX intermittently blocks a fresh binary (retry, then ask for a toggle);
