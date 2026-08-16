@@ -10,9 +10,8 @@ user merges #5, a 6-item fix round, then cleanup. WT = 839d574.
 ## Done (this session)
 - **Dispatched the whole-branch review** from the archived brief: new Orca
   terminal in the plan2 worktree, `claude --model opus --effort xhigh
-  --permission-mode bypassPermissions`. Verified the prompt TOOK before trusting
-  it, armed a watcher, and re-read once at completion because the file was still
-  being revised when it first appeared.
+  --permission-mode bypassPermissions`. Verified the prompt TOOK, armed a
+  watcher, re-read at completion (the file was still being revised on arrival).
 - **Review completed (19 min). Verdict: MERGE AS-IS.** It re-ran both gates
   itself — 85 Swift tests exit 0, 295 pytest exit 0 — and left the worktree
   clean at 839d574. Report archived at
@@ -38,17 +37,15 @@ user merges #5, a 6-item fix round, then cleanup. WT = 839d574.
   cancelling would SIGTERM RawTherapee mid-write into `staging/`. Do not "fix".
 
 ## Ruled out
-- Squashing Plan 2 — Plan 1 merged as a PR preserving its 16 per-task commits;
-  this history carries the Task 7 arc, the `--force` catch and m12. PR #5 asks
-  for a merge commit.
+- Squashing Plan 2 — this history carries the Task 7 arc, the `--force` catch
+  and m12, as Plan 1's 16 commits did. PR #5 asks for a merge commit.
 - Making `runMutating` cancellable (m12). F2's fix is a confirmation, not cancel.
 - Widening Codex's writable roots — controller-commits-after-verifying IS the gate.
 - Smoking mutating features against the real repo — scratch repo instead.
 
 ## In flight
-- **Nothing running.** Reviewer terminal `term_274c8aef…` is idle and finished
-  (safe to close). The OLD Codex terminal `term_4d74c3eb…` is idle at 56%
-  context — do NOT send to it.
+- **Nothing running.** Reviewer terminal `term_274c8aef…` is finished (safe to
+  close); the OLD Codex terminal `term_4d74c3eb…` is at 56% — do NOT send to it.
 - **THE APP POINTS AT THE SCRATCH REPO** `~/orca/workspaces/rawdog-printworks/
   smoke-repo` (P1036163 there is published v002 from the QA).
 
