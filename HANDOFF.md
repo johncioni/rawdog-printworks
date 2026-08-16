@@ -20,9 +20,9 @@ open as PR #6** — 3 commits, 23 files, +1114/−263. Remaining: the user merge
   `852b0e5` concurrency, `1e60c72` CodeRabbit's 2 findings on #6. Gates re-run by
   ME per batch with `xcodebuild` WITHOUT sandbox flags (the production path):
   swift test 92 → 93 → 99 → **100**, all exit 0; pytest 295 throughout.
-- **Mutations re-derived independently, not replayed**, and made stronger —
-  notably injecting `process.terminate()` into batch 3's watchdog, which fails
-  three assertions. That pins the no-kill property the user chose.
+- **Mutations re-derived independently, not replayed** — notably injecting
+  `process.terminate()` into batch 3's watchdog, which fails three assertions,
+  pinning the no-kill property the user chose.
 
 ## Ruled out
 - Making `runMutating` cancellable (m12), including via CodeRabbit's
