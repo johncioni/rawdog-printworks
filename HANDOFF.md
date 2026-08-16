@@ -2,11 +2,10 @@
 
 ## Goal
 RAWdog Printworks. Plan 1 (pipeline `--json`) is MERGED. **Plan 2 — the macOS
-SwiftUI app (RAW-2) — is COMPLETE: 25 commits on
-`johncioni/plan2-printworks-app`, UNMERGED.** The whole-branch review is DONE and
-says MERGE AS-IS. **PR #5 IS OPEN** (25 commits, 38 files, +7153/−58). Remaining:
-the user merges #5, a 6-item fix round, then cleanup. Branch + main are both on
-origin; WT = 839d574.
+SwiftUI app (RAW-2) — is COMPLETE and UNMERGED on
+`johncioni/plan2-printworks-app`.** The whole-branch review is DONE and says
+MERGE AS-IS. **PR #5 IS OPEN** (25 commits, 38 files, +7153/−58). Remaining: the
+user merges #5, a 6-item fix round, then cleanup. WT = 839d574.
 
 ## Done
 - All 11 tasks complete. Branch-tip gates: **85 Swift tests exit 0**, xcodebuild
@@ -15,8 +14,8 @@ origin; WT = 839d574.
   Task reviews are in the archive; do not re-derive them.
 - VISUAL QA PASSED (`task-11-visual-qa-note.md`): 11 verified-distinct shots,
   full loop on the scratch repo → v002 published, 29 artifacts, v001 pruned.
-- THREE tests that COULD NOT FAIL were found and fixed (Tasks 6, 9, 11). That is
-  the recurring failure mode here — always mutate a new test.
+- THREE tests that COULD NOT FAIL were found and fixed (Tasks 6, 9, 11) — the
+  recurring failure mode here, so always mutate a new test.
 - USER DECISION (m12, standing): `runMutating` is intentionally UNCANCELLABLE —
   cancelling would SIGTERM RawTherapee mid-write into `staging/`. Do not "fix".
 - **THIS SESSION: whole-branch review dispatched and completed** (Opus 5 xhigh in
@@ -25,13 +24,13 @@ origin; WT = 839d574.
   Report: `docs/superpowers/sdd-archive/2026-08-12-printworks-app/whole-branch-review.md`.
   - Keep this correction: `git diff main..HEAD` looks like it deletes ~14k
     archive lines — that is main moving forward, not the branch. Real change set
-    is `main...HEAD` (base 60facc9): 38 files, +7153/−58.
+    is `main...HEAD` (base 60facc9): 38 files, +7153/−58 — what PR #5 shows.
   - **SIX fix-now items, none a merge blocker: F1 F2 F3 F4 F5 F6.** Take the list
     from the review's verdict TABLES, not its closing paragraph — the closing
     names only four (it omits F3 = m7 case 3, and F5 = m9). Nothing found can
     publish or approve pixels the user did not visually approve; that was
     verified against the pipeline, not assumed.
-- Archive refreshed through the review; ledger is gitignored, archive is durable.
+- Archive refreshed through the review; the ledger is gitignored, archive durable.
 
 ## Ruled out
 - Squashing Plan 2 — Plan 1 merged as a PR preserving its 16 per-task commits;
