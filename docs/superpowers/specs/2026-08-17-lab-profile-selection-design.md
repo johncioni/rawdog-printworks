@@ -1,7 +1,7 @@
 # RAWdog Printworks — Lab Profile Selection Design
 
 **Date:** 2026-08-17
-**Status:** Draft for review
+**Status:** Draft — §10 (published-version retention) OPEN, blocks approval
 **Depends on:** `2026-08-11-raw-print-pipeline-design.md` (rev 8) — §"Lab profile
 (versioned, configurable)" defines the profile schema and field classes this
 extends. `2026-08-12-macos-app-design.md` — the app this adds a surface to.
@@ -14,7 +14,7 @@ labs, surface the choice in the macOS app, and make the cost of switching
 visible before it is paid.
 
 One active lab, repo-wide. Per-delivery and per-photo selection are explicitly
-out of scope (§10).
+out of scope (§11).
 
 ## 2. What already exists
 
@@ -52,12 +52,22 @@ profile: generic-v1
 
 - **File absent → `generic-v1`.** Every existing checkout and every existing
   fingerprint is unaffected until someone deliberately switches.
-- **File malformed, or names a profile that does not exist → raise.** A silent
-  fallback would render against a different lab than the file names, which is
-  the failure this whole design exists to prevent.
+- **File malformed, or names a profile that does not exist → raise**, for every
+  caller that needs a resolved profile. A silent fallback to `generic-v1` would
+  render against a different lab than the file names, which is the failure this
+  whole design exists to prevent. The repair tools are the deliberate exception
+  below — they never resolve a profile, so they have nothing to guess at.
 - **Resolved once per process.** Not for speed: so that an edit during a long
-  `run` cannot make some photos use one lab and the rest another. Tests reset
-  the memo.
+  `run` cannot make some photos use one lab and the rest another. `lab set`
+  invalidates the memo after writing, or it would report the outgoing profile
+  as active for the rest of its own invocation. Tests reset it too.
+
+**The repair tools must survive a broken pointer.** `lab list` and `lab set`
+are exactly what an operator reaches for when `active-lab.yaml` is malformed or
+names a deleted profile, so they degrade gracefully: report the breakage, still
+list the available profiles, still permit a `set` that fixes it. Only the
+render and approve paths hard-fail, because those are the ones that must never
+guess which lab they are building for.
 
 It must be committed rather than stored in `.manifest`, which is gitignored;
 this input feeds the approval fingerprint and has to travel with the repo.
@@ -126,7 +136,15 @@ convention (`2026-08-12-macos-app-design.md` §4.2-4.3):
 `--dry-run` computes each photo's fingerprint under the *candidate* profile and
 reports which would demote. Pure computation, so the preview is exact rather
 than estimated. **It takes no lock** — a lock would make choosing a lab block on
-a running render, and it writes nothing.
+a running render, and it writes nothing. `manifest.save` is write-temp +
+`os.replace` (`manifest.py:42-50`), so a lock-free read cannot tear.
+
+It must also report **crops that would become invalid**. `geometry.validate_crop`
+raises when a crop window would require upscaling at the target PPI
+(`geometry.py:51`), and that raise happens at *approve* time. Without this, a
+switch to a higher-PPI lab would demote a photo to `review_required` and only
+then reveal it cannot be re-approved at all. Reporting demotions but not
+un-approvable crops would understate the cost the command exists to state.
 
 `lab set` **reports and proceeds**; it does not refuse when photos would demote.
 Consistent with the m12 ruling on the long-running-subprocess watchdog: surface
@@ -186,6 +204,13 @@ broken code before it is accepted.
 - `lab set` writes the pointer and the affected photos report `review_required`
   on the next `status`; `--dry-run` leaves the pointer byte-identical **and**
   leaves the driver lock acquirable while it runs.
+- `--dry-run` flags a crop that would fail `validate_crop` under the candidate
+  PPI. Constructed from a crop window with real headroom at 300 PPI and none at
+  the candidate's, so the test fails if only demotions are reported.
+- A malformed `active-lab.yaml` and one naming a deleted profile both leave
+  `lab list` and `lab set` usable, and both make `run` refuse.
+- `lab set` leaves no stale memo: the active profile it reports after writing is
+  the incoming one, not the outgoing one.
 - Golden `--json` fixtures for `lab list`, `lab show`, `lab set`, and the new
   `status.lab` block.
 - Every shipped profile loads and validates, parametrized over
@@ -193,7 +218,44 @@ broken code before it is accepted.
 - `provenance.json` gains `lab`; a set published without the key still reads.
 - Swift: decoding `status.lab`, including when it is absent.
 
-## 10. Out of scope
+## 10. OPEN — published-version retention
+
+**This blocks the spec. It is new scope discovered during review, not a detail.**
+
+Publication retains exactly one version, enforced twice: `publish.publish`
+rmtrees every non-current version after swapping the symlink
+(`publish.py:150-152`), and `publish.recover()` does the same at the start of
+every `run` (`publish.py:258-261`). The operator therefore cannot preserve an
+old version by hand — recovery reaps it on the next run.
+
+With one hardcoded lab this was harmless: a re-render produced equivalent
+output. With lab switching it is not. `v001` is the record of the files
+physically submitted to lab A; switching to lab B and re-rendering deletes it,
+along with the `provenance.json` that §8 teaches to name its lab. The design
+gains the ability to say which lab a version targeted and simultaneously
+guarantees that record is destroyed on the next switch.
+
+Three ways forward:
+
+- **(a) Documented out-of-scope.** Retention stays at one version; the operator
+  copies a submission set elsewhere before switching labs. Cheapest, and puts a
+  data-loss footgun behind a documentation line.
+- **(b) Lab-aware retention.** Do not prune a version whose provenance `lab`
+  differs from the incoming publish's. Cheap *because* §8 adds `lab` to
+  provenance — but `publish.recover()`'s pruning rule must be taught the same
+  exception, or it reaps what publish preserved.
+- **(c) Retain N versions.** Simplest to state, least targeted; unbounded growth
+  at ~150 MB per version.
+
+Recommendation: **(b)**, because it retains exactly what has a distinct
+submission history and nothing else, and the information it needs is already
+being added. But it modifies the atomic-publication subsystem and its recovery
+path, which is load-bearing — so it is the operator's call, not the spec's.
+
+Whichever is chosen, `publish.publish` and `publish.recover` must agree; a
+divergence between them is how a preserved version silently disappears.
+
+## 11. Out of scope
 
 - **Per-delivery and per-photo lab selection.** One active lab, repo-wide.
 - **Rendering for several labs from one approval.** Would add a lab dimension to
@@ -205,7 +267,7 @@ broken code before it is accepted.
 - **Verifying a lab's spec on the operator's behalf.** `verified` is set by the
   operator, never by this project.
 
-## 11. Risk
+## 12. Risk
 
 Every shipped profile is a transcription of a third-party page that can change
 without notice, and its values determine physical prints. `verified: false` is a
