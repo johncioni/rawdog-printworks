@@ -3,8 +3,8 @@
 ## Goal
 RAWdog Printworks: resumable RAW → print pipeline (Python) plus the macOS SwiftUI
 app that drives it. Both plans, the fix round and the README are MERGED; repo is
-**PUBLIC**, CI green, tree clean, local == origin. No code work is outstanding —
-the open items are photo decisions and one doc fix, all listed under Next.
+**PUBLIC**, CI green, tree clean, local == origin. No code work outstanding — the
+open items are photo decisions and one doc fix, both under Next.
 
 ## Done
 - **`P1036094` ingested and previewed** — it had sat in `Input/` referenced
@@ -18,12 +18,12 @@ the open items are photo decisions and one doc fix, all listed under Next.
   "Active work" still saying *"next up is Plan 2"*; and "22 files, 3 styles" —
   real sets are **29 artifacts / 4 styles**. Counts re-run live, not remembered:
   **pytest 296** (old "295" predated a skip becoming a pass), **swift test 100**.
-- Recorded in Commands, having been re-proposed and dismissed twice now:
-  `-disable-sandbox` / `OTHER_SWIFT_FLAGS='$(inherited) -disable-sandbox'` is the
-  **agent-seatbelt workaround, not a build requirement**. Do not bake it in.
-- Earlier: **secrets audit CLEAN** (tree + all 658 historical blobs, zero hits);
-  repo flipped **PUBLIC** w/ secret scanning + push protection, which also fixed
-  Actions billing; **README.md merged** (PR #7 → `3b95add`).
+- Recorded in Commands, re-proposed and dismissed twice now: `-disable-sandbox` /
+  `OTHER_SWIFT_FLAGS='$(inherited) -disable-sandbox'` is the **agent-seatbelt
+  workaround, not a build requirement**. Do not bake it in.
+- Earlier: **secrets audit CLEAN** (tree + 658 historical blobs, zero hits); repo
+  flipped **PUBLIC** w/ scanning + push protection, which fixed Actions billing;
+  **README.md merged** (PR #7 → `3b95add`).
 
 ## Ruled out
 - **Stripping the QA screenshots. DO NOT REOPEN THIS.** 26 of 27 PNGs under
@@ -34,10 +34,9 @@ the open items are photo decisions and one doc fix, all listed under Next.
 - **History rewrite as sanitization.** GitHub retains `refs/pull/*` for merged
   PRs, so a force-push leaves old blobs fetchable by SHA; real removal means
   filter-repo into a fresh repo. Only relevant if the photo decision reverses.
-- **CodeRabbit MD022 on HANDOFF.md**: contradicts this file's style and the
-  padding breaks the 60-line cap. Its `.venv` + MD040 README findings were real.
-- Still standing: `runMutating` cancellable (m12) incl. watchdog→SIGKILL; CR
-  Minors/Trivials, m6 coalesce reset, PreviewImageCache cancellation.
+- **CodeRabbit MD022 on HANDOFF.md**: contradicts this file's style; the padding
+  breaks the 60-line cap. Still standing: `runMutating` cancellable (m12) incl.
+  watchdog→SIGKILL; CR Minors/Trivials, m6 reset, PreviewImageCache cancellation.
 
 ## In flight
 - **Nothing running** — no agent terminals, background jobs, worktrees, open PRs
@@ -49,14 +48,13 @@ the open items are photo decisions and one doc fix, all listed under Next.
 ## Next
 1. **Review P1036094 in the app, then approve or reject.** Once approved,
    `scripts/process.sh run --stem P1036094` renders and publishes it.
-2. **`README.md` has the same stale count — UNFIXED, user not yet asked.** L7
-   "22 files per photo" and the L59-66 matrix say 3 styles; worse, L67 claims
-   `vibrant` "ships for preview and comparison" when published sets contain
-   `_vibrant.tif/.jpg/_5x7/_8x10` — it IS delivered. This is the public front
-   door. The design spec is FINE: its rev-8 note (L183) declares every "22" and
-   "3 styles" in that document reads 29/4. Do not "fix" the spec.
-3. **The lab is still unchosen** — `config/lab-profiles/` holds only
-   `generic-v1.yaml`. A real profile changes `[review]`-class fields (`ppi`,
+2. **`README.md` has the same stale count — UNFIXED, user not yet asked.** L7 and
+   the L59-66 matrix say 22 files / 3 styles; worse, L67 claims `vibrant` "ships
+   for preview and comparison" when published sets contain `_vibrant.tif/.jpg/
+   _5x7/_8x10` — it IS delivered. Public front door. The **spec is FINE**: its
+   rev-8 note (L183) declares every "22"/"3 styles" in it reads 29/4.
+3. **The lab is still unchosen** — `config/lab-profiles/` has only
+   `generic-v1.yaml`. A real profile changes `[review]` fields (`ppi`,
    `color_space`, `safe_edge_percent`), breaking the approval fingerprint and
    sending verified photos BACKWARD to `review_required`. Do it deliberately.
 4. Tooling limit: synthetic keyboard/mouse events do NOT reach the app, so the
