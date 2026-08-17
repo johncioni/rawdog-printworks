@@ -4,15 +4,13 @@ from pathlib import Path
 
 from . import labprofile, paths, recipe, render, toolchain
 
-_LAB_PROFILE = "generic-v1"
-
 
 def gather_material(stem):
     return {
         "style_hashes": render.style_hashes(stem),
         "seed_hash": render.seed_hash(),
         "lock": json.loads((paths.config_dir() / "toolchain.lock").read_text()),
-        "lab": labprofile.load(_LAB_PROFILE),
+        "lab": labprofile.load(labprofile.active()),
         "preview_hashes": {style: content_hash(_preview_path(stem, style))
                            for style in paths.STYLES},
     }

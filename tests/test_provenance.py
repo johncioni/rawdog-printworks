@@ -81,6 +81,26 @@ def test_input_change_is_stale(seeded, tmp_repo):
     assert "natural" in provenance.stale_styles("P1", recipe.load("P1"))
 
 
+def test_driver_and_provenance_resolve_one_active_profile(seeded, tmp_repo,
+                                                          monkeypatch):
+    # driver and provenance each used to hardcode their own profile name.
+    # They feed different hashes — driver's goes into the approval
+    # fingerprint, provenance's into artifact dependency hashes — so a
+    # divergence would silently approve against one lab while invalidating
+    # against another. There must be exactly one source.
+    import yaml
+
+    from pipeline import driver, labprofile
+    profile = labprofile.load("generic-v1")
+    profile["ppi"] = 360
+    (tmp_repo / "config/lab-profiles/other-v1.yaml").write_text(
+        yaml.safe_dump(profile))
+    monkeypatch.setattr(labprofile, "active", lambda: "other-v1")
+
+    assert driver._lab()["ppi"] == 360
+    assert provenance.gather_material("P1")["lab"]["ppi"] == 360
+
+
 def test_review_revision_moves_on_sidecar_and_preview_change(seeded, tmp_repo):
     rec = recipe.load("P1")
     r1 = provenance.review_revision("P1", rec)

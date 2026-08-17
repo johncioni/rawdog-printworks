@@ -9,6 +9,20 @@ ORDER_FIELDS = {"lab_color_correction", "checkout_crop_review"}
 
 _ALL_FIELDS = REVIEW_FIELDS | RENDER_FIELDS | ORDER_FIELDS
 
+DEFAULT_PROFILE = "generic-v1"
+
+
+def active():
+    """Name of the repo's active lab profile.
+
+    The single source of truth, deliberately. The approval fingerprint
+    (recipe.fingerprint) and the artifact dependency hashes (provenance)
+    both resolve the lab through here; if they could name different
+    profiles, a photo would be approved against one lab's review fields
+    while its artifacts were invalidated against another's.
+    """
+    return DEFAULT_PROFILE
+
 
 def load(name):
     f = paths.config_dir() / "lab-profiles" / f"{name}.yaml"

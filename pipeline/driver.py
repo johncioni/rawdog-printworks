@@ -11,12 +11,11 @@ from . import (crops, geometry, jsonio, labprofile, manifest, metadata, paths,
                verify as verify_mod)
 
 
-LAB_PROFILE = "generic-v1"
 MANUAL_ASSETS_ERROR = "manual assets present; outside automated re-render"
 
 
 def _lab():
-    return labprofile.load(LAB_PROFILE)
+    return labprofile.load(labprofile.active())
 
 
 def _lock():
