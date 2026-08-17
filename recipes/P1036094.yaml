@@ -1,0 +1,32 @@
+approval:
+  approved_at: null
+  fingerprint: null
+crops:
+  5x7: null
+  8x10: null
+expression_audit: []
+height: 4336
+manual_assets: []
+overrides:
+  denoise: false
+previews:
+  bw:
+    content: 26e78d4346cbb7b8a0440c2e765cc2ad384f05e568fde84b110f1a1f48b47b4b
+    inputs: e67ddaf7e5d4ce8930e430de1a3a3850ff0032bf47afb7895a4b0262d5ffd6d1
+  filmic:
+    content: cc62f7f8631c87ab7d9b54b78d986959d9f493634088177d6555bc594d22204e
+    inputs: 3b18f05476e8e7f3da250b2b0f82c83fc2d1558f5d83994ab97dec186c48cfd4
+  natural:
+    content: 867144c2e0cfef543578ca95edb6a094940be300293314b95af5d3fed204edb8
+    inputs: 2945fd4112678358975a41c1d9606f33e9c16099182641746d89087f8d706545
+  vibrant:
+    content: b44ca02201826ed49f52fe41a6686df4ad6873813ab1a4052cdc24e6bcc60a9d
+    inputs: 9dad55d271d4562e064f87d10e3dcd5763c4d37c92594b0a41d487fdfaf48d6f
+raw_sha256: 250b2ccf402effd02773eddadfa3e55d6e552cd0cf74bbbb66936c04f8e2d243
+render_height: 4344
+render_width: 5784
+sharpen:
+  5x7: 0x0.9+0.9+0.01
+  8x10: 0x1.0+0.8+0.01
+  native: 0x0.8+0.6+0.008
+width: 5776
