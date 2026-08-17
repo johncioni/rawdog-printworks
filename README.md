@@ -28,7 +28,7 @@ re-run at any moment.
 
 **Photos move through an explicit state machine.** Per photo:
 
-```
+```text
 ingested → preview_ready → review_required → approved → rendered → verified
 ```
 
@@ -80,7 +80,7 @@ precise per-image tuning tractable; darktable's encoded XMP parameters are not.
 
 ## Usage
 
-Every command runs through the repo `.venv` — never system Python.
+Every *pipeline* command runs through the repo `.venv` — never system Python.
 `scripts/process.sh` is the wrapper:
 
 ```bash
@@ -114,7 +114,7 @@ scripts/build-app.sh    # xcodegen + xcodebuild, ad-hoc signed
 
 ## Layout
 
-```
+```text
 pipeline/     the Python pipeline (driver, render, publish, verify, …)
 app/          SwiftUI macOS front end
 config/       style profiles, lab profiles, RawTherapee seed, toolchain.lock

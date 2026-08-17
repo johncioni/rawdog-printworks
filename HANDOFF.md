@@ -24,8 +24,9 @@ PUBLIC** and has a README. main = `528b4b5`; branch `johncioni/readme` = PR #7.
   failures on main. No account action needed. Local gate: **296 passed**.
 
 ## Ruled out
-- **Stripping the QA screenshots.** 26 of 27 PNGs in `docs/superpowers/sdd-archive/
-  **/qa/` show an identifiable family portrait. Raised before the flip; **the user
+- **Stripping the QA screenshots.** 26 of 27 PNGs under
+  `docs/superpowers/sdd-archive/**/qa/` show a family portrait. Raised before the
+  flip; **the user
   confirmed they hold the rights and chose to publish as-is.** Do not "clean this
   up" in a later session — it is a decision, not an oversight.
 - **History rewrite as a sanitization route.** GitHub retains `refs/pull/*` for the
