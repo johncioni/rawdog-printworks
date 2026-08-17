@@ -20,12 +20,15 @@ scripts/process.sh <cmd>              # wraps .venv/bin/python -m pipeline
 # most commands also take --json (NDJSON on stdout, envelope last) —
 #   see docs/superpowers/specs/2026-08-12-macos-app-design.md §4.2-4.3
 
-.venv/bin/python -m pytest tests/ -q                    # full quality gate (295 tests)
+.venv/bin/python -m pytest tests/ -q                    # pipeline gate (296 tests)
 .venv/bin/python -m pytest tests/test_render.py -q      # one module
 .venv/bin/python -m pytest tests/ -q -k <pattern>       # one test
+
+swift test --package-path app/PrintworksCore            # app-logic gate (100 tests)
+zsh scripts/build-app.sh                                # xcodegen → Release build → ad-hoc sign
 ```
 
-Run the full pytest gate before reporting any task complete.
+Run the pytest gate before reporting any task complete; when `app/` changed, run `swift test` and `scripts/build-app.sh` too. Build the app the way the script does — passing `-disable-sandbox` / `OTHER_SWIFT_FLAGS='$(inherited) -disable-sandbox'` is the workaround for agents running under a seatbelt sandbox, not a build requirement, and it must not be baked into the script or treated as the normal path.
 
 `scripts/orca-setup.sh` bootstraps a checkout for the Orca ADE (per-worktree `.venv` + dev deps, self-heals a venv broken by a moved checkout, warns on missing render tools). Orca runs it as the repo setup hook on new worktrees; it is also safe to run manually in any checkout.
 
@@ -52,8 +55,12 @@ Approval is recorded as an **approval fingerprint** — a hash over every input 
 
 ## Active work
 
-Plan 1 (`docs/superpowers/plans/2026-08-12-pipeline-json-interface.md`) is **implemented**: the pipeline exposes the additive `--json` NDJSON interface, and the golden contract fixtures in `tests/fixtures/json_contract/` are the authority for it — Plan 2 must match those bytes, not this prose.
+Both plans have shipped and merged. Plan 1 (`docs/superpowers/plans/2026-08-12-pipeline-json-interface.md`) added the additive `--json` NDJSON interface; Plan 2 (`docs/superpowers/plans/2026-08-12-printworks-app.md`) built the macOS app on top of it — `app/PrintworksCore/` holds the logic and its tests, `app/RAWdogPrintworks/` the SwiftUI views. The execution record (task briefs, implementer reports, review findings and how they were resolved) is archived under `docs/superpowers/sdd-archive/`; read it when you need to know *why* something was built the way it was.
 
-Next up is Plan 2 (`docs/superpowers/plans/2026-08-12-printworks-app.md`), the macOS SwiftUI app driving that interface. Its binding constraints live in the plan's "Global Constraints" section: no pipeline logic in Swift, no repo writes from Swift, argv-only subprocess invocation.
+Three things from those plans are standing constraints, not finished steps:
 
-Two contract details that have bitten before: the approval fingerprint is bare hex while `review_revision` carries a `sha256:` prefix, and `approve` without `--review-file` returns an empty result.
+- The golden contract fixtures in `tests/fixtures/json_contract/` are the authority for the JSON interface — match those bytes, not this prose.
+- App work stays inside Plan 2's "Global Constraints": no pipeline logic in Swift, no repo writes from Swift, argv-only subprocess invocation.
+- Two contract details that have bitten before: the approval fingerprint is bare hex while `review_revision` carries a `sha256:` prefix, and `approve` without `--review-file` returns an empty result.
+
+Genuinely open: the **lab profile is still unchosen** — `config/lab-profiles/` holds only `generic-v1.yaml`. Picking a real lab means adding a profile YAML per the design spec, and it is the one open item that changes rendered output rather than code quality.
