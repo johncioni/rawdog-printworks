@@ -22,9 +22,8 @@ Nothing is outstanding — the next session starts new work, not a continuation.
   across 259 commits; ~30 provider patterns plus generic `password=`/`api_key=`/
   `Authorization:`. Zero hits. Nothing was ever added-then-deleted.
 - **Repo is PUBLIC; secret scanning + push protection ENABLED.** Verify:
-  `gh api repos/johncioni/rawdog-printworks --jq '.security_and_analysis'`.
-- **Actions billing resolved by the public flip** — standard runners incl.
-  `macos-15` are free on public repos. No account action was ever needed.
+  `gh api repos/johncioni/rawdog-printworks --jq '.security_and_analysis'`. The
+  flip also fixed Actions billing — standard runners are free on public repos.
 - **README.md merged** (PR #7 → `3b95add`). Front door only; points at specs.
 
 ## Ruled out
@@ -38,8 +37,8 @@ Nothing is outstanding — the next session starts new work, not a continuation.
   filter-repo into a fresh repo. Only relevant if the photo decision reverses.
 - **CodeRabbit MD022 on HANDOFF.md**: contradicts this file's style and the
   padding breaks the 60-line cap. Its `.venv` + MD040 README findings were real.
-- Older, still standing: `runMutating` cancellable (m12) incl. watchdog→SIGKILL;
-  CR Minors/Trivials, m6 coalesce reset, PreviewImageCache cancellation.
+- Still standing: `runMutating` cancellable (m12) incl. watchdog→SIGKILL; CR
+  Minors/Trivials, m6 coalesce reset, PreviewImageCache cancellation.
 
 ## In flight
 - **Nothing running.** No agent terminals, no background jobs, no worktrees, no
