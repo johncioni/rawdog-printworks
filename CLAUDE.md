@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-RAWdog Printworks: a resumable RAW → print-ready photo pipeline (Python) that turns Panasonic GH7 `.rw2` files into TIF/JPG/PDF output sets (22 files per photo, 3 styles × 3 crops), plus a macOS SwiftUI app (`app/`) that drives it. `README.md` is the orientation doc; the design spec at `docs/superpowers/specs/2026-08-11-raw-print-pipeline-design.md` remains the canonical reference for behaviour, and the app's is `docs/superpowers/specs/2026-08-12-macos-app-design.md`.
+RAWdog Printworks: a resumable RAW → print-ready photo pipeline (Python) that turns Panasonic GH7 `.rw2` files into TIF/JPG/PDF output sets (29 artifacts per photo: 4 styles × 3 crops, plus a comparison PDF), plus a macOS SwiftUI app (`app/`) that drives it. `README.md` is the orientation doc; the design spec at `docs/superpowers/specs/2026-08-11-raw-print-pipeline-design.md` remains the canonical reference for behaviour, and the app's is `docs/superpowers/specs/2026-08-12-macos-app-design.md`.
 
 ## Commands
 
