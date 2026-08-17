@@ -3,10 +3,10 @@
 ## Goal
 RAWdog Printworks: resumable RAW → print pipeline (Python) plus the macOS SwiftUI
 app that drives it. Both plans, the fix round and the README are MERGED; repo is
-**PUBLIC**, CI green, tree clean. Nothing is outstanding — the next session
-starts new work, not a continuation.
+**PUBLIC**, CI green, tree clean, local == origin. Nothing is outstanding — the
+next session starts new work, not a continuation.
 
-## Done (this session)
+## Done
 - **`CLAUDE.md` fully refreshed** (`20610cb`, `f5391e8`). Three stale claims:
   "there is no README"; a Commands block listing only the Python gate; an
   "Active work" section still saying *"next up is Plan 2"*. Counts re-run live
@@ -16,8 +16,6 @@ starts new work, not a continuation.
   `-disable-sandbox` / `OTHER_SWIFT_FLAGS='$(inherited) -disable-sandbox'` is the
   **agent-seatbelt workaround, not a build requirement**. Release passes without
   it; do not bake it into `scripts/build-app.sh`.
-
-## Earlier, still load-bearing
 - **Pre-publication secrets audit — CLEAN.** Tree AND all 658 historical blobs
   across 259 commits; ~30 provider patterns plus generic `password=`/`api_key=`/
   `Authorization:`. Zero hits. Nothing was ever added-then-deleted.
@@ -50,12 +48,10 @@ starts new work, not a continuation.
 ## Next
 1. **The lab is still unchosen** — verified, not remembered: `config/lab-profiles/`
    holds only `generic-v1.yaml`. Picking one means adding a profile YAML per the
-   spec; the only open item that changes rendered OUTPUT rather than code quality.
+   design spec; the only open item that changes rendered OUTPUT, not code quality.
 2. New RW2s: drop in `Input/`, `scripts/process.sh ingest`, review in the app.
    Dusk frames need warming sidecars — `sidecars/P1036170_*.pp3` is the template.
 3. Tooling limit: synthetic keyboard/mouse events do NOT reach the app, so the
    crop drag and arrow-key nudge rest on unit tests alone.
-
-## Gates
-`.venv/bin/python -m pytest tests/ -q` (296) · `swift test --package-path
-app/PrintworksCore` (100) · `zsh scripts/build-app.sh`
+4. Gates: `.venv/bin/python -m pytest tests/ -q` (296) · `swift test
+   --package-path app/PrintworksCore` (100) · `zsh scripts/build-app.sh`
