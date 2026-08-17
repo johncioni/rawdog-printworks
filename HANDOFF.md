@@ -30,18 +30,17 @@ repo **PUBLIC**, CI green, tree clean. Open items all listed under Next.
   `docs/superpowers/sdd-archive/**/qa/` show a family portrait; the user holds
   the rights, was asked before the flip, and chose to publish. **Already
   re-raised once by a session that skipped this file.** A decision, not an error.
-- **History rewrite as sanitization.** GitHub keeps `refs/pull/*`, so a
-  force-push leaves old blobs fetchable by SHA. Only if that decision reverses.
+- **History rewrite as sanitization.** GitHub keeps `refs/pull/*`; a force-push
+  still leaves old blobs fetchable by SHA. Only if that decision reverses.
 - **Per-delivery / per-photo lab selection**, and app-side profile editing —
   see the spec's §10. Standing: `runMutating` cancellable (m12) incl.
   watchdog→SIGKILL; CR Minors/Trivials, m6 reset, cache cancellation.
 
 ## In flight
 - **Nothing running** — no agent terminals, jobs, worktrees, PRs or branches.
-  Another session has pushed to main concurrently, so `git fetch` and compare
-  before assuming your tree is ahead.
 - **Reading CI:** *cancelled* on an older SHA is `cancel-in-progress` being
-  superseded, NOT a failure. `gh run list --branch main --limit 3`.
+  superseded, NOT a failure — check `gh run list --branch main --limit 3`.
+  Another session has pushed to main concurrently; `git fetch` before assuming.
 
 ## Next
 1. **Lab selection: user is reviewing the spec.** On approval the next step is
