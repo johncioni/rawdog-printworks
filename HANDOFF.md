@@ -6,12 +6,9 @@ SwiftUI app driving it. Both plans, the fix round and the README are MERGED;
 repo **PUBLIC**, CI green, tree clean. Open items all listed under Next.
 
 ## Done
-- **Lab-profile selection: spec written, awaiting your review** (`d2754b7` =
-  `docs/superpowers/specs/2026-08-17-lab-profile-selection-design.md`). Agreed
-  in brainstorming: one active lab repo-wide, committed `config/active-lab.yaml`
-  resolved via `labprofile.active()`, non-fingerprinted `meta` block w/
-  `verified` flag, `lab list/show/set` w/ a lock-free `--dry-run`, app picker
-  that computes nothing itself. `lab set` reports, never refuses.
+- **Lab-profile selection: spec written, awaiting your review** — `d2754b7`,
+  `docs/superpowers/specs/2026-08-17-lab-profile-selection-design.md`. Read it
+  rather than this summary; every decision and its reason is in there.
 - **Step 0 landed** (`5679791`): driver.py and provenance.py each hardcoded
   `"generic-v1"`, feeding the approval fingerprint and the artifact dep hashes
   respectively — divergence would approve against one lab and invalidate
